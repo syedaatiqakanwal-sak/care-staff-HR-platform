@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Environment and secrets
+.env
+.env.*
+
+# Database dumps (contain production data)
+cpd-database-backup.sql
+
+# Uploads and generated files
+backend/uploads/
+*.log
+coverage/
+
+# OS and IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Test artifacts
+test_cert.pdf

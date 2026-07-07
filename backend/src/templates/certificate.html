@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>CPD Certificate</title>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap');
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Open Sans', sans-serif;
+            background: #fff;
+            -webkit-print-color-adjust: exact;
+        }
+
+        .certificate-container {
+            width: 1123px;
+            height: 794px;
+            position: relative;
+            overflow: hidden;
+            background-image: url('data:image/jpeg;base64,{{BACKGROUND_IMAGE}}');
+            background-size: 100% 100%;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+
+        /* ===============================
+           CENTER TEXT CONFIGURATION
+        =============================== */
+
+        #student-name {
+            position: absolute;
+            /* Moved UP to 325px to sit exactly between the top and bottom text lines */
+            top: 325px;
+            left: 0;
+            right: 0;
+            width: 100%;
+            margin: 0 auto;
+
+            text-align: center;
+            font-size: 36px;
+            font-weight: 700;
+            color: #000;
+            text-transform: uppercase;
+
+            /* Ensures long names don't touch edges */
+            box-sizing: border-box;
+            padding: 0 80px;
+            line-height: 1.1;
+        }
+
+        #course-name {
+            position: absolute;
+            /* Maintained vertical position */
+            top: 420px;
+            left: 0;
+            right: 0;
+            width: 100%;
+            margin: 0 auto;
+
+            text-align: center;
+            font-size: 26px;
+            font-weight: 700;
+            color: #000;
+
+            /* High Padding (220px) forces text to stay strictly in the center.
+               This prevents it from touching the blue/red marker lines. */
+            box-sizing: border-box;
+            padding: 0 220px;
+            line-height: 1.2;
+        }
+
+        #reg-no-layer {
+            position: absolute;
+            top: 122px;
+            right: 95px;
+            font-size: 16px;
+            font-weight: 600;
+            color: #000;
+            white-space: nowrap;
+            text-align: center;
+            width: 180px;
+            letter-spacing: 0.5px;
+            font-family: Arial, Helvetica, sans-serif;
+        }
+
+        /* ===============================
+           ISSUE DATE (BOTTOM RIGHT)
+           (UNTOUCHED)
+        =============================== */
+        #issue-date-layer {
+            position: absolute;
+            top: 553px;
+            right: 200px;
+            font-size: 15px;
+            font-weight: 600;
+            color: #000;
+            white-space: nowrap;
+            text-align: right;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="certificate-container">
+
+        <div id="reg-no-layer">{Reg_no}</div>
+        <div id="issue-date-layer">{Date}</div>
+
+        <div id="student-name">{Learner_Name}</div>
+        <div id="course-name">{Course_Name}</div>
+
+    </div>
+
+    <script>
+        (function() {
+            var dateElement = document.getElementById('issue-date-layer');
+            if (dateElement) {
+                // 1. Get the text injected by the server (e.g. "4 February 2026")
+                var originalText = dateElement.innerText.trim();
+
+                // 2. Parse it into a Date object
+                var dateObj = new Date(originalText);
+
+                // 3. Check if valid, then format
+                if (!isNaN(dateObj.getTime())) {
+                    var day = ("0" + dateObj.getDate()).slice(-2);
+                    var month = ("0" + (dateObj.getMonth() + 1)).slice(-2);
+                    var year = dateObj.getFullYear();
+                    
+                    // 4. Update the HTML element
+                    dateElement.innerText = day + "/" + month + "/" + year;
+                }
+            }
+        })();
+    </script>
+</body>
+
+</html>
