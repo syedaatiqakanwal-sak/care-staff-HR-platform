@@ -44,11 +44,44 @@ type PolicyNotifRow = {
   createdAt: string;
 };
 
+async function parseAxiosErrorMessage(err: any): Promise<string> {
+  const data = err?.response?.data;
+  if (data instanceof Blob) {
+    try {
+      const text = await data.text();
+      try {
+        const json = JSON.parse(text);
+        return json.message || text;
+      } catch {
+        return text || `Request failed (${err?.response?.status || 'unknown'})`;
+      }
+    } catch {
+      return `Request failed (${err?.response?.status || 'unknown'})`;
+    }
+  }
+  if (typeof data === 'object' && data?.message) return data.message;
+  return err?.message || `Request failed (${err?.response?.status || 'unknown'})`;
+}
+
+async function assertPdfBlob(blob: Blob): Promise<void> {
+  const header = await blob.slice(0, 5).text();
+  if (header.startsWith('%PDF')) return;
+
+  try {
+    const text = await blob.text();
+    const json = JSON.parse(text);
+    throw new Error(json.message || 'Invalid PDF response');
+  } catch (e) {
+    if (e instanceof Error && e.message !== 'Invalid PDF response') throw e;
+    throw new Error('Invalid PDF response');
+  }
+}
+
 export const PoliciesPage = () => {
   const navigate = useNavigate();
 
   const role = (localStorage.getItem('role') || '').toLowerCase();
-  const isAdmin = role === 'admin';
+  const isAdmin = ['admin', 'manager', 'hr', 'supervisor'].includes(role);
 
   const token = localStorage.getItem('token');
 
@@ -75,17 +108,32 @@ export const PoliciesPage = () => {
     }
   };
 
-  const loadPolicyPdfBlobUrl = async (policyId: string): Promise<string> => {
+  const loadPolicyPdf = async (policyId: string) => {
     if (!token) throw new Error('Not authenticated');
-    const tokenRes = await axios.get(`/api/v1/policies/${policyId}/view-token`, {
+    revokePdfBlobUrl();
+    setPdfUrl(null);
+
+    const pdfRes = await axios.get(`/api/v1/policies/${policyId}/file`, {
       headers: { Authorization: `Bearer ${token}` },
+      responseType: 'blob',
     });
-    const streamUrl = `/api/v1/policies/${policyId}/stream?token=${encodeURIComponent(tokenRes.data.token)}`;
-    const pdfRes = await axios.get(streamUrl, { responseType: 'blob' });
-    if (pdfRes.status < 200 || pdfRes.status >= 300) {
-      throw new Error('Failed to load policy PDF');
-    }
-    return URL.createObjectURL(pdfRes.data);
+
+    const blob: Blob = pdfRes.data;
+    await assertPdfBlob(blob);
+
+    const blobUrl = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+    pdfBlobUrlRef.current = blobUrl;
+    setPdfUrl(blobUrl);
+  };
+
+  const showPdfError = async (err: any) => {
+    const detail = await parseAxiosErrorMessage(err);
+    console.error('Policy PDF load error:', { status: err?.response?.status, detail, err });
+    notifications.show({
+      title: 'Error',
+      message: 'Failed to open policy PDF.',
+      color: 'red',
+    });
   };
 
   // Timer loop (UI only)
@@ -145,6 +193,13 @@ export const PoliciesPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    return () => {
+      revokePdfBlobUrl();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const unreadPolicyIdSet = useMemo(() => {
     const set = new Set<string>();
     for (const n of notifs) {
@@ -163,14 +218,11 @@ export const PoliciesPage = () => {
     startMsRef.current = Date.now();
     setReadingSession(null);
 
-    revokePdfBlobUrl();
-    setPdfUrl(null);
     try {
-      const blobUrl = await loadPolicyPdfBlobUrl(p.id);
-      pdfBlobUrlRef.current = blobUrl;
-      setPdfUrl(blobUrl);
+      await loadPolicyPdf(p.id);
     } catch (err: any) {
-      notifications.show({ title: 'Error', message: err?.response?.data?.message || 'Failed to open policy PDF.', color: 'red' });
+      await showPdfError(err);
+      revokePdfBlobUrl();
       setPdfUrl(null);
     }
 
@@ -209,14 +261,21 @@ export const PoliciesPage = () => {
     }
   };
 
-  const openPdfOnly = async (p: PolicyRow) => {
+  const openPdfViewer = async (p: PolicyRow) => {
     if (!token) return;
+    setReadingPolicy(p);
+    setReaderOpen(true);
+    setIsReading(false);
+    setElapsedSeconds(0);
+    startMsRef.current = null;
+    setReadingSession(null);
+
     try {
-      const blobUrl = await loadPolicyPdfBlobUrl(p.id);
-      window.open(blobUrl, '_blank');
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+      await loadPolicyPdf(p.id);
     } catch (err: any) {
-      notifications.show({ title: 'Error', message: err?.response?.data?.message || 'Failed to open policy PDF.', color: 'red' });
+      await showPdfError(err);
+      revokePdfBlobUrl();
+      setPdfUrl(null);
     }
   };
 
@@ -232,7 +291,7 @@ export const PoliciesPage = () => {
             <Button 
               variant="filled" 
               leftSection={<ListChecks size={16} />} 
-              color="#E51690" 
+              color="#267FBA" 
               onClick={() => navigate('/dashboard/policies/reports')}
               style={{ fontWeight: 700 }}
             >
@@ -277,8 +336,8 @@ export const PoliciesPage = () => {
             <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
               {policies.map((p, i) => {
                 const cardGradients = [
-                  'linear-gradient(135deg, #1EBAF2 0%, #0F7296 100%)', // Blue
-                  'linear-gradient(135deg, #E51690 0%, #E51690 100%)'  // Green
+                  'linear-gradient(135deg, #139639 0%, #0e7a2d 100%)', // Blue
+                  'linear-gradient(135deg, #267FBA 0%, #267FBA 100%)'  // Green
                 ];
                 const bgIdx = i % cardGradients.length;
                 const bg = cardGradients[bgIdx];
@@ -322,7 +381,7 @@ export const PoliciesPage = () => {
                       leftSection={<Eye size={12} />} 
                       onClick={(e) => {
                         e.stopPropagation();
-                        openPdfOnly(p);
+                        openPdfViewer(p);
                       }}
                       style={{ 
                         backgroundColor: 'rgba(255,255,255,0.2)', 
@@ -340,6 +399,49 @@ export const PoliciesPage = () => {
             </SimpleGrid>
           )}
         </Paper>
+
+        <Modal
+          opened={readerOpen}
+          onClose={() => {
+            revokePdfBlobUrl();
+            setReaderOpen(false);
+            setReadingPolicy(null);
+            setPdfUrl(null);
+          }}
+          size="xl"
+          radius="md"
+          centered
+          title={<Title order={4}>Policy PDF</Title>}
+        >
+          {!readingPolicy ? (
+            <Text c="dimmed">No policy selected.</Text>
+          ) : (
+            <Stack gap="md">
+              <Box>
+                <Text fw={900}>{readingPolicy.title}</Text>
+                <Text size="sm" c="dimmed">Version {readingPolicy.version}</Text>
+              </Box>
+              <Paper withBorder radius="md" style={{ overflow: 'hidden' }}>
+                {pdfUrl ? (
+                  <iframe
+                    src={`${pdfUrl}#toolbar=0&navpanes=0&scrollbar=1`}
+                    title="Policy PDF"
+                    width="100%"
+                    height="420"
+                    style={{ border: 'none', display: 'block' }}
+                  />
+                ) : (
+                  <Center py="xl">
+                    <Group gap="sm">
+                      <Loader size="sm" />
+                      <Text c="dimmed">Loading PDF...</Text>
+                    </Group>
+                  </Center>
+                )}
+              </Paper>
+            </Stack>
+          )}
+        </Modal>
       </Box>
     );
   }
@@ -380,8 +482,8 @@ export const PoliciesPage = () => {
             {policies.filter((p) => p.isActive).map((p, i) => {
               const unread = unreadPolicyIdSet.has(p.id);
               const cardGradients = [
-                'linear-gradient(135deg, #1EBAF2 0%, #0F7296 100%)', // Blue
-                'linear-gradient(135deg, #E51690 0%, #E51690 100%)'  // Green
+                'linear-gradient(135deg, #139639 0%, #0e7a2d 100%)', // Blue
+                'linear-gradient(135deg, #267FBA 0%, #267FBA 100%)'  // Green
               ];
               const bgIdx = i % cardGradients.length;
               const bg = cardGradients[bgIdx];
@@ -471,9 +573,9 @@ export const PoliciesPage = () => {
           setElapsedSeconds(0);
           startMsRef.current = null;
 
+          revokePdfBlobUrl();
           setReaderOpen(false);
           setReadingPolicy(null);
-          revokePdfBlobUrl();
           setPdfUrl(null);
 
           // Refresh notifications/policies after close

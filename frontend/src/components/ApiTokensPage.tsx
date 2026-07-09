@@ -140,7 +140,7 @@ export const ApiTokensPage = () => {
             notifications.show({
                 title: 'Success',
                 message: 'Token deleted successfully',
-                color: '#E51690',
+                color: '#267FBA',
             });
             fetchTokens();
         } catch (error: any) {
@@ -349,7 +349,7 @@ export const ApiTokensPage = () => {
                 size="lg"
             >
                 <Stack gap="md">
-                    <Alert color="#E51690" icon={<Check size={16} />}>
+                    <Alert color="#267FBA" icon={<Check size={16} />}>
                         <Text size="sm" fw={600}>
                             Save this token now! It will not be shown again.
                         </Text>

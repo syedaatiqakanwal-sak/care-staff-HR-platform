@@ -10,7 +10,7 @@ export const PageWrapper = ({ children }: { children: React.ReactNode }) => {
                 duration: 0.4,
                 ease: [0.4, 0, 0.2, 1] // Native-like ease
             }}
-            style={{ height: '100%', width: '100%' }}
+            style={{ width: '100%' }}
         >
             {children}
         </motion.div>

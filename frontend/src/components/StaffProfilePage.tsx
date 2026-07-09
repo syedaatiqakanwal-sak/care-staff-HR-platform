@@ -31,11 +31,10 @@ import {
 import {
     ArrowLeft,
     FileSpreadsheet,
-    ExternalLink,
     FileCheck,
-    Key,
     Eye,
     ShieldCheck,
+    Shield,
     Calendar,
     Briefcase,
     User,
@@ -48,7 +47,6 @@ import {
     Save,
     X,
     Lock,
-    EyeOff,
     AlertTriangle,
     AlertCircle,
     Trash,
@@ -62,15 +60,34 @@ import {
     Camera,
     ClipboardCheck,
     RefreshCw,
-    CheckCircle
+    CheckCircle,
+    Banknote
 } from 'lucide-react';
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 import { useState, useEffect, useRef } from 'react';
 import { SignaturePad } from './SignaturePad';
 import axios from 'axios';
-import { getProfileHeaderStatusLabel } from '../lib/employmentStatus';
 import { PersonalInformationTab } from './profile/PersonalInformationTab';
+import { DbsTab } from './profile/DbsTab';
+import { RecruitmentTab } from './profile/RecruitmentTab';
+import { HrNotesTab } from './profile/HrNotesTab';
+import { LeaveAttendanceTab } from './profile/LeaveAttendanceTab';
+import { PayrollTab } from './profile/PayrollTab';
+import { hasDashboardAccess, isManagementRole, isPayrollRole, canMutate, isStaffPortalRole, getStoredRole } from '../utils/roles';
+import { InHouseTrainingTab } from './profile/InHouseTrainingTab';
+import {
+    employmentStatusBadgeColor,
+    employmentStatusLabel,
+} from '../utils/employmentStatus';
+
+const appraisalWrapTextareaStyles = {
+    input: {
+        whiteSpace: 'pre-wrap' as const,
+        wordBreak: 'break-word' as const,
+        resize: 'vertical' as const,
+    },
+};
 
 // --- HELPER COMPONENT: Date Editor with Save/Cancel ---
 const DateEditableCell = ({ date, onSave, isAdmin }: { date: string | null, onSave: (date: string | null) => Promise<void>, isAdmin: boolean }) => {
@@ -131,7 +148,7 @@ const DateEditableCell = ({ date, onSave, isAdmin }: { date: string | null, onSa
             />
             {isDirty && (
                 <Group gap={4}>
-                    <ActionIcon size="md" color="#E51690" variant="filled" onClick={handleSave} loading={loading} title="Save Changes">
+                    <ActionIcon size="md" color="#267FBA" variant="filled" onClick={handleSave} loading={loading} title="Save Changes">
                         <Check size={14} />
                     </ActionIcon>
                     <ActionIcon size="md" color="red" variant="light" onClick={handleCancel} disabled={loading} title="Cancel">
@@ -144,14 +161,15 @@ const DateEditableCell = ({ date, onSave, isAdmin }: { date: string | null, onSa
 };
 
 // Certificate Card Component
-const CertificateCard = ({ title, subtitle, provider, isCompleted, onView, onDownload, onComplete, onIncomplete, isAdmin }: { title: string, subtitle?: string, provider: string, isCompleted: boolean, onView?: () => void, onDownload?: () => void, onComplete?: () => void, onIncomplete?: () => void, isAdmin: boolean }) => {
+const CertificateCard = ({ title, subtitle, provider, isCompleted, onView, onDownload, onComplete, onIncomplete, isAdmin, canMutateCerts }: { title: string, subtitle?: string, provider: string, isCompleted: boolean, onView?: () => void, onDownload?: () => void, onComplete?: () => void, onIncomplete?: () => void, isAdmin: boolean, canMutateCerts?: boolean }) => {
+    const canEditCerts = canMutateCerts ?? isAdmin;
     const cardGradients = [
-        'linear-gradient(135deg, #1EBAF2 0%, #0F7296 100%)',
-        'linear-gradient(135deg, #E51690 0%, #E51690 100%)',
-        'linear-gradient(135deg, #0277BD 0%, #29B6F6 100%)'
+        'linear-gradient(135deg, #139639 0%, #0e7a2d 100%)',
+        'linear-gradient(135deg, #267FBA 0%, #267FBA 100%)',
+        'linear-gradient(135deg, #267FBA 0%, #1d6a9e 100%)'
     ];
     const bg = cardGradients[Math.floor(Math.random() * cardGradients.length)];
-    const shadow = 'rgba(30, 186, 242, 0.3)';
+    const shadow = 'rgba(19, 150, 57, 0.3)';
 
     return (
         <Paper
@@ -278,7 +296,7 @@ const CertificateCard = ({ title, subtitle, provider, isCompleted, onView, onDow
                             </Button>
                         )}
                         {isCompleted ? (
-                            onIncomplete && isAdmin && (
+                            onIncomplete && canEditCerts && (
                                 <Button 
                                     variant="filled"
                                     size="xs"
@@ -300,13 +318,13 @@ const CertificateCard = ({ title, subtitle, provider, isCompleted, onView, onDow
                                 </Button>
                             )
                         ) : (
-                            onComplete && isAdmin && (
+                            onComplete && canEditCerts && (
                                 <Button 
                                     variant="filled"
                                     size="xs"
                                     fullWidth
                                     style={{
-                                        backgroundColor: 'rgba(229, 22, 144, 0.3)',
+                                        backgroundColor: 'rgba(38, 127, 186, 0.3)',
                                         border: '1px solid rgba(255, 255, 255, 0.3)',
                                         color: 'white',
                                         fontWeight: 700,
@@ -330,15 +348,16 @@ const CertificateCard = ({ title, subtitle, provider, isCompleted, onView, onDow
 };
 
 // Review Form Cards Component (similar to Course Cards)
-const ReviewFormCards = ({ forms, onEdit, onDelete, onDownload, onView, isAdmin }: { forms: any[], onEdit: (form: any) => void, onDelete: (form: any) => void, onDownload: (form: any) => void, onView: (form: any) => void, isAdmin: boolean }) => {
+const ReviewFormCards = ({ forms, onEdit, onDelete, onDownload, onView, isAdmin, canDelete }: { forms: any[], onEdit: (form: any) => void, onDelete: (form: any) => void, onDownload: (form: any) => void, onView: (form: any) => void, isAdmin: boolean, canDelete?: boolean }) => {
+    const allowDelete = canDelete ?? isAdmin;
     if (forms.length === 0) {
         return <Text c="dimmed" ta="center" py="xl">No saved forms found.</Text>;
     }
 
     const cardGradients = [
-        'linear-gradient(135deg, #1EBAF2 0%, #0F7296 100%)',
-        'linear-gradient(135deg, #E51690 0%, #E51690 100%)',
-        'linear-gradient(135deg, #0277BD 0%, #29B6F6 100%)',
+        'linear-gradient(135deg, #139639 0%, #0e7a2d 100%)',
+        'linear-gradient(135deg, #267FBA 0%, #267FBA 100%)',
+        'linear-gradient(135deg, #267FBA 0%, #1d6a9e 100%)',
         'linear-gradient(135deg, #6A1B9A 0%, #8E24AA 100%)'
     ];
 
@@ -392,10 +411,12 @@ const ReviewFormCards = ({ forms, onEdit, onDelete, onDownload, onView, isAdmin 
                                         <ActionIcon variant="filled" color="rgba(0,0,0,0.3)" size="sm" onClick={() => onDownload(form)}>
                                             <Download size={14} />
                                         </ActionIcon>
-                                        <ActionIcon variant="filled" color="red" size="sm" onClick={() => onDelete(form)}>
-                                            <Trash size={14} />
-                                        </ActionIcon>
                                     </>
+                                )}
+                                {allowDelete && (
+                                    <ActionIcon variant="filled" color="red" size="sm" onClick={() => onDelete(form)}>
+                                        <Trash size={14} />
+                                    </ActionIcon>
                                 )}
                             </Group>
                         </Group>
@@ -415,7 +436,7 @@ export const StaffProfilePage = () => {
     const { id } = useParams();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
-    const [activeTab, setActiveTab] = useState<string | null>(searchParams.get('tab') || 'personal');
+    const [activeTab, setActiveTab] = useState<string | null>(searchParams.get('tab') === 'personal-details' ? 'personal' : (searchParams.get('tab') || 'personal'));
     const [selectedTrainingMonth, setSelectedTrainingMonth] = useState<string | null>('1');
     const [saveLoading, setSaveLoading] = useState(false);
     const [profile, setProfile] = useState<any>(null);
@@ -433,18 +454,14 @@ export const StaffProfilePage = () => {
     // Sync tab from URL if it changes
     useEffect(() => {
         const tabParam = searchParams.get('tab');
-        if (tabParam) setActiveTab(tabParam);
+        if (tabParam && tabParam !== 'vle') {
+            setActiveTab(tabParam === 'personal-details' ? 'personal' : tabParam);
+        }
     }, [searchParams]);
 
     const [certificates, setCertificates] = useState<any[]>([]);
     const [trainingRecords, setTrainingRecords] = useState<any[]>([]);
 
-
-    // VLE Credentials State
-    const [vleCreds, setVleCreds] = useState({ username: '', password: '' });
-    const [isVleEditing, setIsVleEditing] = useState(false);
-    const [showPassword, setShowPassword] = useState(false);
-    const [vleLoading, setVleLoading] = useState(false);
 
     // Secure Certificate Viewer State
     const [showCertModal, setShowCertModal] = useState(false);
@@ -494,7 +511,6 @@ export const StaffProfilePage = () => {
     });
     const [referenceLoading, setReferenceLoading] = useState(false);
     const [references, setReferences] = useState<any[]>([]);
-    const [referencesLoading, setReferencesLoading] = useState(false);
 
     // Review/Appraisal/Supervision Form State
     const [reviewFormModal, setReviewFormModal] = useState(false);
@@ -521,8 +537,10 @@ export const StaffProfilePage = () => {
         trainingNeeded: '',
         supportNeeded: '',
         complianceResponsibilities: '',
-        dbsChanges: '',
         relationshipWithManagers: '',
+        reviewerComments1: '',
+        reviewerComments2: '',
+        reviewerComments3: '',
         relationshipWithCoworkers: '',
         careerGoals2Years: '',
         careerGoals5Years: '',
@@ -548,12 +566,6 @@ export const StaffProfilePage = () => {
         training3How: '',
         jobDescriptionChanges: '',
         interviewNotes: '',
-        achievements: '',
-        areasForImprovement: '',
-        careerDevelopment: '',
-        trainingSessionsAgreed: '',
-        developmentalAreas: '',
-        performanceGrade: '',
         appraiseeComments: '',
         appraiseeSignature: '',
         appraiserSignature: '',
@@ -575,6 +587,10 @@ export const StaffProfilePage = () => {
         communicationSkillsReason: '',
         attendancePunctualityGrade: '',
         attendancePunctualityReason: '',
+        reviewerCommentOverallWork: '',
+        reviewerCommentProgressTraining: '',
+        reviewerCommentTeamWorking: '',
+        reviewerCommentAttendance: '',
         recommendedForReview: '',
         reviewReasons: '',
         careStaffSignature: '',
@@ -679,7 +695,14 @@ export const StaffProfilePage = () => {
     }, [showCertModal]);
 
 
-    const isAdmin = localStorage.getItem('role') === 'admin';
+    const isAdmin = hasDashboardAccess();
+    const canManage = isManagementRole() && canMutate();
+    const canViewHrNotes = isManagementRole();
+    const canViewPayroll = isPayrollRole();
+    // In-House Training Plan: Admin/HR/Manager can view; only Admin/HR can edit; Staff cannot see.
+    const inHouseRole = getStoredRole();
+    const canViewInHouseTraining = inHouseRole === 'admin' || inHouseRole === 'hr' || inHouseRole === 'manager';
+    const canEditInHouseTraining = (inHouseRole === 'admin' || inHouseRole === 'hr') && canMutate();
 
     // Fetch Profile Data & Courses
     useEffect(() => {
@@ -698,11 +721,7 @@ export const StaffProfilePage = () => {
                     const coursesRes = await axios.get('/api/v1/courses', {
                         headers: { Authorization: `Bearer ${token}` }
                     });
-                    setAllCourses(
-                        coursesRes.data.filter(
-                            (c: any, i: number, arr: any[]) => arr.findIndex((x) => x.id === c.id) === i
-                        )
-                    );
+                    setAllCourses(coursesRes.data);
                 } catch (courseErr) {
                     console.error('Failed to fetch courses list', courseErr);
                 }
@@ -738,7 +757,7 @@ export const StaffProfilePage = () => {
                     setProfilePictureUrl(null);
                 }
 
-                // 3. Fetch Linked Data (Certificates, Training, VLE)
+                // 3. Fetch Linked Data (Certificates, Training)
                 if (targetUserId) {
                     // Certificates
                     try {
@@ -759,20 +778,6 @@ export const StaffProfilePage = () => {
                         setTrainingRecords(trainingRes.data);
                     } catch (err) {
                         console.error('Failed to fetch training records', err);
-                    }
-
-                    // VLE Credentials
-                    try {
-                        const vleRes = await axios.get(`/api/v1/staff/${targetUserId}/vle-credentials`, {
-                            headers: { Authorization: `Bearer ${token}` }
-                        });
-                        if (vleRes.data.username) {
-                            setVleCreds({ username: vleRes.data.username, password: vleRes.data.password || '••••••••' });
-                        } else {
-                            setVleCreds({ username: '', password: '' });
-                        }
-                    } catch (err) {
-                        console.error("Failed to fetch VLE config", err);
                     }
 
                     // Review Forms
@@ -844,9 +849,11 @@ export const StaffProfilePage = () => {
                 trainingNeeded: '',
                 supportNeeded: '',
                 complianceResponsibilities: '',
-                dbsChanges: '',
                 relationshipWithManagers: '',
                 relationshipWithCoworkers: '',
+                reviewerComments1: '',
+                reviewerComments2: '',
+                reviewerComments3: '',
                 careerGoals2Years: '',
                 careerGoals5Years: '',
                 otherPoints: '',
@@ -871,12 +878,6 @@ export const StaffProfilePage = () => {
                 training3How: '',
                 jobDescriptionChanges: '',
                 interviewNotes: '',
-                achievements: '',
-                areasForImprovement: '',
-                careerDevelopment: '',
-                trainingSessionsAgreed: '',
-                developmentalAreas: '',
-                performanceGrade: '',
                 appraiseeComments: '',
                 appraiseeSignature: '',
                 appraiserSignature: '',
@@ -1004,6 +1005,10 @@ export const StaffProfilePage = () => {
                 communicationSkillsReason: form.communicationSkillsReason || '',
                 attendancePunctualityGrade: form.attendancePunctualityGrade || '',
                 attendancePunctualityReason: form.attendancePunctualityReason || '',
+                reviewerCommentOverallWork: form.jobPerformanceReason || '',
+                reviewerCommentProgressTraining: form.trainingDevelopmentReason || '',
+                reviewerCommentTeamWorking: form.communicationSkillsReason || '',
+                reviewerCommentAttendance: form.attendancePunctualityReason || '',
                 recommendedForReview: form.recommendedForReview || '',
                 reviewReasons: form.reviewReasons || '',
                 careStaffSignature: form.careStaffSignature || '',
@@ -1032,7 +1037,7 @@ export const StaffProfilePage = () => {
                     await axios.delete(`/api/v1/staff/review-forms/${form.id}`, {
                         headers: { Authorization: `Bearer ${token}` }
                     });
-                    notifications.show({ title: 'Deleted', message: 'Review form deleted successfully', color: '#E51690' });
+                    notifications.show({ title: 'Deleted', message: 'Review form deleted successfully', color: '#267FBA' });
                     // Refresh
                     const targetUserId = profile?.user?.id || profile?.id || id;
                     const reviewFormsRes = await axios.get(`/api/v1/staff/${targetUserId}/review-forms`, {
@@ -1068,7 +1073,7 @@ export const StaffProfilePage = () => {
             notifications.show({
                 title: 'Success',
                 message: 'Review form deleted successfully',
-                color: '#E51690',
+                color: '#267FBA',
             });
 
             // Refresh review forms
@@ -1136,7 +1141,7 @@ export const StaffProfilePage = () => {
             notifications.show({
                 title: 'Success',
                 message: 'Monthly report downloaded successfully',
-                color: '#E51690',
+                color: '#267FBA',
             });
         } catch (error: any) {
             console.error('Failed to download monthly report', error);
@@ -1194,7 +1199,7 @@ export const StaffProfilePage = () => {
             notifications.show({
                 title: 'Success',
                 message: 'Enrollment and Completion report downloaded successfully',
-                color: '#E51690',
+                color: '#267FBA',
             });
         } catch (error: any) {
             console.error('Failed to download enrollment report', error);
@@ -1252,7 +1257,7 @@ export const StaffProfilePage = () => {
             notifications.show({
                 title: 'Success',
                 message: 'Yearly report downloaded successfully',
-                color: '#E51690',
+                color: '#267FBA',
             });
         } catch (error: any) {
             console.error('Failed to download yearly report', error);
@@ -1264,7 +1269,7 @@ export const StaffProfilePage = () => {
         } finally {
             setDownloadingYearlyReport(false);
         }
-    };
+    }; 
 
     const handleViewReport = async (type: 'monthly' | 'yearly') => {
         try {
@@ -1433,10 +1438,8 @@ export const StaffProfilePage = () => {
                             <p style="white-space: pre-wrap; border: 1px solid #ddd; padding: 8px; min-height: 40px;">${data.supportFromManager || ''}</p>
                             <p><strong>Training and support needed:</strong></p>
                             <p style="white-space: pre-wrap; border: 1px solid #ddd; padding: 8px; min-height: 40px;">${data.trainingNeeded || ''}</p>
-                            <p><strong>Compliance responsibilities:</strong></p>
+                            <p><strong>Compliance Responsibilities: Is there any change in your DBS status?</strong></p>
                             <p style="white-space: pre-wrap; border: 1px solid #ddd; padding: 8px; min-height: 40px;">${data.complianceResponsibilities || ''}</p>
-                            <p><strong>DBS changes:</strong></p>
-                            <p style="white-space: pre-wrap; border: 1px solid #ddd; padding: 8px; min-height: 30px;">${data.dbsChanges || ''}</p>
                             <p><strong>Relationship with managers:</strong></p>
                             <p style="white-space: pre-wrap; border: 1px solid #ddd; padding: 8px; min-height: 40px;">${data.relationshipWithManagers || ''}</p>
                             <p><strong>Relationship with co-workers:</strong></p>
@@ -1445,6 +1448,8 @@ export const StaffProfilePage = () => {
                             <p style="white-space: pre-wrap; border: 1px solid #ddd; padding: 8px; min-height: 40px;">${data.careerGoals2Years || ''}</p>
                             <p><strong>Other points:</strong></p>
                             <p style="white-space: pre-wrap; border: 1px solid #ddd; padding: 8px; min-height: 40px;">${data.otherPoints || ''}</p>
+                            <p><strong>Comments from the reviewer:</strong></p>
+                            <p style="white-space: pre-wrap; border: 1px solid #ddd; padding: 8px; min-height: 40px;">${data.reviewerComments1 || ''}</p>
                         </div>
                         
                         <div style="margin-bottom: 30px; border: 1px solid #ddd; padding: 16px;">
@@ -1496,19 +1501,10 @@ export const StaffProfilePage = () => {
                             <p style="white-space: pre-wrap; border: 1px solid #ddd; padding: 8px; min-height: 40px;">${data.jobDescriptionChanges || ''}</p>
                             <p><strong>Interview Notes:</strong></p>
                             <p style="white-space: pre-wrap; border: 1px solid #ddd; padding: 8px; min-height: 40px;">${data.interviewNotes || ''}</p>
-                            <p><strong>Achievements:</strong></p>
-                            <p style="white-space: pre-wrap; border: 1px solid #ddd; padding: 8px; min-height: 40px;">${data.achievements || ''}</p>
-                            <p><strong>Areas for Improvement:</strong></p>
-                            <p style="white-space: pre-wrap; border: 1px solid #ddd; padding: 8px; min-height: 40px;">${data.areasForImprovement || ''}</p>
-                            <p><strong>Career Development:</strong></p>
-                            <p style="white-space: pre-wrap; border: 1px solid #ddd; padding: 8px; min-height: 40px;">${data.careerDevelopment || ''}</p>
-                            <p><strong>Training sessions agreed:</strong></p>
-                            <p style="white-space: pre-wrap; border: 1px solid #ddd; padding: 8px; min-height: 30px;">${data.trainingSessionsAgreed || ''}</p>
-                            <p><strong>Developmental areas:</strong></p>
-                            <p style="white-space: pre-wrap; border: 1px solid #ddd; padding: 8px; min-height: 40px;">${data.developmentalAreas || ''}</p>
-                            <p><strong>Performance grade:</strong> ${data.performanceGrade || ''}</p>
                             <p><strong>Appraisee's comments:</strong></p>
                             <p style="white-space: pre-wrap; border: 1px solid #ddd; padding: 8px; min-height: 60px;">${data.appraiseeComments || ''}</p>
+                            <p><strong>Comments from the reviewer:</strong></p>
+                            <p style="white-space: pre-wrap; border: 1px solid #ddd; padding: 8px; min-height: 40px;">${data.reviewerComments2 || ''}</p>
                             <table style="width: 100%; border-collapse: collapse; margin: 10px 0;">
                                 <tr>
                                     <td style="padding: 8px; border: 1px solid #000;">
@@ -1534,6 +1530,8 @@ export const StaffProfilePage = () => {
                             <h3 style="margin-top: 0;">Action Plan</h3>
                             <p><strong>Name:</strong> ${data.actionPlanName || ''}</p>
                             ${renderTable(data.actionPlanItems || [], ['Key Areas Discussed', 'Action Plan to be Followed', 'Target Date'], false)}
+                            <p><strong>Comments from the reviewer:</strong></p>
+                            <p style="white-space: pre-wrap; border: 1px solid #ddd; padding: 8px; min-height: 40px;">${data.reviewerComments3 || ''}</p>
                         </div>
                     `;
                 };
@@ -1552,31 +1550,31 @@ export const StaffProfilePage = () => {
                                 .section-card { page-break-inside: avoid; }
                             }
                             .page { max-width: 850px; margin: 0 auto; padding: 24px; }
-                            .section-card { border: 3px solid #E51690; border-radius: 12px; overflow: hidden; margin-bottom: 24px; }
-                            .section-card.blue { border-color: #1EBAF2; }
+                            .section-card { border: 3px solid #267FBA; border-radius: 12px; overflow: hidden; margin-bottom: 24px; }
+                            .section-card.blue { border-color: #139639; }
                             .card-header { padding: 18px 24px; display: flex; justify-content: space-between; align-items: center; }
-                            .card-header.green { background: linear-gradient(135deg, #1EBAF2 0%, #E51690 100%); }
-                            .card-header.blue { background: linear-gradient(135deg, #E51690 0%, #1EBAF2 100%); }
+                            .card-header.green { background: linear-gradient(135deg, #139639 0%, #267FBA 100%); }
+                            .card-header.blue { background: linear-gradient(135deg, #267FBA 0%, #139639 100%); }
                             .card-header h1 { color: #fff; font-size: 20px; margin: 0; letter-spacing: 2px; text-transform: uppercase; }
                             .card-header h2 { color: #fff; font-size: 16px; margin: 4px 0 0; font-weight: 800; }
                             .card-header img { height: 50px; border-radius: 50%; background: #fff; padding: 3px; }
                             .card-body { padding: 20px 24px; }
-                            .info-label { font-size: 10px; font-weight: 700; color: #1EBAF2; text-transform: uppercase; margin-bottom: 3px; }
+                            .info-label { font-size: 10px; font-weight: 700; color: #139639; text-transform: uppercase; margin-bottom: 3px; }
                             .info-value { font-size: 13px; font-weight: 600; color: #222; margin-bottom: 10px; }
-                            h3 { color: #1EBAF2; font-size: 14px; margin: 16px 0 8px; border-bottom: 2px solid #e0e0e0; padding-bottom: 4px; }
-                            h3.green { color: #E51690; }
+                            h3 { color: #139639; font-size: 14px; margin: 16px 0 8px; border-bottom: 2px solid #e0e0e0; padding-bottom: 4px; }
+                            h3.green { color: #267FBA; }
                             .text-block { white-space: pre-wrap; border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px 10px; min-height: 36px; font-size: 12px; line-height: 1.6; margin-bottom: 12px; background: #fafafa; }
                             table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; font-size: 12px; }
                             td, th { border: 1px solid #bbb; padding: 6px 8px; vertical-align: top; }
-                            th { background: #e3f2fd; font-weight: 700; color: #1EBAF2; text-align: left; }
+                            th { background: #e3f0f8; font-weight: 700; color: #139639; text-align: left; }
                             .cap-table td:first-child { width: 50%; }
                             .cap-table td:nth-child(2) { width: 15%; text-align: center; }
                             .sig-row { display: flex; gap: 14px; margin-top: 16px; }
-                            .sig-box { flex: 1; border: 1px solid #E51690; border-radius: 8px; padding: 12px; }
-                            .sig-box.blue { border-color: #1EBAF2; }
+                            .sig-box { flex: 1; border: 1px solid #267FBA; border-radius: 8px; padding: 12px; }
+                            .sig-box.blue { border-color: #139639; }
                             .sig-label { font-size: 12px; font-weight: 800; margin-bottom: 6px; }
-                            .sig-label.green { color: #E51690; }
-                            .sig-label.blue { color: #1EBAF2; }
+                            .sig-label.green { color: #267FBA; }
+                            .sig-label.blue { color: #139639; }
                             .sig-img { max-width: 200px; max-height: 70px; display: block; }
                             .sig-placeholder { border: 2px dashed #ccc; border-radius: 6px; min-height: 60px; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 12px; background: #fafafa; }
                         </style>
@@ -1626,13 +1624,13 @@ export const StaffProfilePage = () => {
                                     <h3>Difficulties</h3><div class="text-block">${appraisalData.difficulties || ''}</div>
                                     <h3>Support from Manager</h3><div class="text-block">${appraisalData.supportFromManager || ''}</div>
                                     <h3>Training / Support Needed</h3><div class="text-block">${appraisalData.trainingNeeded || ''}</div>
-                                    <h3>Compliance Responsibilities &amp; DBS</h3><div class="text-block">${appraisalData.complianceResponsibilities || ''}</div>
-                                    ${appraisalData.dbsChanges ? `<h3>DBS Changes</h3><div class="text-block">${appraisalData.dbsChanges}</div>` : ''}
+                                    <h3>Compliance Responsibilities: Is there any change in your DBS status?</h3><div class="text-block">${appraisalData.complianceResponsibilities || ''}</div>
                                     <h3>Relationship with Managers</h3><div class="text-block">${appraisalData.relationshipWithManagers || ''}</div>
                                     <h3>Relationship with Co-workers</h3><div class="text-block">${appraisalData.relationshipWithCoworkers || ''}</div>
                                     <h3>Career Goals (2 Years)</h3><div class="text-block">${appraisalData.careerGoals2Years || ''}</div>
                                     ${appraisalData.careerGoals5Years ? `<h3>Career Goals (5 Years)</h3><div class="text-block">${appraisalData.careerGoals5Years}</div>` : ''}
                                     <h3>Other Points</h3><div class="text-block">${appraisalData.otherPoints || ''}</div>
+                                    <h3>Comments from the reviewer</h3><div class="text-block">${appraisalData.reviewerComments1 || ''}</div>
                                 </div>
                             </div>
 
@@ -1690,16 +1688,11 @@ export const StaffProfilePage = () => {
                                     ` : ''}
                                     <h3>Job Description Changes</h3><div class="text-block">${appraisalData.jobDescriptionChanges || ''}</div>
                                     <h3>Interview Notes</h3><div class="text-block">${appraisalData.interviewNotes || ''}</div>
-                                    <h3>Achievements</h3><div class="text-block">${appraisalData.achievements || ''}</div>
-                                    <h3>Areas for Improvement</h3><div class="text-block">${appraisalData.areasForImprovement || ''}</div>
-                                    <h3>Career Development</h3><div class="text-block">${appraisalData.careerDevelopment || ''}</div>
-                                    <h3>Training Sessions Agreed</h3><div class="text-block">${appraisalData.trainingSessionsAgreed || ''}</div>
-                                    <h3>Developmental Areas</h3><div class="text-block">${appraisalData.developmentalAreas || ''}</div>
-                                    <h3>Performance Grade</h3><div class="text-block">${appraisalData.performanceGrade || ''}</div>
                                     <h3>Appraisee's Comments</h3><div class="text-block">${appraisalData.appraiseeComments || ''}</div>
+                                    <h3>Comments from the reviewer</h3><div class="text-block">${appraisalData.reviewerComments2 || ''}</div>
 
                                     <!-- Signatures -->
-                                    <div style="border-top:2px solid #E51690;padding-top:16px;margin-top:20px;">
+                                    <div style="border-top:2px solid #267FBA;padding-top:16px;margin-top:20px;">
                                         <p style="text-align:center;font-style:italic;font-size:12px;color:#666;">I hereby confirm that this is a fair and accurate representation of the appraisal discussion.</p>
                                         <div class="sig-row">
                                             <div class="sig-box">
@@ -1737,6 +1730,7 @@ export const StaffProfilePage = () => {
                                         ${appraisalData.actionPlanItems.map((item: any) => `<tr><td>${item.keyArea || ''}</td><td>${item.actionPlan || ''}</td><td>${item.targetDate || ''}</td></tr>`).join('')}
                                         </tbody></table>
                                     ` : ''}
+                                    <h3>Comments from the reviewer</h3><div class="text-block">${appraisalData.reviewerComments3 || ''}</div>
                                 </div>
                             </div>
                         </div>
@@ -1813,23 +1807,23 @@ export const StaffProfilePage = () => {
                                 .page { width: 210mm; margin: 0; padding: 10mm; }
                             }
                             .page { max-width: 850px; margin: 0 auto; padding: 24px; }
-                            .section-card { border: 3px solid #E51690; border-radius: 12px; overflow: hidden; }
-                            .card-header { padding: 18px 24px; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, #1EBAF2 0%, #E51690 100%); }
+                            .section-card { border: 3px solid #267FBA; border-radius: 12px; overflow: hidden; }
+                            .card-header { padding: 18px 24px; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, #139639 0%, #267FBA 100%); }
                             .card-header h1 { color: #fff; font-size: 20px; margin: 0; letter-spacing: 2px; text-transform: uppercase; }
                             .card-header h2 { color: #fff; font-size: 16px; margin: 4px 0 0; font-weight: 800; }
                             .card-header .sub { color: rgba(255,255,255,0.8); font-size: 12px; margin-top: 2px; }
                             .card-header img { height: 50px; border-radius: 50%; background: #fff; padding: 3px; }
                             .card-body { padding: 20px 24px; }
-                            .info-label { font-size: 10px; font-weight: 700; color: #1EBAF2; text-transform: uppercase; margin-bottom: 3px; }
+                            .info-label { font-size: 10px; font-weight: 700; color: #139639; text-transform: uppercase; margin-bottom: 3px; }
                             .info-value { font-size: 13px; font-weight: 600; color: #222; margin-bottom: 10px; }
-                            h3 { color: #1EBAF2; font-size: 13px; margin: 16px 0 6px; border-bottom: 2px solid #e0e0e0; padding-bottom: 4px; }
+                            h3 { color: #139639; font-size: 13px; margin: 16px 0 6px; border-bottom: 2px solid #e0e0e0; padding-bottom: 4px; }
                             .text-block { white-space: pre-wrap; border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px 10px; min-height: 32px; font-size: 12px; line-height: 1.6; margin-bottom: 10px; background: #fafafa; }
                             .sig-row { display: flex; gap: 14px; margin-top: 16px; }
-                            .sig-box { flex: 1; border: 1px solid #E51690; border-radius: 8px; padding: 12px; }
-                            .sig-box.blue { border-color: #1EBAF2; }
+                            .sig-box { flex: 1; border: 1px solid #267FBA; border-radius: 8px; padding: 12px; }
+                            .sig-box.blue { border-color: #139639; }
                             .sig-label { font-size: 12px; font-weight: 800; margin-bottom: 6px; }
-                            .sig-label.green { color: #E51690; }
-                            .sig-label.blue { color: #1EBAF2; }
+                            .sig-label.green { color: #267FBA; }
+                            .sig-label.blue { color: #139639; }
                             .sig-img { max-width: 200px; max-height: 70px; display: block; }
                             .sig-placeholder { border: 2px dashed #ccc; border-radius: 6px; min-height: 60px; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 12px; background: #fafafa; }
                         </style>
@@ -1855,12 +1849,12 @@ export const StaffProfilePage = () => {
                                         <div style="flex:1;min-width:180px;"><div class="info-label">Frequency</div><div class="info-value">${d.supervisionFrequency || '-'}</div></div>
                                     </div>
 
-                                    <hr style="border:none;border-top:2px solid #1EBAF2;margin:16px 0;" />
+                                    <hr style="border:none;border-top:2px solid #139639;margin:16px 0;" />
 
                                     ${qaHTML}
 
                                     <!-- Signatures -->
-                                    <div style="border-top:2px solid #E51690;padding-top:16px;margin-top:20px;">
+                                    <div style="border-top:2px solid #267FBA;padding-top:16px;margin-top:20px;">
                                         <div class="sig-row">
                                             <div class="sig-box">
                                                 <div class="sig-label green">Supervisee</div>
@@ -1894,7 +1888,7 @@ export const StaffProfilePage = () => {
             } else {
                 // ── Branded Employment Review Download ──
                 const gradeLabel = (g: string) => g === '4' ? 'Excellent' : g === '3' ? 'Good' : g === '2' ? 'Below Average' : g === '1' ? 'Poor' : '';
-                const gradeColor = (g: string) => g === '4' ? '#E51690' : g === '3' ? '#1EBAF2' : g === '2' ? '#F57C00' : g === '1' ? '#C62828' : '#999';
+                const gradeColor = (g: string) => g === '4' ? '#267FBA' : g === '3' ? '#139639' : g === '2' ? '#F57C00' : g === '1' ? '#C62828' : '#999';
                 const renderGradeCircles = (grade: string) => [1,2,3,4].map(n => {
                     const sel = grade === String(n);
                     return `<span style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;margin-right:6px;font-weight:800;font-size:13px;border:${sel ? 'none' : '1.5px solid #ccc'};background:${sel ? gradeColor(String(n)) : '#f5f5f5'};color:${sel ? '#fff' : '#999'};">${n}</span>`;
@@ -1913,38 +1907,38 @@ export const StaffProfilePage = () => {
                                 .page { width: 210mm; min-height: 297mm; margin: 0; padding: 14mm; }
                             }
                             .page { max-width: 800px; margin: 0 auto; padding: 30px; }
-                            .form-border { border: 3px solid #E51690; border-radius: 12px; overflow: hidden; }
-                            .form-header { background: linear-gradient(135deg, #1EBAF2 0%, #E51690 100%); padding: 22px 28px; display: flex; justify-content: space-between; align-items: center; }
+                            .form-border { border: 3px solid #267FBA; border-radius: 12px; overflow: hidden; }
+                            .form-header { background: linear-gradient(135deg, #139639 0%, #267FBA 100%); padding: 22px 28px; display: flex; justify-content: space-between; align-items: center; }
                             .form-header h1 { color: #fff; font-size: 22px; margin: 0; letter-spacing: 2px; text-transform: uppercase; }
                             .form-header h2 { color: #fff; font-size: 17px; margin: 6px 0 0; font-weight: 800; }
                             .form-header img { height: 55px; border-radius: 50%; background: #fff; padding: 4px; }
                             .form-body { padding: 28px; }
-                            .info-box { border: 1px solid #1EBAF2; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; }
-                            .info-label { font-size: 11px; font-weight: 700; color: #1EBAF2; text-transform: uppercase; margin-bottom: 4px; }
+                            .info-box { border: 1px solid #139639; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; }
+                            .info-label { font-size: 11px; font-weight: 700; color: #139639; text-transform: uppercase; margin-bottom: 4px; }
                             .info-value { font-size: 15px; font-weight: 700; color: #222; }
                             .info-row { display: flex; gap: 14px; }
                             .info-row > div { flex: 1; }
-                            .doc-box { border: 1px solid #E51690; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; background: #f8fdf8; }
-                            .doc-label { font-size: 11px; font-weight: 700; color: #E51690; text-transform: uppercase; margin-bottom: 6px; }
-                            .grade-instruction { background: linear-gradient(135deg, #E3F2FD 0%, #FDE6F4 100%); border: 1px solid #90CAF9; border-radius: 8px; padding: 10px 14px; text-align: center; font-size: 13px; font-weight: 700; color: #1EBAF2; margin-bottom: 16px; }
+                            .doc-box { border: 1px solid #267FBA; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; background: #f8fdf8; }
+                            .doc-label { font-size: 11px; font-weight: 700; color: #267FBA; text-transform: uppercase; margin-bottom: 6px; }
+                            .grade-instruction { background: linear-gradient(135deg, #e3f0f8 0%, #e6f5eb 100%); border: 1px solid #b8d4ea; border-radius: 8px; padding: 10px 14px; text-align: center; font-size: 13px; font-weight: 700; color: #139639; margin-bottom: 16px; }
                             .grade-row { display: flex; gap: 14px; margin-bottom: 14px; }
-                            .grade-item { flex: 1; border: 1px solid #1EBAF2; border-radius: 8px; padding: 12px 14px; }
+                            .grade-item { flex: 1; border: 1px solid #139639; border-radius: 8px; padding: 12px 14px; }
                             .grade-item-label { font-size: 13px; font-weight: 700; color: #333; margin-bottom: 8px; }
-                            .recommend-box { border: 2px solid #1EBAF2; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; }
-                            .recommend-box.yes { border-color: #E51690; background: #f1f8f1; }
+                            .recommend-box { border: 2px solid #139639; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; }
+                            .recommend-box.yes { border-color: #267FBA; background: #f1f8f1; }
                             .recommend-box.no { border-color: #C62828; background: #fff5f5; }
                             .recommend-badge { display: inline-block; padding: 6px 18px; border-radius: 6px; font-weight: 800; font-size: 14px; color: #fff; }
                             .sig-row { display: flex; gap: 14px; margin-top: 16px; }
-                            .sig-box { flex: 1; border: 1px solid #E51690; border-radius: 8px; padding: 14px; }
-                            .sig-box.reviewer { border-color: #1EBAF2; }
+                            .sig-box { flex: 1; border: 1px solid #267FBA; border-radius: 8px; padding: 14px; }
+                            .sig-box.reviewer { border-color: #139639; }
                             .sig-label { font-size: 13px; font-weight: 800; margin-bottom: 8px; }
-                            .sig-label.staff { color: #E51690; }
-                            .sig-label.reviewer { color: #1EBAF2; }
+                            .sig-label.staff { color: #267FBA; }
+                            .sig-label.reviewer { color: #139639; }
                             .sig-img { max-width: 200px; max-height: 80px; display: block; }
                             .sig-placeholder { border: 2px dashed #ccc; border-radius: 6px; min-height: 70px; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 13px; background: #fafafa; }
                             .sig-date { font-size: 11px; color: #888; margin-top: 6px; }
-                            hr.green { border: none; border-top: 2px solid #E51690; margin: 18px 0; }
-                            hr.blue { border: none; border-top: 2px solid #1EBAF2; margin: 18px 0; }
+                            hr.green { border: none; border-top: 2px solid #267FBA; margin: 18px 0; }
+                            hr.blue { border: none; border-top: 2px solid #139639; margin: 18px 0; }
                         </style>
                     </head>
                     <body>
@@ -1977,20 +1971,24 @@ export const StaffProfilePage = () => {
                                         <div class="grade-item">
                                             <div class="grade-item-label">Overall work performance</div>
                                             ${renderGradeCircles(form.jobPerformanceGrade || '')}
+                                            ${form.jobPerformanceReason ? `<div style="margin-top:8px;"><div style="font-size:11px;font-weight:700;color:#139639;margin-bottom:4px;">Comments from the reviewer:</div><div style="font-size:12px;white-space:pre-wrap;border:1px solid #e0e0e0;border-radius:6px;padding:8px;background:#fafafa;">${form.jobPerformanceReason}</div></div>` : ''}
                                         </div>
                                         <div class="grade-item">
                                             <div class="grade-item-label">Progress in training/induction</div>
                                             ${renderGradeCircles(form.trainingDevelopmentGrade || '')}
+                                            ${form.trainingDevelopmentReason ? `<div style="margin-top:8px;"><div style="font-size:11px;font-weight:700;color:#139639;margin-bottom:4px;">Comments from the reviewer:</div><div style="font-size:12px;white-space:pre-wrap;border:1px solid #e0e0e0;border-radius:6px;padding:8px;background:#fafafa;">${form.trainingDevelopmentReason}</div></div>` : ''}
                                         </div>
                                     </div>
                                     <div class="grade-row">
                                         <div class="grade-item">
                                             <div class="grade-item-label">Team-working performance</div>
                                             ${renderGradeCircles(form.communicationSkillsGrade || '')}
+                                            ${form.communicationSkillsReason ? `<div style="margin-top:8px;"><div style="font-size:11px;font-weight:700;color:#139639;margin-bottom:4px;">Comments from the reviewer:</div><div style="font-size:12px;white-space:pre-wrap;border:1px solid #e0e0e0;border-radius:6px;padding:8px;background:#fafafa;">${form.communicationSkillsReason}</div></div>` : ''}
                                         </div>
                                         <div class="grade-item">
                                             <div class="grade-item-label">Attendance performance</div>
                                             ${renderGradeCircles(form.attendancePunctualityGrade || '')}
+                                            ${form.attendancePunctualityReason ? `<div style="margin-top:8px;"><div style="font-size:11px;font-weight:700;color:#139639;margin-bottom:4px;">Comments from the reviewer:</div><div style="font-size:12px;white-space:pre-wrap;border:1px solid #e0e0e0;border-radius:6px;padding:8px;background:#fafafa;">${form.attendancePunctualityReason}</div></div>` : ''}
                                         </div>
                                     </div>
 
@@ -1998,10 +1996,10 @@ export const StaffProfilePage = () => {
 
                                     <div class="recommend-box ${form.recommendedForReview === 'YES' ? 'yes' : form.recommendedForReview === 'NO' ? 'no' : ''}">
                                         <div style="font-size:13px;font-weight:800;color:#333;margin-bottom:8px;">Recommended for further period of review</div>
-                                        <span class="recommend-badge" style="background:${form.recommendedForReview === 'YES' ? '#E51690' : form.recommendedForReview === 'NO' ? '#C62828' : '#999'};">${form.recommendedForReview || 'Not specified'}</span>
+                                        <span class="recommend-badge" style="background:${form.recommendedForReview === 'YES' ? '#267FBA' : form.recommendedForReview === 'NO' ? '#C62828' : '#999'};">${form.recommendedForReview || 'Not specified'}</span>
                                         ${form.reviewReasons ? `
-                                            <div style="margin-top:12px;padding:10px;background:rgba(255,255,255,0.8);border-radius:6px;border-left:3px solid #1EBAF2;">
-                                                <div style="font-size:11px;font-weight:700;color:#1EBAF2;margin-bottom:4px;">State reasons, and period of review:</div>
+                                            <div style="margin-top:12px;padding:10px;background:rgba(255,255,255,0.8);border-radius:6px;border-left:3px solid #139639;">
+                                                <div style="font-size:11px;font-weight:700;color:#139639;margin-bottom:4px;">State reasons, and period of review:</div>
                                                 <div style="font-size:13px;white-space:pre-wrap;">${form.reviewReasons}</div>
                                             </div>
                                         ` : ''}
@@ -2040,48 +2038,14 @@ export const StaffProfilePage = () => {
         }
     };
 
-    const handleSaveVle = async () => {
-        if (!vleCreds.username || !vleCreds.password) {
-            notifications.show({ title: 'Error', message: 'Username and Password are required', color: 'red' });
-            return;
-        }
-
-        setVleLoading(true);
-        try {
-            const token = localStorage.getItem('token');
-            const targetUserId = profile.user?.id || profile.id;
-            await axios.patch(`/api/v1/staff/${targetUserId}/vle-credentials`, vleCreds, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-
-            const refetchRes = await axios.get(`/api/v1/staff/${targetUserId}/vle-credentials`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-
-            if (refetchRes.data.username) {
-                setVleCreds({
-                    username: refetchRes.data.username,
-                    password: refetchRes.data.password || ''
-                });
-            }
-
-            notifications.show({ title: 'Success', message: 'VLE Credentials updated', color: '#E51690' });
-            setIsVleEditing(false);
-        } catch (error) {
-            notifications.show({ title: 'Error', message: 'Failed to update credentials', color: 'red' });
-        } finally {
-            setVleLoading(false);
-        }
-    };
-
-    const handleSaveProfile = async () => {
+    const handleSaveProfile = async (): Promise<boolean> => {
         setSaveLoading(true);
         try {
             const token = localStorage.getItem('token');
             const targetUserId = profile.user?.id || profile.id;
             let endpoint = '/api/v1/staff/me';
 
-            if (localStorage.getItem('role') === 'admin' && targetUserId) {
+            if (hasDashboardAccess() && targetUserId) {
                 endpoint = `/api/v1/staff/${targetUserId}`;
             }
 
@@ -2093,53 +2057,59 @@ export const StaffProfilePage = () => {
                 phoneNumber: profile.phoneNumber,
                 email: profile.email,
                 department: profile.department,
-                employmentStatus: profile.employmentStatus ?? 'Active',
+                employmentStatus: profile.employmentStatus,
                 ilccsNumber: profile.ilccsNumber,
                 lcaNumber: profile.lcaNumber,
+                startDate: profile.startDate || null,
                 inductionDate: profile.inductionDate || null,
                 rapidInductionDate: profile.rapidInductionDate || null,
                 dateOfBirth: profile.dateOfBirth || null,
                 niNumber: profile.niNumber || null,
+                gender: profile.gender?.trim() || null,
+                nextOfKinName: profile.nextOfKinName?.trim() || null,
+                nextOfKinNumber: profile.nextOfKinNumber?.trim() || null,
+                passportNumber: profile.passportNumber?.trim() || null,
+                passportExpiry: profile.passportExpiry || null,
+                isUkNational: profile.isUkNational ?? null,
+                isEeaNational: profile.isEeaNational ?? null,
+                visaType: profile.visaType?.trim() || null,
+                visaOrBrpNumber: profile.visaOrBrpNumber?.trim() || null,
                 townOfBirth: profile.townOfBirth?.trim() || null,
                 countyOfBirth: profile.countyOfBirth?.trim() || null,
+                countryOfBirth: profile.countryOfBirth?.trim() || null,
                 nationalityAtBirth: profile.nationalityAtBirth?.trim() || null,
                 currentNationality: profile.currentNationality?.trim() || null,
+                visaExpiryDate: profile.visaExpiryDate || null,
+                shareCode: profile.shareCode?.trim() || null,
+                rightToWorkStatus: profile.rightToWorkStatus?.trim() || null,
+                shareCodeGeneratedDate: profile.shareCodeGeneratedDate || null,
+                rightToWorkCheckCompleted: profile.rightToWorkCheckCompleted ?? false,
+                rightToWorkCheckDate: profile.rightToWorkCheckCompleted
+                    ? profile.rightToWorkCheckDate || null
+                    : null,
+                rightToWorkCheckExpiryDate: profile.rightToWorkCheckCompleted
+                    ? profile.rightToWorkCheckExpiryDate || null
+                    : null,
             };
 
-            const saveResponse = await axios.put(endpoint, permittedPayload, {
+            await axios.put(endpoint, permittedPayload, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-
-            if (saveResponse.status < 200 || saveResponse.status >= 300) {
-                throw new Error('Save request did not succeed');
-            }
-
-            const savedEmploymentStatus = saveResponse.data?.employmentStatus;
-            if (
-                permittedPayload.employmentStatus != null &&
-                savedEmploymentStatus !== permittedPayload.employmentStatus
-            ) {
-                throw new Error('Employment status was not saved. Please try again.');
-            }
 
             const refetchEndpoint =
                 window.location.pathname.includes('/me') || !id ? '/api/v1/staff/me' : `/api/v1/staff/${id}`;
             const profileRes = await axios.get(refetchEndpoint, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-
-            if (profileRes.status < 200 || profileRes.status >= 300) {
-                throw new Error('Could not confirm saved profile');
-            }
-
             setProfile(profileRes.data);
 
             notifications.show({
                 title: 'Profile Updated',
                 message: 'Your profile changes have been saved successfully.',
-                color: '#E51690',
+                color: '#267FBA',
                 icon: <Check size={16} />,
             });
+            return true;
         } catch (error: any) {
             console.error('Save failed', error);
             
@@ -2179,6 +2149,7 @@ export const StaffProfilePage = () => {
                     color: 'red'
                 });
             }
+            return false;
         } finally {
             setSaveLoading(false);
         }
@@ -2207,7 +2178,7 @@ export const StaffProfilePage = () => {
             headers: { Authorization: `Bearer ${token}` }
         });
         setTrainingRecords(trainingRes.data);
-        notifications.show({ title: 'Updated', message: 'Enrollment date updated', color: '#E51690' });
+        notifications.show({ title: 'Updated', message: 'Enrollment date updated', color: '#267FBA' });
     };
 
     // Called when admin changes date in the cell
@@ -2247,7 +2218,7 @@ export const StaffProfilePage = () => {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            notifications.show({ title: 'Success', message: 'Enrollment removed', color: '#E51690' });
+            notifications.show({ title: 'Success', message: 'Enrollment removed', color: '#267FBA' });
 
             // Refresh
             const trainingRes = await axios.get(`/api/v1/training/staff/${userId}`, {
@@ -2282,7 +2253,7 @@ export const StaffProfilePage = () => {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            notifications.show({ title: 'Success', message: 'Certificate generated successfully.', color: '#E51690' });
+            notifications.show({ title: 'Success', message: 'Certificate generated successfully.', color: '#267FBA' });
 
             // Refresh certificates
             const certResponse = await axios.get(`/api/v1/certificates/staff/${userId}`, {
@@ -2401,7 +2372,7 @@ export const StaffProfilePage = () => {
 
     if (loading) return <Center h="100vh"><Text>Loading Profile...</Text></Center>;
 
-    if (!profile && localStorage.getItem('role') === 'admin' && (window.location.pathname.includes('/me') || !id)) {
+    if (!profile && hasDashboardAccess() && (window.location.pathname.includes('/me') || !id)) {
         return (
             <Center h="100vh">
                 <Stack align="center">
@@ -2421,10 +2392,9 @@ export const StaffProfilePage = () => {
     return (
         <Box p={{ base: 'md', sm: 'lg', md: 'xl' }} bg="#F8F9FA" style={{ minHeight: '100vh', width: '100%', overflowX: 'hidden' }}>
             <style>{`
-                .tab-personal[data-active] { background-color: #E51690 !important; color: white !important; box-shadow: 0 4px 12px rgba(229, 22, 144, 0.3) !important; }
-                .tab-training[data-active] { background-color: #0277BD !important; color: white !important; box-shadow: 0 4px 12px rgba(2, 119, 189, 0.3) !important; }
-                .tab-certificates[data-active] { background-color: #1EBAF2 !important; color: white !important; box-shadow: 0 4px 12px rgba(30, 186, 242, 0.3) !important; }
-                .tab-vle[data-active] { background-color: #F57C00 !important; color: white !important; box-shadow: 0 4px 12px rgba(245, 124, 0, 0.3) !important; }
+                .tab-personal[data-active] { background-color: #139639 !important; color: white !important; box-shadow: 0 4px 12px rgba(19, 150, 57, 0.3) !important; }
+                .tab-training[data-active] { background-color: #267FBA !important; color: white !important; box-shadow: 0 4px 12px rgba(38, 127, 186, 0.3) !important; }
+                .tab-certificates[data-active] { background-color: #267FBA !important; color: white !important; box-shadow: 0 4px 12px rgba(38, 127, 186, 0.3) !important; }
                 .tab-work-performance[data-active] { background-color: #C62828 !important; color: white !important; box-shadow: 0 4px 12px rgba(198, 40, 40, 0.3) !important; }
                 .tab-monthly-report[data-active] { background-color: #00897B !important; color: white !important; box-shadow: 0 4px 12px rgba(0, 137, 123, 0.3) !important; }
             `}</style>
@@ -2435,9 +2405,9 @@ export const StaffProfilePage = () => {
                     radius={24}
                     mb={{ base: 'md', sm: 'lg', md: 'xl' }}
                     style={{
-                        background: 'linear-gradient(135deg, #1EBAF2 0%, #0F7296 100%)',
+                        background: 'linear-gradient(135deg, #139639 0%, #0e7a2d 100%)',
                         border: 'none',
-                        boxShadow: '0 10px 40px rgba(30, 186, 242, 0.3)',
+                        boxShadow: '0 10px 40px rgba(19, 150, 57, 0.3)',
                         position: 'relative',
                         overflow: 'hidden'
                     }}
@@ -2501,7 +2471,7 @@ export const StaffProfilePage = () => {
                                             notifications.show({
                                                 title: 'Success',
                                                 message: 'Profile picture uploaded successfully',
-                                                color: '#E51690'
+                                                color: '#267FBA'
                                             });
                                             
                                             // Refresh profile data
@@ -2555,7 +2525,7 @@ export const StaffProfilePage = () => {
                                                     position: 'absolute',
                                                     bottom: 8,
                                                     right: 8,
-                                                    background: '#1EBAF2',
+                                                    background: '#139639',
                                                     border: '4px solid #005680',
                                                     boxShadow: '0 4px 10px rgba(0,0,0,0.2)',
                                                     cursor: 'pointer'
@@ -2577,7 +2547,7 @@ export const StaffProfilePage = () => {
                                         position: 'absolute',
                                         bottom: 8,
                                         right: 8,
-                                        background: '#E51690',
+                                        background: '#267FBA',
                                         border: '4px solid #005680',
                                         boxShadow: '0 4px 10px rgba(0,0,0,0.2)'
                                     }}
@@ -2614,20 +2584,29 @@ export const StaffProfilePage = () => {
                                         <Briefcase size={20} color="white" />
                                     </ThemeIcon>
                                     <Box>
-                                        <Text size="sm" fw={700} c="white" opacity={0.7} tt="uppercase" style={{ letterSpacing: '0.5px' }}>ILCCS Number</Text>
-                                        <Text size="md" fw={900} c="white">{profile.ilccsNumber || 'N/A'}</Text>
+                                        <Text size="sm" fw={700} c="white" opacity={0.7} tt="uppercase" style={{ letterSpacing: '0.5px' }}>Staff Number</Text>
+                                        <Text size="md" fw={900} c="white">{profile.lcaNumber || 'N/A'}</Text>
                                     </Box>
                                 </Group>
 
                                 <Divider orientation="vertical" color="rgba(255,255,255,0.2)" />
 
                                 <Group gap={10}>
-                                    <ThemeIcon variant="filled" color="rgba(229, 22, 144, 0.8)" size="xl" radius="md">
+                                    <ThemeIcon variant="filled" color="rgba(38, 127, 186, 0.8)" size="xl" radius="md">
                                         <Check size={20} color="white" />
                                     </ThemeIcon>
                                     <Box>
                                         <Text size="sm" fw={700} c="white" opacity={0.7} tt="uppercase" style={{ letterSpacing: '0.5px' }}>Status</Text>
-                                        <Text size="md" fw={900} c="white">{getProfileHeaderStatusLabel(profile?.employmentStatus)}</Text>
+                                        <Group gap="xs">
+                                            <Text size="md" fw={900} c="white">{employmentStatusLabel(profile.employmentStatus)}</Text>
+                                            <Badge
+                                                size="sm"
+                                                color={employmentStatusBadgeColor(profile.employmentStatus)}
+                                                variant="filled"
+                                            >
+                                                {profile.employmentStatus || 'ACTIVE'}
+                                            </Badge>
+                                        </Group>
                                     </Box>
                                 </Group>
                             </Group>
@@ -2673,6 +2652,15 @@ export const StaffProfilePage = () => {
                         >
                             Training Plan
                         </Tabs.Tab>
+                        {canViewInHouseTraining && (
+                        <Tabs.Tab 
+                            value="inhouse-training" 
+                            leftSection={<ClipboardList size={18} />}
+                            className="tab-inhouse-training"
+                        >
+                            In-House Training Plan
+                        </Tabs.Tab>
+                        )}
                         <Tabs.Tab 
                             value="certificates" 
                             leftSection={<FileCheck size={18} />}
@@ -2681,12 +2669,46 @@ export const StaffProfilePage = () => {
                             Certificates
                         </Tabs.Tab>
                         <Tabs.Tab 
-                            value="vle" 
-                            leftSection={<Key size={18} />}
-                            className="tab-vle"
+                            value="dbs" 
+                            leftSection={<Shield size={18} />}
+                            className="tab-dbs"
                         >
-                            VLE Access
+                            DBS
                         </Tabs.Tab>
+                        {canManage && (
+                        <Tabs.Tab 
+                            value="recruitment" 
+                            leftSection={<ClipboardCheck size={18} />}
+                            className="tab-recruitment"
+                        >
+                            Recruitment
+                        </Tabs.Tab>
+                        )}
+                        {canViewHrNotes && (
+                        <Tabs.Tab 
+                            value="hr-notes" 
+                            leftSection={<Lock size={18} />}
+                            className="tab-hr-notes"
+                        >
+                            HR Notes
+                        </Tabs.Tab>
+                        )}
+                        <Tabs.Tab 
+                            value="leave-attendance" 
+                            leftSection={<Calendar size={18} />}
+                            className="tab-leave-attendance"
+                        >
+                            Leave & Attendance
+                        </Tabs.Tab>
+                        {canViewPayroll && (
+                        <Tabs.Tab 
+                            value="payroll" 
+                            leftSection={<Banknote size={18} />}
+                            className="tab-payroll"
+                        >
+                            Payroll
+                        </Tabs.Tab>
+                        )}
                         <Tabs.Tab 
                             value="work-performance" 
                             leftSection={<Briefcase size={18} />}
@@ -2711,17 +2733,48 @@ export const StaffProfilePage = () => {
                         />
                     </Tabs.Panel>
 
+                    <Tabs.Panel value="dbs">
+                        <DbsTab profile={profile} />
+                    </Tabs.Panel>
+
+                    {canManage && (
+                    <Tabs.Panel value="recruitment">
+                        <RecruitmentTab
+                            profile={profile}
+                            onEmploymentStatusChange={(status) =>
+                                setProfile((p: typeof profile) => (p ? { ...p, employmentStatus: status } : p))
+                            }
+                        />
+                    </Tabs.Panel>
+                    )}
+
+                    {canViewHrNotes && (
+                    <Tabs.Panel value="hr-notes">
+                        <HrNotesTab profile={profile} />
+                    </Tabs.Panel>
+                    )}
+
+                    <Tabs.Panel value="leave-attendance">
+                        <LeaveAttendanceTab profile={profile} />
+                    </Tabs.Panel>
+
+                    {canViewPayroll && (
+                    <Tabs.Panel value="payroll">
+                        <PayrollTab profile={profile} />
+                    </Tabs.Panel>
+                    )}
+
                     <Tabs.Panel value="training">
                         <Box mb="xl">
                             <Box 
                                 p="lg" 
                                 mb="md"
                                 style={{ 
-                                    background: 'linear-gradient(135deg, #0277BD 0%, #29B6F6 100%)',
+                                    background: 'linear-gradient(135deg, #267FBA 0%, #1d6a9e 100%)',
                                     borderRadius: '16px',
                                     display: 'inline-block',
                                     minWidth: '100%',
-                                    boxShadow: '0 4px 12px rgba(2, 119, 189, 0.2)'
+                                    boxShadow: '0 4px 12px rgba(38, 127, 186, 0.2)'
                                 }}
                             >
                                 <Group justify="space-between" align="center">
@@ -2782,7 +2835,7 @@ export const StaffProfilePage = () => {
                                 withBorder={false}
                                 style={{ 
                                     background: 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
-                                    boxShadow: '0 4px 20px rgba(30, 186, 242, 0.12)',
+                                    boxShadow: '0 4px 20px rgba(19, 150, 57, 0.12)',
                                 }}
                             >
                                 <Table verticalSpacing="md" style={{ borderCollapse: 'separate', borderSpacing: '0 12px' }}>
@@ -2792,7 +2845,7 @@ export const StaffProfilePage = () => {
                                                 style={{ 
                                                     border: 'none', 
                                                     paddingLeft: 20,
-                                                    background: 'linear-gradient(135deg, #1EBAF2 0%, #0F7296 100%)',
+                                                    background: 'linear-gradient(135deg, #139639 0%, #0e7a2d 100%)',
                                                     color: 'white',
                                                     fontWeight: 800,
                                                     fontSize: '14px',
@@ -2806,7 +2859,7 @@ export const StaffProfilePage = () => {
                                             <Table.Th 
                                                 style={{ 
                                                     border: 'none',
-                                                    background: 'linear-gradient(135deg, #1EBAF2 0%, #0F7296 100%)',
+                                                    background: 'linear-gradient(135deg, #139639 0%, #0e7a2d 100%)',
                                                     color: 'white',
                                                     fontWeight: 800,
                                                     fontSize: '14px',
@@ -2819,7 +2872,7 @@ export const StaffProfilePage = () => {
                                             <Table.Th 
                                                 style={{ 
                                                     border: 'none',
-                                                    background: 'linear-gradient(135deg, #1EBAF2 0%, #0F7296 100%)',
+                                                    background: 'linear-gradient(135deg, #139639 0%, #0e7a2d 100%)',
                                                     color: 'white',
                                                     fontWeight: 800,
                                                     fontSize: '14px',
@@ -2832,7 +2885,7 @@ export const StaffProfilePage = () => {
                                             <Table.Th 
                                                 style={{ 
                                                     border: 'none',
-                                                    background: 'linear-gradient(135deg, #1EBAF2 0%, #0F7296 100%)',
+                                                    background: 'linear-gradient(135deg, #139639 0%, #0e7a2d 100%)',
                                                     color: 'white',
                                                     fontWeight: 800,
                                                     fontSize: '14px',
@@ -2845,7 +2898,7 @@ export const StaffProfilePage = () => {
                                             <Table.Th 
                                                 style={{ 
                                                     border: 'none',
-                                                    background: 'linear-gradient(135deg, #1EBAF2 0%, #0F7296 100%)',
+                                                    background: 'linear-gradient(135deg, #139639 0%, #0e7a2d 100%)',
                                                     color: 'white',
                                                     fontWeight: 800,
                                                     fontSize: '14px',
@@ -2855,27 +2908,24 @@ export const StaffProfilePage = () => {
                                             >
                                                 Status
                                             </Table.Th>
-                                            {selectedTrainingMonth !== 'specialist' && (
                                             <Table.Th 
                                                 style={{ 
                                                     border: 'none',
-                                                    background: 'linear-gradient(135deg, #1EBAF2 0%, #0F7296 100%)',
+                                                    background: 'linear-gradient(135deg, #139639 0%, #0e7a2d 100%)',
                                                     color: 'white',
                                                     fontWeight: 800,
                                                     fontSize: '14px',
                                                     textTransform: 'uppercase',
-                                                    letterSpacing: '0.5px',
-                                                    ...(isAdmin ? {} : { borderRadius: '0 12px 12px 0' })
+                                                    letterSpacing: '0.5px'
                                                 }}
                                             >
                                                 Due
                                             </Table.Th>
-                                            )}
-                                            {isAdmin && (
+                                            {canManage && (
                                                 <Table.Th 
                                                     style={{ 
                                                         border: 'none',
-                                                        background: 'linear-gradient(135deg, #1EBAF2 0%, #0F7296 100%)',
+                                                        background: 'linear-gradient(135deg, #139639 0%, #0e7a2d 100%)',
                                                         color: 'white',
                                                         fontWeight: 800,
                                                         fontSize: '14px',
@@ -2889,7 +2939,7 @@ export const StaffProfilePage = () => {
                                             )}
                                         </Table.Tr>
                                     </Table.Thead>
-                                <Table.Tbody key={selectedTrainingMonth}>
+                                <Table.Tbody>
                                     {allCourses
                                         .filter(course => {
                                             // Use the same filtering logic for both admin and staff
@@ -2900,20 +2950,18 @@ export const StaffProfilePage = () => {
                                             if (filterVal === 'specialist') {
                                                 return course.categories.includes('specialist');
                                             }
+
                                             // 2. Other Filter
                                             if (filterVal === 'other') {
                                                 return course.categories.includes('other');
                                             }
-                                            // 3. Month Filter — NEVER show specialist here
-                                            const cats = Array.isArray(course.categories)
-                                                ? course.categories.map((c: string) => c.trim().toLowerCase())
-                                                : String(course.categories ?? '').split(',').map((c: string) => c.trim().toLowerCase());
-                                            if (cats.includes('specialist') || cats.includes('other')) {
-                                                return false;
-                                            }
+
+                                            // 3. Month Filter (1-12)
+                                            // Must be strictly that month AND (Mandatory OR Additional)
                                             const courseMonth = (course.month || 0).toString();
                                             const isMonthMatch = courseMonth === filterVal;
-                                            const isCategoryMatch = cats.includes('mandatory') || cats.includes('additional');
+                                            const isCategoryMatch = course.categories.includes('mandatory') || course.categories.includes('additional');
+
                                             return isMonthMatch && isCategoryMatch;
                                         })
                                         .flatMap((course) => {
@@ -2926,7 +2974,7 @@ export const StaffProfilePage = () => {
                                                 rowsToRender.push({
                                                     type: 'existing',
                                                     record: record,
-                                                    key: `${course.id}-existing-${record.id || recordIdx}`
+                                                    key: `${course.title}-existing-${record.id || recordIdx}`
                                                 });
                                             });
 
@@ -2938,7 +2986,7 @@ export const StaffProfilePage = () => {
                                                 rowsToRender.push({
                                                     type: 'new',
                                                     record: null,
-                                                    key: `${course.id}-new`
+                                                    key: `${course.title}-new`
                                                 });
                                             }
 
@@ -2951,7 +2999,7 @@ export const StaffProfilePage = () => {
                                                         key={rowItem.key}
                                                         style={{
                                                             background: isCompleted 
-                                                                ? 'linear-gradient(135deg, #FDE6F4 0%, #F1F8F4 100%)'
+                                                                ? 'linear-gradient(135deg, #e6f5eb 0%, #e6f5eb 100%)'
                                                                 : 'linear-gradient(135deg, #FFF3E0 0%, #FFF8F0 100%)',
                                                             borderRadius: 12,
                                                             boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
@@ -3025,7 +3073,7 @@ export const StaffProfilePage = () => {
                                                         {/* UPDATED ENROLLMENT DATE CELL */}
                                                         <Table.Td style={{ border: 'none', verticalAlign: 'middle' }}>
                                                             <DateEditableCell
-                                                                isAdmin={isAdmin}
+                                                                isAdmin={canManage}
                                                                 date={record?.enrollmentDate || record?.createdAt || null}
                                                                 onSave={(newDate) => handleEnrollmentSave(course.title, newDate, course.subModules || [])}
                                                             />
@@ -3034,7 +3082,7 @@ export const StaffProfilePage = () => {
                                                             {/* Only allow setting completion if the record exists */}
                                                             {rowItem.type === 'existing' && (
                                                                 <DateEditableCell
-                                                                    isAdmin={isAdmin}
+                                                                    isAdmin={canManage}
                                                                     date={record?.completedAt || null}
                                                                     onSave={async (newDate) => {
                                                                         const token = localStorage.getItem('token');
@@ -3050,19 +3098,7 @@ export const StaffProfilePage = () => {
                                                                             headers: { Authorization: `Bearer ${token}` }
                                                                         });
                                                                         setTrainingRecords(trainingRes.data);
-                                                                        if (newDate) {
-                                                                            const targetName = record?.subModule || course.title;
-                                                                            const existingCert = certificates.find(c =>
-                                                                                c.courseName === targetName ||
-                                                                                (c.courseName === course.title && c.subModule === record?.subModule)
-                                                                            );
-                                                                            await handleMarkComplete(
-                                                                                { ...course, course: course.title, title: course.title },
-                                                                                existingCert,
-                                                                                record?.subModule ?? null
-                                                                            );
-                                                                        }
-                                                                        notifications.show({ title: 'Updated', message: 'Completion date updated', color: '#E51690' });
+                                                                        notifications.show({ title: 'Updated', message: 'Completion date updated', color: '#267FBA' });
                                                                     }}
                                                                 />
                                                             )}
@@ -3094,7 +3130,6 @@ export const StaffProfilePage = () => {
                                                                 </Badge>
                                                             )}
                                                         </Table.Td>
-                                                        {selectedTrainingMonth !== 'specialist' && (
                                                         <Table.Td style={{ border: 'none', verticalAlign: 'middle' }}>
                                                             <Badge 
                                                                 variant="light" 
@@ -3106,8 +3141,7 @@ export const StaffProfilePage = () => {
                                                                 {course.month === 0 ? 'Specialist/Other' : `Month ${course.month}`}
                                                             </Badge>
                                                         </Table.Td>
-                                                        )}
-                                                        {isAdmin && (
+                                                        {canManage && (
                                                             <Table.Td style={{ border: 'none', verticalAlign: 'middle' }}>
                                                                 {/* Show delete only for existing records */}
                                                                 {rowItem.type === 'existing' && record && (
@@ -3145,6 +3179,12 @@ export const StaffProfilePage = () => {
                         </Box>
                     </Tabs.Panel>
 
+                    {canViewInHouseTraining && (
+                    <Tabs.Panel value="inhouse-training">
+                        <InHouseTrainingTab profile={profile} canEdit={canEditInHouseTraining} />
+                    </Tabs.Panel>
+                    )}
+
                     <Tabs.Panel value="certificates">
                         <Paper p="xl" radius="24px" shadow="xs" bg="white">
                             <Group justify="space-between" mb="xl">
@@ -3162,13 +3202,13 @@ export const StaffProfilePage = () => {
                                 <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
                                     {certificates.filter(c => c.status === 'Completed').map((cert, index) => {
                                         const cardGradients = [
-                                            'linear-gradient(145deg, #1EBAF2 0%, #0F7296 100%)', // Blue
-                                            'linear-gradient(145deg, #E51690 0%, #E51690 100%)'  // Green
+                                            'linear-gradient(145deg, #139639 0%, #0e7a2d 100%)', // Blue
+                                            'linear-gradient(145deg, #267FBA 0%, #267FBA 100%)'  // Green
                                         ];
                                         const bgIdx = index % cardGradients.length;
                                         const bg = cardGradients[bgIdx];
-                                        const shadow = bgIdx === 0 ? 'rgba(30, 186, 242, 0.3)' 
-                                            : 'rgba(229, 22, 144, 0.3)';
+                                        const shadow = bgIdx === 0 ? 'rgba(19, 150, 57, 0.3)' 
+                                            : 'rgba(38, 127, 186, 0.3)';
 
                                         return (
                                             <Paper
@@ -3271,13 +3311,10 @@ export const StaffProfilePage = () => {
                                     {/* 1. MANDATORY & ADDITIONAL SECTION (Grouped by Month 1-12) */}
                                     {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(month => {
                                         // UPDATED: Include BOTH Mandatory AND Additional categories
-                                        const monthCourses = allCourses.filter(c => {
-                                            const cats = Array.isArray(c.categories)
-                                                ? c.categories
-                                                : String(c.categories ?? '').split(',').map((x: string) => x.trim()).filter(Boolean);
-                                            if (cats.includes('specialist')) return false;
-                                            return (cats.includes('mandatory') || cats.includes('additional')) && c.month === month;
-                                        });
+                                        const monthCourses = allCourses.filter(c =>
+                                            (c.categories.includes('mandatory') || c.categories.includes('additional')) &&
+                                            c.month === month
+                                        );
 
                                         if (monthCourses.length === 0) return null;
 
@@ -3376,6 +3413,7 @@ export const StaffProfilePage = () => {
                                                                     onComplete={() => openConfirmation('Confirm Completion', `Mark '${targetName}' as complete?`, () => handleMarkComplete({ title: record.courseName, provider: 'Internal', month: 0 }, certificate, record.subModule))}
                                                                     onIncomplete={() => openConfirmation('Revert Status', `Mark '${targetName}' as incomplete?`, () => handleMarkIncomplete(certificate?.id))}
                                                                     isAdmin={isAdmin}
+                                                                    canMutateCerts={canManage}
                                                                 />
                                                             );
                                                         })}
@@ -3453,6 +3491,10 @@ export const StaffProfilePage = () => {
                                                                 communicationSkillsReason: '',
                                                                 attendancePunctualityGrade: '',
                                                                 attendancePunctualityReason: '',
+                                                                reviewerCommentOverallWork: '',
+                                                                reviewerCommentProgressTraining: '',
+                                                                reviewerCommentTeamWorking: '',
+                                                                reviewerCommentAttendance: '',
                                                                 recommendedForReview: '',
                                                                 reviewReasons: '',
                                                                 careStaffSignature: '',
@@ -3498,6 +3540,7 @@ export const StaffProfilePage = () => {
                                             onDownload={handleReviewFormDownload}
                                             onView={handleReviewFormView}
                                             isAdmin={isAdmin}
+                                            canDelete={canManage}
                                         />
                                     </Tabs.Panel>
 
@@ -3524,7 +3567,8 @@ export const StaffProfilePage = () => {
                                                                     appraisalDate: new Date().toISOString().split('T')[0],
                                                                     keyResponsibilities: '', partsDoneWell: '', difficulties: '',
                                                                     supportFromManager: '', trainingNeeded: '', complianceResponsibilities: '',
-                                                                    dbsChanges: '', relationshipWithManagers: '', relationshipWithCoworkers: '',
+                                                                    relationshipWithManagers: '', relationshipWithCoworkers: '',
+                                                                    reviewerComments1: '', reviewerComments2: '', reviewerComments3: '',
                                                                     careerGoals2Years: '', careerGoals5Years: '', otherPoints: '', supportNeeded: '',
                                                                     capabilityScores: {}, newRoleRequirements: '', newRoleCapabilities: {},
                                                                     objectives: [{ objective: '', measure: '', score: '' }],
@@ -3538,8 +3582,6 @@ export const StaffProfilePage = () => {
                                                                     improvementDetails: '', developmentTraining: '',
                                                                     training1: '', training1How: '', training2: '', training2How: '', training3: '', training3How: '',
                                                                     jobDescriptionChanges: '', interviewNotes: '',
-                                                                    achievements: '', areasForImprovement: '', careerDevelopment: '',
-                                                                    trainingSessionsAgreed: '', developmentalAreas: '', performanceGrade: '',
                                                                     appraiseeComments: '', appraiseeSignature: '', appraiserSignature: '',
                                                                     signatureDate: new Date().toISOString().split('T')[0],
                                                                     actionPlanName: profile ? `${profile.firstName || ''} ${profile.lastName || ''}`.trim() : '',
@@ -3559,6 +3601,8 @@ export const StaffProfilePage = () => {
                                                                     trainingDevelopmentGrade: '', trainingDevelopmentReason: '',
                                                                     communicationSkillsGrade: '', communicationSkillsReason: '',
                                                                     attendancePunctualityGrade: '', attendancePunctualityReason: '',
+                                                                    reviewerCommentOverallWork: '', reviewerCommentProgressTraining: '',
+                                                                    reviewerCommentTeamWorking: '', reviewerCommentAttendance: '',
                                                                     recommendedForReview: '', reviewReasons: '',
                                                                     careStaffSignature: '', careStaffDate: '',
                                                                     reviewerSignature: '', reviewerDate: '',
@@ -3591,6 +3635,7 @@ export const StaffProfilePage = () => {
                                             onDownload={handleReviewFormDownload}
                                             onView={handleReviewFormView}
                                             isAdmin={isAdmin}
+                                            canDelete={canManage}
                                         />
                                     </Tabs.Panel>
 
@@ -3623,6 +3668,8 @@ export const StaffProfilePage = () => {
                                                                 trainingDevelopmentGrade: '', trainingDevelopmentReason: '',
                                                                 communicationSkillsGrade: '', communicationSkillsReason: '',
                                                                 attendancePunctualityGrade: '', attendancePunctualityReason: '',
+                                                                reviewerCommentOverallWork: '', reviewerCommentProgressTraining: '',
+                                                                reviewerCommentTeamWorking: '', reviewerCommentAttendance: '',
                                                                 recommendedForReview: '', reviewReasons: '',
                                                                 careStaffSignature: '', careStaffDate: '',
                                                                 reviewerSignature: '', reviewerDate: '',
@@ -3653,8 +3700,10 @@ export const StaffProfilePage = () => {
                                             onDownload={handleReviewFormDownload}
                                             onView={handleReviewFormView}
                                             isAdmin={isAdmin}
+                                            canDelete={canManage}
                                         />
                                     </Tabs.Panel>
+
                                 </Tabs>
                             </Stack>
                         </Paper>
@@ -3779,7 +3828,7 @@ export const StaffProfilePage = () => {
                                                         style={{ width: 150 }}
                                                     />
                                                     <Group gap="sm">
-                                                        {isAdmin && (
+                                                        {canManage && (
                                                             <Button
                                                                 leftSection={<Download size={18} />}
                                                                 onClick={handleDownloadMonthlyReport}
@@ -3820,7 +3869,7 @@ export const StaffProfilePage = () => {
                                                         leftSection={<Calendar size={18} />}
                                                     />
                                                     <Group gap="sm">
-                                                        {isAdmin && (
+                                                        {canManage && (
                                                             <Button
                                                                 leftSection={<Download size={18} />}
                                                                 onClick={handleDownloadYearlyReport}
@@ -3852,7 +3901,7 @@ export const StaffProfilePage = () => {
                                                 </Text>
                                                 <Group align="flex-end" gap="md" wrap="wrap">
                                                     <Group gap="sm">
-                                                        {isAdmin && (
+                                                        {canManage && (
                                                             <Button
                                                                 leftSection={<Download size={18} />}
                                                                 onClick={handleDownloadEnrollmentReport}
@@ -3860,10 +3909,10 @@ export const StaffProfilePage = () => {
                                                                 variant="filled"
                                                                 size="md"
                                                                 style={{
-                                                                    background: 'linear-gradient(135deg, #E51690 0%, #E51690 100%)',
+                                                                    background: 'linear-gradient(135deg, #267FBA 0%, #267FBA 100%)',
                                                                     color: 'white',
                                                                     fontWeight: 700,
-                                                                    boxShadow: '0 4px 12px rgba(229, 22, 144, 0.3)',
+                                                                    boxShadow: '0 4px 12px rgba(38, 127, 186, 0.3)',
                                                                 }}
                                                             >
                                                                 Download Report
@@ -3877,252 +3926,6 @@ export const StaffProfilePage = () => {
                                 </Tabs>
                             </Stack>
                         </Box>
-                    </Tabs.Panel>
-
-
-                    <Tabs.Panel value="vle">
-                        <Center>
-                            <Box maw={550} style={{ position: 'relative' }}>
-                                {isAdmin && (
-                                    <Box style={{ position: 'absolute', top: 20, right: 20, zIndex: 10 }}>
-                                        {isVleEditing ? (
-                                            <Button
-                                                size="xs"
-                                                variant="filled"
-                                                style={{
-                                                    background: 'rgba(198, 40, 40, 0.9)',
-                                                    color: 'white',
-                                                    fontWeight: 700
-                                                }}
-                                                leftSection={<X size={14} />}
-                                                onClick={(e) => {
-                                                    e.preventDefault();
-                                                    setIsVleEditing(false);
-                                                    setVleCreds(prev => ({ ...prev, password: '•'.repeat(8) }));
-                                                }}
-                                            >
-                                                Cancel
-                                            </Button>
-                                        ) : (
-                                            <Button
-                                                size="xs"
-                                                variant="filled"
-                                                style={{
-                                                    background: 'rgba(255, 255, 255, 0.2)',
-                                                    border: '1px solid rgba(255, 255, 255, 0.3)',
-                                                    color: 'white',
-                                                    fontWeight: 700,
-                                                    backdropFilter: 'blur(4px)'
-                                                }}
-                                                leftSection={<Edit size={14} />}
-                                                onClick={() => {
-                                                    setIsVleEditing(true);
-                                                    setVleCreds(prev => ({ ...prev, password: '' }));
-                                                }}
-                                            >
-                                                Edit Credentials
-                                            </Button>
-                                        )}
-                                    </Box>
-                                )}
-
-                                <Paper
-                                    p={0}
-                                    radius="24"
-                                    withBorder={false}
-                                    style={{
-                                        overflow: 'hidden',
-                                        transition: 'all 0.2s ease',
-                                        background: 'linear-gradient(145deg, #E51690 0%, #E51690 100%)',
-                                        boxShadow: '0 10px 40px rgba(229, 22, 144, 0.3)',
-                                        position: 'relative'
-                                    }}
-                                    onMouseEnter={(e) => {
-                                        e.currentTarget.style.transform = 'translateY(-6px)';
-                                        e.currentTarget.style.boxShadow = '0 20px 50px rgba(229, 22, 144, 0.3)';
-                                    }}
-                                    onMouseLeave={(e) => {
-                                        e.currentTarget.style.transform = 'translateY(0)';
-                                        e.currentTarget.style.boxShadow = '0 10px 40px rgba(229, 22, 144, 0.3)';
-                                    }}
-                                >
-                                    {/* Decorative Circles */}
-                                    <Box style={{ position: 'absolute', top: -40, right: -40, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.05)', pointerEvents: 'none' }} />
-                                    <Box style={{ position: 'absolute', bottom: -40, left: -20, width: 140, height: 140, borderRadius: '50%', background: 'rgba(255,255,255,0.05)', pointerEvents: 'none' }} />
-
-                                    <Box p="xl" style={{ position: 'relative', zIndex: 1 }}>
-                                        <Stack align="center" gap="lg" ta="center">
-                                            <ThemeIcon 
-                                                variant="filled"
-                                                size={56}
-                                                radius="md"
-                                                style={{
-                                                    background: 'rgba(0, 0, 0, 0.25)',
-                                                    backdropFilter: 'blur(4px)',
-                                                    border: '1px solid rgba(255, 255, 255, 0.25)',
-                                                    boxShadow: 'inset 0 4px 12px rgba(0,0,0,0.1), 0 8px 24px rgba(0,0,0,0.15)',
-                                                }}
-                                            >
-                                                <Key size={24} color="white" />
-                                            </ThemeIcon>
-
-                                            <Box>
-                                                <Text size="xl" fw={900} c="white" tt="uppercase" style={{ letterSpacing: '1px' }}>
-                                                    VLE Portal Credentials
-                                                </Text>
-                                                <Text size="sm" c="rgba(255,255,255,0.9)" mt={8} fw={500}>
-                                                    Your access details for the Virtual Learning Environment at
-                                                    <b> Inspire London College</b>.
-                                                </Text>
-                                            </Box>
-
-                                            <Stack gap="md" w="100%">
-                                                <Box ta="left">
-                                                    <Text size="xs" fw={800} c="white" opacity={0.9} tt="uppercase" mb={8} ml={4}>ILC Username</Text>
-                                                    {isVleEditing ? (
-                                                        <TextInput
-                                                            value={vleCreds.username}
-                                                            onChange={(e) => setVleCreds({ ...vleCreds, username: e.target.value })}
-                                                            radius="md"
-                                                            variant="default"
-                                                            styles={{
-                                                                input: {
-                                                                    background: 'white',
-                                                                    fontWeight: 600
-                                                                }
-                                                            }}
-                                                        />
-                                                    ) : (
-                                                        <Paper px="xl" py="md" radius="md" style={{ background: 'rgba(0, 0, 0, 0.15)', border: '1px solid rgba(255, 255, 255, 0.2)' }}>
-                                                            <Text fw={800} c="white">{vleCreds.username || 'Not Assigned'}</Text>
-                                                        </Paper>
-                                                    )}
-                                                </Box>
-
-                                                <Box ta="left">
-                                                    <Text size="xs" fw={800} c="white" opacity={0.9} tt="uppercase" mb={8} ml={4}>ILC Password</Text>
-                                                    {isVleEditing ? (
-                                                        <TextInput
-                                                            value={vleCreds.password}
-                                                            onChange={(e) => setVleCreds({ ...vleCreds, password: e.target.value })}
-                                                            radius="md"
-                                                            variant="default"
-                                                            placeholder="Enter new password"
-                                                            styles={{
-                                                                input: {
-                                                                    background: 'white',
-                                                                    fontWeight: 600
-                                                                }
-                                                            }}
-                                                            rightSection={
-                                                                <ActionIcon variant="subtle" color="gray" onClick={() => setShowPassword(!showPassword)}>
-                                                                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                                                                </ActionIcon>
-                                                            }
-                                                            type={showPassword ? "text" : "password"}
-                                                        />
-                                                    ) : (
-                                                        <TextInput
-                                                            value={vleCreds.password}
-                                                            readOnly
-                                                            variant="filled"
-                                                            radius="md"
-                                                            styles={{ 
-                                                                input: { 
-                                                                    fontSize: 18, 
-                                                                    fontWeight: 700,
-                                                                    background: 'rgba(0, 0, 0, 0.15)',
-                                                                    border: '1px solid rgba(255, 255, 255, 0.2)',
-                                                                    color: 'white'
-                                                                } 
-                                                            }}
-                                                            rightSection={
-                                                                <ActionIcon 
-                                                                    variant="subtle" 
-                                                                    style={{ color: 'white' }}
-                                                                    onClick={() => setShowPassword(!showPassword)}
-                                                                >
-                                                                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                                                                </ActionIcon>
-                                                            }
-                                                            type={showPassword ? "text" : "password"}
-                                                        />
-                                                    )}
-                                                </Box>
-
-                                                {isVleEditing && (
-                                                    <Button
-                                                        fullWidth
-                                                        variant="filled"
-                                                        style={{
-                                                            background: 'rgba(255, 255, 255, 0.2)',
-                                                            border: '1px solid rgba(255, 255, 255, 0.3)',
-                                                            color: 'white',
-                                                            fontWeight: 700,
-                                                            backdropFilter: 'blur(4px)'
-                                                        }}
-                                                        leftSection={<Save size={18} />}
-                                                        onClick={handleSaveVle}
-                                                        loading={vleLoading}
-                                                    >
-                                                        Save Credentials
-                                                    </Button>
-                                                )}
-
-                                                <Divider 
-                                                    my="md" 
-                                                    label={
-                                                        <Text c="white" opacity={0.9} fw={700} size="sm">
-                                                            Training Access
-                                                        </Text>
-                                                    } 
-                                                    labelPosition="center"
-                                                    styles={{
-                                                        label: {
-                                                            background: 'linear-gradient(145deg, #E51690 0%, #E51690 100%)',
-                                                            padding: '0 12px'
-                                                        },
-                                                        root: {
-                                                            '&::before, &::after': {
-                                                                borderColor: 'rgba(255, 255, 255, 0.3)'
-                                                            }
-                                                        }
-                                                    }}
-                                                />
-
-                                                <Button
-                                                    component="a"
-                                                    href="https://vle.inspirelondoncollege.com/login/index.php"
-                                                    target="_blank"
-                                                    fullWidth
-                                                    size="lg"
-                                                    radius="xl"
-                                                    variant="filled"
-                                                    style={{
-                                                        background: 'rgba(255, 255, 255, 0.2)',
-                                                        border: '1px solid rgba(255, 255, 255, 0.3)',
-                                                        color: 'white',
-                                                        fontWeight: 700,
-                                                        backdropFilter: 'blur(4px)',
-                                                        height: 56
-                                                    }}
-                                                    leftSection={<ExternalLink size={20} />}
-                                                    styles={{
-                                                        root: {
-                                                            '&:hover': {
-                                                                backgroundColor: 'rgba(255, 255, 255, 0.3) !important'
-                                                            }
-                                                        }
-                                                    }}
-                                                >
-                                                    Launch Learning Portal
-                                                </Button>
-                                            </Stack>
-                                        </Stack>
-                                    </Box>
-                                </Paper>
-                            </Box>
-                        </Center>
                     </Tabs.Panel>
                 </Tabs>
             </Container>
@@ -4171,7 +3974,7 @@ export const StaffProfilePage = () => {
                 }}
                 title={
                     <Group>
-                        <ShieldCheck size={20} color="#E51690" />
+                        <ShieldCheck size={20} color="#267FBA" />
                         <Text fw={700} c="dark.4">Secure Certificate Viewer</Text>
                     </Group>
                 }
@@ -4238,7 +4041,7 @@ export const StaffProfilePage = () => {
                                         CONFIDENTIAL - PREVIEW ONLY
                                     </Text>
                                     <Text fz={30} fw={700} c="gray" style={{ transform: 'rotate(-45deg)' }}>
-                                        Staff: {staffName} | ID: {profile?.ilccsNumber || 'LCA'}
+                                        Staff: {staffName} | ID: {profile?.lcaNumber || profile?.ilccsNumber || 'N/A'}
                                     </Text>
                                     <Text fz={20} fw={500} c="gray" style={{ transform: 'rotate(-45deg)', mt: 100 }}>
                                         {new Date().toLocaleString()}
@@ -4361,12 +4164,15 @@ export const StaffProfilePage = () => {
                                 setReferenceLoading(true);
                                 try {
                                     const token = localStorage.getItem('token');
-                                    const targetUserId = profile?.user?.id || profile?.id || id;
+                                    const targetStaffId = profile?.id;
+                                    if (!targetStaffId) {
+                                        throw new Error('Staff profile ID not found');
+                                    }
                                     
                                     const response = await axios.post(
                                         '/api/v1/references/send',
                                         {
-                                            staffId: targetUserId,
+                                            staffId: targetStaffId,
                                             referenceType: 'professional',
                                             name: referenceFormData.name,
                                             email: referenceFormData.email,
@@ -4384,7 +4190,7 @@ export const StaffProfilePage = () => {
                                         notifications.show({
                                             title: 'Success',
                                             message: 'Reference request sent successfully. The referee will receive an email with a secure link to complete the form.',
-                                            color: '#E51690',
+                                            color: '#267FBA',
                                         });
                                         setProfessionalRefModal(false);
                                         setReferenceFormData({
@@ -4398,12 +4204,13 @@ export const StaffProfilePage = () => {
                                             notes: ''
                                         });
                                         // Refresh references list if needed
+                                        const targetUserId = profile?.user?.id || id;
                                         if (targetUserId) {
                                             try {
                                                 const refsResponse = await axios.get(`/api/v1/staff/${targetUserId}/references`, {
                                                     headers: { Authorization: `Bearer ${token}` }
                                                 });
-                                                // Update references state if it exists
+                                                setReferences(refsResponse.data || []);
                                             } catch (err) {
                                                 console.error('Failed to refresh references:', err);
                                             }
@@ -4506,12 +4313,15 @@ export const StaffProfilePage = () => {
                                 setReferenceLoading(true);
                                 try {
                                     const token = localStorage.getItem('token');
-                                    const targetUserId = profile?.user?.id || profile?.id || id;
+                                    const targetStaffId = profile?.id;
+                                    if (!targetStaffId) {
+                                        throw new Error('Staff profile ID not found');
+                                    }
                                     
                                     const response = await axios.post(
                                         '/api/v1/references/send',
                                         {
-                                            staffId: targetUserId,
+                                            staffId: targetStaffId,
                                             referenceType: 'personal',
                                             name: referenceFormData.name,
                                             email: referenceFormData.email,
@@ -4529,7 +4339,7 @@ export const StaffProfilePage = () => {
                                         notifications.show({
                                             title: 'Success',
                                             message: 'Reference request sent successfully. The referee will receive an email with a secure link to complete the form.',
-                                            color: '#E51690',
+                                            color: '#267FBA',
                                         });
                                         setPersonalRefModal(false);
                                         setReferenceFormData({
@@ -4543,12 +4353,13 @@ export const StaffProfilePage = () => {
                                             notes: ''
                                         });
                                         // Refresh references list if needed
+                                        const targetUserId = profile?.user?.id || id;
                                         if (targetUserId) {
                                             try {
                                                 const refsResponse = await axios.get(`/api/v1/staff/${targetUserId}/references`, {
                                                     headers: { Authorization: `Bearer ${token}` }
                                                 });
-                                                // Update references state if it exists
+                                                setReferences(refsResponse.data || []);
                                             } catch (err) {
                                                 console.error('Failed to refresh references:', err);
                                             }
@@ -4583,10 +4394,38 @@ export const StaffProfilePage = () => {
                 styles={{ header: { display: 'none' }, body: { padding: 0 } }}
             >
                 <ScrollArea h="100vh" p="md">
-                    <Box maw={900} mx="auto" pb={60}>
-                        <Paper p={0} radius="lg" withBorder style={{ border: '3px solid #E51690', overflow: 'hidden' }}>
+                    <Box
+                        style={{
+                            position: 'sticky',
+                            top: 0,
+                            zIndex: 100,
+                            background: 'white',
+                            borderBottom: '1px solid #e9ecef',
+                            padding: '12px 20px',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginBottom: 16,
+                        }}
+                    >
+                        <Text fw={700} size="lg">{reviewFormSubType} Supervision</Text>
+                        <ActionIcon
+                            variant="subtle"
+                            color="gray"
+                            size="lg"
+                            onClick={() => {
+                                setSupervisionFormModal(false);
+                                setIsViewMode(false);
+                                setEditingReviewFormId(null);
+                            }}
+                        >
+                            <X size={20} />
+                        </ActionIcon>
+                    </Box>
+                    <Box p="xl" pb={60}>
+                        <Paper p={0} radius="lg" withBorder style={{ border: '3px solid #267FBA', overflow: 'hidden' }}>
                             {/* Header */}
-                            <Box style={{ background: 'linear-gradient(135deg, #1EBAF2 0%, #E51690 100%)', padding: '22px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Box style={{ background: 'linear-gradient(135deg, #139639 0%, #267FBA 100%)', padding: '22px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <Box>
                                     <Text size="xl" fw={900} c="white" tt="uppercase" style={{ letterSpacing: '2px' }}>Lets Care All</Text>
                                     <Text size="lg" fw={800} c="white" mt={4}>One to One Supervision Recording Form</Text>
@@ -4614,7 +4453,7 @@ export const StaffProfilePage = () => {
                                         onChange={e => setReviewFormData(p => ({ ...p, supervisionFrequency: e.target.value }))} />
                                 </SimpleGrid>
 
-                                <Box style={{ borderTop: '2px solid #1EBAF2' }} pt="lg">
+                                <Box style={{ borderTop: '2px solid #139639' }} pt="lg">
                                     {/* ── 1st Year 6th Month Questions ── */}
                                     {reviewFormSubType === '1st Year 6th Month' && (
                                         <>
@@ -4670,7 +4509,7 @@ export const StaffProfilePage = () => {
                                     )}
 
                                     {/* ── Common fields for both ── */}
-                                    <Box style={{ borderTop: '2px solid #E51690' }} pt="lg" mt="lg">
+                                    <Box style={{ borderTop: '2px solid #267FBA' }} pt="lg" mt="lg">
                                         <Textarea label="Feedback from supervisor" autosize minRows={3} mb="md"
                                             value={reviewFormData.supervisorFeedback} readOnly={isViewMode && !isAdmin}
                                             onChange={e => setReviewFormData(p => ({ ...p, supervisorFeedback: e.target.value }))} />
@@ -4683,10 +4522,10 @@ export const StaffProfilePage = () => {
                                     </Box>
 
                                     {/* ── Signatures ── */}
-                                    <Box style={{ borderTop: '2px solid #1EBAF2' }} pt="lg" mt="lg">
+                                    <Box style={{ borderTop: '2px solid #139639' }} pt="lg" mt="lg">
                                         <SimpleGrid cols={2}>
-                                            <Paper withBorder p="md" radius="md" style={{ borderColor: '#E51690', background: !isAdmin ? '#f0fff4' : 'white' }}>
-                                                <Text fw={700} size="sm" c="#E51690" mb={4}>Supervisee</Text>
+                                            <Paper withBorder p="md" radius="md" style={{ borderColor: '#267FBA', background: !isAdmin ? '#f0fff4' : 'white' }}>
+                                                <Text fw={700} size="sm" c="#267FBA" mb={4}>Supervisee</Text>
                                                 <TextInput label="Name" size="sm" mb="xs" value={reviewFormData.superviseeName} readOnly />
                                                 {!isAdmin ? (
                                                     <>
@@ -4703,7 +4542,7 @@ export const StaffProfilePage = () => {
                                                                         { careStaffSignature: sig, careStaffDate: today },
                                                                         { headers: { Authorization: `Bearer ${token}` } }
                                                                     );
-                                                                    notifications.show({ title: 'Signed', message: 'Your signature has been saved.', color: '#E51690' });
+                                                                    notifications.show({ title: 'Signed', message: 'Your signature has been saved.', color: '#267FBA' });
                                                                     const targetUserId = profile?.user?.id || profile?.id || id;
                                                                     const reviewFormsRes = await axios.get(`/api/v1/staff/${targetUserId}/review-forms`, { headers: { Authorization: `Bearer ${token}` } });
                                                                     setReviewForms(reviewFormsRes.data);
@@ -4712,7 +4551,7 @@ export const StaffProfilePage = () => {
                                                                 }
                                                             }} />
                                                         {!reviewFormData.superviseeSignature && (
-                                                            <Text size="xs" c="#E51690" fw={600} mt={4} ta="center">👆 Tap above to open the signature pad</Text>
+                                                            <Text size="xs" c="#267FBA" fw={600} mt={4} ta="center">👆 Tap above to open the signature pad</Text>
                                                         )}
                                                     </>
                                                 ) : (
@@ -4726,8 +4565,8 @@ export const StaffProfilePage = () => {
                                                     readOnly={isViewMode && !isAdmin}
                                                     onChange={e => setReviewFormData(p => ({ ...p, superviseeSignatureDate: e.target.value }))} />
                                             </Paper>
-                                            <Paper withBorder p="md" radius="md" style={{ borderColor: '#1EBAF2' }}>
-                                                <Text fw={700} size="sm" c="#1EBAF2" mb={4}>Supervisor</Text>
+                                            <Paper withBorder p="md" radius="md" style={{ borderColor: '#139639' }}>
+                                                <Text fw={700} size="sm" c="#139639" mb={4}>Supervisor</Text>
                                                 <TextInput label="Name" size="sm" mb="xs" value={reviewFormData.supervisorName} readOnly />
                                                 {isAdmin ? (
                                                     <SignaturePad label="Supervisor Signature" value={reviewFormData.supervisorSignature}
@@ -4763,7 +4602,7 @@ export const StaffProfilePage = () => {
                             {(isAdmin || (!isAdmin && isViewMode)) && (
                                 <Button
                                     loading={reviewFormLoading}
-                                    style={{ background: 'linear-gradient(135deg, #1EBAF2 0%, #E51690 100%)' }}
+                                    style={{ background: 'linear-gradient(135deg, #139639 0%, #267FBA 100%)' }}
                                     onClick={async () => {
                                         if (!reviewFormData.superviseeName || !reviewFormData.supervisionDate) {
                                             notifications.show({ title: 'Validation', message: 'Please fill in required fields', color: 'red' });
@@ -4814,11 +4653,11 @@ export const StaffProfilePage = () => {
                                             if (editingReviewFormId) {
                                                 await axios.put(`/api/v1/staff/review-forms/${editingReviewFormId}`, supervisionPayload,
                                                     { headers: { Authorization: `Bearer ${token}` } });
-                                                notifications.show({ title: 'Updated', message: 'Supervision form updated', color: '#E51690' });
+                                                notifications.show({ title: 'Updated', message: 'Supervision form updated', color: '#267FBA' });
                                             } else {
                                                 await axios.post(`/api/v1/staff/${targetUserId}/review-forms`, supervisionPayload,
                                                     { headers: { Authorization: `Bearer ${token}` } });
-                                                notifications.show({ title: 'Saved', message: 'Supervision form saved', color: '#E51690' });
+                                                notifications.show({ title: 'Saved', message: 'Supervision form saved', color: '#267FBA' });
                                             }
                                             const reviewFormsRes = await axios.get(`/api/v1/staff/${targetUserId}/review-forms`,
                                                 { headers: { Authorization: `Bearer ${token}` } });
@@ -4866,10 +4705,42 @@ export const StaffProfilePage = () => {
                 styles={{ header: { display: 'none' }, body: { padding: 0 } }}
             >
                 <ScrollArea h="100vh" p="md">
-                    <Box maw={900} mx="auto" pb={60}>
+                    <Box
+                        style={{
+                            position: 'sticky',
+                            top: 0,
+                            zIndex: 100,
+                            background: 'white',
+                            borderBottom: '1px solid #e9ecef',
+                            padding: '12px 20px',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginBottom: 16,
+                        }}
+                    >
+                        <Text fw={700} size="lg">
+                            {reviewFormSubType === 'Second Year Appraisal'
+                                ? 'Second Year Appraisal'
+                                : 'First Year Appraisal'}
+                        </Text>
+                        <ActionIcon
+                            variant="subtle"
+                            color="gray"
+                            size="lg"
+                            onClick={() => {
+                                setFirstYearAppraisalModal(false);
+                                setIsViewMode(false);
+                                setEditingAppraisalFormId(null);
+                            }}
+                        >
+                            <X size={20} />
+                        </ActionIcon>
+                    </Box>
+                    <Box p="xl" pb={60}>
                         {/* ── Branded header ── */}
-                        <Paper p={0} radius="lg" withBorder style={{ border: '3px solid #E51690', overflow: 'hidden' }}>
-                            <Box style={{ background: 'linear-gradient(135deg, #1EBAF2 0%, #E51690 100%)', padding: '22px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Paper p={0} radius="lg" withBorder style={{ border: '3px solid #267FBA', overflow: 'hidden' }}>
+                            <Box style={{ background: 'linear-gradient(135deg, #139639 0%, #267FBA 100%)', padding: '22px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <Box>
                                     <Text size="xl" fw={900} c="white" tt="uppercase" style={{ letterSpacing: '2px' }}>Lets Care All</Text>
                                     <Text size="lg" fw={800} c="white" mt={4}>
@@ -4908,18 +4779,20 @@ export const StaffProfilePage = () => {
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, partsDoneWell: e.target.value }))} />
 
                                 {/* ── Objectives table ── */}
-                                <Text fw={700} size="sm" mb="xs" mt="lg" c="#1EBAF2">
+                                <Text fw={700} size="sm" mb="xs" mt="lg" c="#139639">
                                     List the objectives you set out to achieve (Objective / Measure / Score 1–5)
                                 </Text>
                                 {(firstYearAppraisalData.objectives || []).map((obj, idx) => (
                                     <SimpleGrid cols={3} key={idx} mb="xs">
-                                        <TextInput placeholder="Objective" value={obj.objective} readOnly={isViewMode && !isAdmin}
+                                        <Textarea placeholder="Objective" value={obj.objective} readOnly={isViewMode && !isAdmin}
+                                            autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                             onChange={e => {
                                                 const updated = [...firstYearAppraisalData.objectives];
                                                 updated[idx] = { ...updated[idx], objective: e.target.value };
                                                 setFirstYearAppraisalData(p => ({ ...p, objectives: updated }));
                                             }} />
-                                        <TextInput placeholder="Measure/Standard" value={obj.measure} readOnly={isViewMode && !isAdmin}
+                                        <Textarea placeholder="Measure/Standard" value={obj.measure} readOnly={isViewMode && !isAdmin}
+                                            autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                             onChange={e => {
                                                 const updated = [...firstYearAppraisalData.objectives];
                                                 updated[idx] = { ...updated[idx], measure: e.target.value };
@@ -4942,7 +4815,7 @@ export const StaffProfilePage = () => {
                                 )}
 
                                 {/* ── Capability scores table ── */}
-                                <Text fw={700} size="sm" mb="xs" mt="lg" c="#1EBAF2">
+                                <Text fw={700} size="sm" mb="xs" mt="lg" c="#139639">
                                     Score your own capability (1=Poor, 2=Adequate, 3=Satisfactory, 4=Good, 5=Excellent)
                                 </Text>
                                 <Paper withBorder p="sm" mb="md" radius="md">
@@ -4956,8 +4829,8 @@ export const StaffProfilePage = () => {
                                       'Safety and Infection Control','Documentation and Record Keeping',
                                       'Ethical Practice','Care Planning and Coordination','Reliability and Punctuality'
                                     ].map(area => (
-                                        <Group key={area} mb={6} justify="space-between" wrap="nowrap">
-                                            <Text size="xs" fw={500} style={{ flex: 1 }}>{area}</Text>
+                                        <Group key={area} mb={6} justify="space-between" wrap="wrap" align="flex-start">
+                                            <Text size="xs" fw={500} style={{ flex: 1, minWidth: 140 }}>{area}</Text>
                                             <Select w={80} size="xs" data={['1','2','3','4','5']}
                                                 value={firstYearAppraisalData.capabilityScores?.[area]?.score || ''}
                                                 readOnly={isViewMode && !isAdmin}
@@ -4965,9 +4838,10 @@ export const StaffProfilePage = () => {
                                                     ...p,
                                                     capabilityScores: { ...p.capabilityScores, [area]: { ...p.capabilityScores?.[area], score: v || '' } }
                                                 }))} />
-                                            <TextInput w={160} size="xs" placeholder="Notes"
+                                            <Textarea w={200} size="xs" placeholder="Notes"
                                                 value={firstYearAppraisalData.capabilityScores?.[area]?.notes || ''}
                                                 readOnly={isViewMode && !isAdmin}
+                                                autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                                 onChange={e => setFirstYearAppraisalData(p => ({
                                                     ...p,
                                                     capabilityScores: { ...p.capabilityScores, [area]: { ...p.capabilityScores?.[area], notes: e.target.value } }
@@ -4977,17 +4851,19 @@ export const StaffProfilePage = () => {
                                 </Paper>
 
                                 {/* ── New role capabilities ── */}
-                                <TextInput label="New role requirements (specify)" mb="xs"
+                                <Textarea label="New role requirements (specify)" mb="xs"
                                     value={firstYearAppraisalData.newRoleRequirements} readOnly={isViewMode && !isAdmin}
+                                    autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, newRoleRequirements: e.target.value }))} />
                                 <Paper withBorder p="sm" mb="md" radius="md">
+                                    <Text fw={600} size="xs" mb="xs" c="#267FBA">New role requirements capabilities</Text>
                                     {['Leadership and Management','Care Planning and Coordination',
                                       'Problem Solving and Decision-Making','Resource Management',
                                       'Teamwork and Collaboration','Knowledge and Competence',
                                       'Supervision and Management'
                                     ].map(area => (
-                                        <Group key={area} mb={6} justify="space-between" wrap="nowrap">
-                                            <Text size="xs" fw={500} style={{ flex: 1 }}>{area}</Text>
+                                        <Group key={area} mb={6} justify="space-between" wrap="wrap" align="flex-start">
+                                            <Text size="xs" fw={500} style={{ flex: 1, minWidth: 140 }}>{area}</Text>
                                             <Select w={80} size="xs" data={['1','2','3','4','5']}
                                                 value={firstYearAppraisalData.newRoleCapabilities?.[area]?.score || ''}
                                                 readOnly={isViewMode && !isAdmin}
@@ -4995,9 +4871,10 @@ export const StaffProfilePage = () => {
                                                     ...p,
                                                     newRoleCapabilities: { ...p.newRoleCapabilities, [area]: { ...p.newRoleCapabilities?.[area], score: v || '' } }
                                                 }))} />
-                                            <TextInput w={160} size="xs" placeholder="Notes"
+                                            <Textarea w={200} size="xs" placeholder="Notes"
                                                 value={firstYearAppraisalData.newRoleCapabilities?.[area]?.notes || ''}
                                                 readOnly={isViewMode && !isAdmin}
+                                                autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                                 onChange={e => setFirstYearAppraisalData(p => ({
                                                     ...p,
                                                     newRoleCapabilities: { ...p.newRoleCapabilities, [area]: { ...p.newRoleCapabilities?.[area], notes: e.target.value } }
@@ -5019,12 +4896,9 @@ export const StaffProfilePage = () => {
                                 <Textarea label="What further support do you feel you need?" autosize minRows={2} mb="md"
                                     value={firstYearAppraisalData.supportNeeded} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, supportNeeded: e.target.value }))} />
-                                <Textarea label="Compliance responsibilities and DBS changes" autosize minRows={3} mb="md"
+                                <Textarea label="Compliance Responsibilities: Is there any change in your DBS status?" autosize minRows={3} mb="md"
                                     value={firstYearAppraisalData.complianceResponsibilities} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, complianceResponsibilities: e.target.value }))} />
-                                <Textarea label="DBS Changes" autosize minRows={2} mb="md"
-                                    value={firstYearAppraisalData.dbsChanges} readOnly={isViewMode && !isAdmin}
-                                    onChange={e => setFirstYearAppraisalData(p => ({ ...p, dbsChanges: e.target.value }))} />
                                 <Textarea label="How do you feel you are regarded by managers?" autosize minRows={3} mb="md"
                                     value={firstYearAppraisalData.relationshipWithManagers} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, relationshipWithManagers: e.target.value }))} />
@@ -5040,12 +4914,29 @@ export const StaffProfilePage = () => {
                                 <Textarea label="Any other points you would like to raise?" autosize minRows={2} mb="md"
                                     value={firstYearAppraisalData.otherPoints} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, otherPoints: e.target.value }))} />
+
+                                <Box mt="xl">
+                                    <Text fw={700} size="sm" mb={4} c="dimmed">
+                                        Comments from the reviewer:
+                                    </Text>
+                                    <Textarea
+                                        placeholder="e.g. She is progressing well..."
+                                        value={firstYearAppraisalData.reviewerComments1 || ''}
+                                        readOnly={isViewMode && !isAdmin}
+                                        onChange={(e) => setFirstYearAppraisalData(prev => ({
+                                            ...prev, reviewerComments1: e.target.value
+                                        }))}
+                                        autosize
+                                        minRows={3}
+                                        radius="md"
+                                    />
+                                </Box>
                             </Box>
                         </Paper>
 
                         {/* ═══════ Performance Appraisal Form (Appraiser Section) ═══════ */}
-                        <Paper p={0} radius="lg" withBorder mt="xl" style={{ border: '3px solid #1EBAF2', overflow: 'hidden' }}>
-                            <Box style={{ background: 'linear-gradient(135deg, #E51690 0%, #1EBAF2 100%)', padding: '22px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Paper p={0} radius="lg" withBorder mt="xl" style={{ border: '3px solid #139639', overflow: 'hidden' }}>
+                            <Box style={{ background: 'linear-gradient(135deg, #267FBA 0%, #139639 100%)', padding: '22px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <Box>
                                     <Text size="xl" fw={900} c="white" tt="uppercase" style={{ letterSpacing: '2px' }}>Lets Care All</Text>
                                     <Text size="lg" fw={800} c="white" mt={4}>Performance Appraisal Form</Text>
@@ -5091,18 +4982,20 @@ export const StaffProfilePage = () => {
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, currentPerformanceStrengths: e.target.value }))} />
 
                                 {/* ── Appraiser Objectives ── */}
-                                <Text fw={700} size="sm" mb="xs" mt="lg" c="#1EBAF2">
+                                <Text fw={700} size="sm" mb="xs" mt="lg" c="#139639">
                                     Objectives agreed (Objective / Measure / Score 1–5 / Comment)
                                 </Text>
                                 {(firstYearAppraisalData.appraiserObjectives || []).map((obj, idx) => (
                                     <SimpleGrid cols={4} key={idx} mb="xs">
-                                        <TextInput placeholder="Objective" value={obj.objective} readOnly={isViewMode && !isAdmin}
+                                        <Textarea placeholder="Objective" value={obj.objective} readOnly={isViewMode && !isAdmin}
+                                            autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                             onChange={e => {
                                                 const updated = [...firstYearAppraisalData.appraiserObjectives];
                                                 updated[idx] = { ...updated[idx], objective: e.target.value };
                                                 setFirstYearAppraisalData(p => ({ ...p, appraiserObjectives: updated }));
                                             }} />
-                                        <TextInput placeholder="Measure" value={obj.measure} readOnly={isViewMode && !isAdmin}
+                                        <Textarea placeholder="Measure" value={obj.measure} readOnly={isViewMode && !isAdmin}
+                                            autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                             onChange={e => {
                                                 const updated = [...firstYearAppraisalData.appraiserObjectives];
                                                 updated[idx] = { ...updated[idx], measure: e.target.value };
@@ -5114,7 +5007,8 @@ export const StaffProfilePage = () => {
                                                 updated[idx] = { ...updated[idx], score: v || '' };
                                                 setFirstYearAppraisalData(p => ({ ...p, appraiserObjectives: updated }));
                                             }} />
-                                        <TextInput placeholder="Comment" value={obj.comment} readOnly={isViewMode && !isAdmin}
+                                        <Textarea placeholder="Comment" value={obj.comment} readOnly={isViewMode && !isAdmin}
+                                            autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                             onChange={e => {
                                                 const updated = [...firstYearAppraisalData.appraiserObjectives];
                                                 updated[idx] = { ...updated[idx], comment: e.target.value };
@@ -5131,7 +5025,7 @@ export const StaffProfilePage = () => {
                                 )}
 
                                 {/* ── Appraiser capability scores ── */}
-                                <Text fw={700} size="sm" mb="xs" mt="lg" c="#1EBAF2">
+                                <Text fw={700} size="sm" mb="xs" mt="lg" c="#139639">
                                     Score the appraisee's capability (1=Poor … 5=Excellent)
                                 </Text>
                                 <Paper withBorder p="sm" mb="md" radius="md">
@@ -5145,8 +5039,8 @@ export const StaffProfilePage = () => {
                                       'Safety and Infection Control','Documentation and Record Keeping',
                                       'Ethical Practice','Care Planning and Coordination','Reliability and Punctuality'
                                     ].map(area => (
-                                        <Group key={area} mb={6} justify="space-between" wrap="nowrap">
-                                            <Text size="xs" fw={500} style={{ flex: 1 }}>{area}</Text>
+                                        <Group key={area} mb={6} justify="space-between" wrap="wrap" align="flex-start">
+                                            <Text size="xs" fw={500} style={{ flex: 1, minWidth: 140 }}>{area}</Text>
                                             <Select w={80} size="xs" data={['1','2','3','4','5']}
                                                 value={firstYearAppraisalData.appraiserCapabilityScores?.[area]?.score || ''}
                                                 readOnly={isViewMode && !isAdmin}
@@ -5154,9 +5048,10 @@ export const StaffProfilePage = () => {
                                                     ...p,
                                                     appraiserCapabilityScores: { ...p.appraiserCapabilityScores, [area]: { ...p.appraiserCapabilityScores?.[area], score: v || '' } }
                                                 }))} />
-                                            <TextInput w={160} size="xs" placeholder="Notes"
+                                            <Textarea w={200} size="xs" placeholder="Notes"
                                                 value={firstYearAppraisalData.appraiserCapabilityScores?.[area]?.notes || ''}
                                                 readOnly={isViewMode && !isAdmin}
+                                                autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                                 onChange={e => setFirstYearAppraisalData(p => ({
                                                     ...p,
                                                     appraiserCapabilityScores: { ...p.appraiserCapabilityScores, [area]: { ...p.appraiserCapabilityScores?.[area], notes: e.target.value } }
@@ -5166,15 +5061,19 @@ export const StaffProfilePage = () => {
                                 </Paper>
 
                                 {/* ── Appraiser new role capabilities ── */}
+                                <Textarea label="New role requirements (specify)" mb="xs"
+                                    value={firstYearAppraisalData.newRoleRequirements} readOnly={isViewMode && !isAdmin}
+                                    autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
+                                    onChange={e => setFirstYearAppraisalData(p => ({ ...p, newRoleRequirements: e.target.value }))} />
                                 <Paper withBorder p="sm" mb="md" radius="md">
-                                    <Text fw={600} size="xs" mb="xs" c="#E51690">New role requirements capabilities</Text>
+                                    <Text fw={600} size="xs" mb="xs" c="#267FBA">New role requirements capabilities</Text>
                                     {['Leadership and Management','Care Planning and Coordination',
                                       'Problem Solving and Decision-Making','Resource Management',
                                       'Teamwork and Collaboration','Knowledge and Competence',
                                       'Supervision and Management'
                                     ].map(area => (
-                                        <Group key={area} mb={6} justify="space-between" wrap="nowrap">
-                                            <Text size="xs" fw={500} style={{ flex: 1 }}>{area}</Text>
+                                        <Group key={area} mb={6} justify="space-between" wrap="wrap" align="flex-start">
+                                            <Text size="xs" fw={500} style={{ flex: 1, minWidth: 140 }}>{area}</Text>
                                             <Select w={80} size="xs" data={['1','2','3','4','5']}
                                                 value={firstYearAppraisalData.appraiserNewRoleCapabilities?.[area]?.score || ''}
                                                 readOnly={isViewMode && !isAdmin}
@@ -5182,9 +5081,10 @@ export const StaffProfilePage = () => {
                                                     ...p,
                                                     appraiserNewRoleCapabilities: { ...p.appraiserNewRoleCapabilities, [area]: { ...p.appraiserNewRoleCapabilities?.[area], score: v || '' } }
                                                 }))} />
-                                            <TextInput w={160} size="xs" placeholder="Notes"
+                                            <Textarea w={200} size="xs" placeholder="Notes"
                                                 value={firstYearAppraisalData.appraiserNewRoleCapabilities?.[area]?.notes || ''}
                                                 readOnly={isViewMode && !isAdmin}
+                                                autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                                 onChange={e => setFirstYearAppraisalData(p => ({
                                                     ...p,
                                                     appraiserNewRoleCapabilities: { ...p.appraiserNewRoleCapabilities, [area]: { ...p.appraiserNewRoleCapabilities?.[area], notes: e.target.value } }
@@ -5201,23 +5101,29 @@ export const StaffProfilePage = () => {
                                     value={firstYearAppraisalData.developmentTraining} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, developmentTraining: e.target.value }))} />
 
-                                <Text fw={700} size="sm" mb="xs" c="#1EBAF2">Training Sessions</Text>
+                                <Text fw={700} size="sm" mb="xs" c="#139639">Training Sessions</Text>
                                 <SimpleGrid cols={2} mb="xs">
-                                    <TextInput label="1. Training session on" value={firstYearAppraisalData.training1} readOnly={isViewMode && !isAdmin}
+                                    <Textarea label="1. Training session on" value={firstYearAppraisalData.training1} readOnly={isViewMode && !isAdmin}
+                                        autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                         onChange={e => setFirstYearAppraisalData(p => ({ ...p, training1: e.target.value }))} />
-                                    <TextInput label="How will this be achieved?" value={firstYearAppraisalData.training1How} readOnly={isViewMode && !isAdmin}
+                                    <Textarea label="How will this be achieved?" value={firstYearAppraisalData.training1How} readOnly={isViewMode && !isAdmin}
+                                        autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                         onChange={e => setFirstYearAppraisalData(p => ({ ...p, training1How: e.target.value }))} />
                                 </SimpleGrid>
                                 <SimpleGrid cols={2} mb="xs">
-                                    <TextInput label="2. Training session on" value={firstYearAppraisalData.training2} readOnly={isViewMode && !isAdmin}
+                                    <Textarea label="2. Training session on" value={firstYearAppraisalData.training2} readOnly={isViewMode && !isAdmin}
+                                        autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                         onChange={e => setFirstYearAppraisalData(p => ({ ...p, training2: e.target.value }))} />
-                                    <TextInput label="How will this be achieved?" value={firstYearAppraisalData.training2How} readOnly={isViewMode && !isAdmin}
+                                    <Textarea label="How will this be achieved?" value={firstYearAppraisalData.training2How} readOnly={isViewMode && !isAdmin}
+                                        autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                         onChange={e => setFirstYearAppraisalData(p => ({ ...p, training2How: e.target.value }))} />
                                 </SimpleGrid>
                                 <SimpleGrid cols={2} mb="md">
-                                    <TextInput label="3. Training session on" value={firstYearAppraisalData.training3} readOnly={isViewMode && !isAdmin}
+                                    <Textarea label="3. Training session on" value={firstYearAppraisalData.training3} readOnly={isViewMode && !isAdmin}
+                                        autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                         onChange={e => setFirstYearAppraisalData(p => ({ ...p, training3: e.target.value }))} />
-                                    <TextInput label="How will this be achieved?" value={firstYearAppraisalData.training3How} readOnly={isViewMode && !isAdmin}
+                                    <Textarea label="How will this be achieved?" value={firstYearAppraisalData.training3How} readOnly={isViewMode && !isAdmin}
+                                        autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                         onChange={e => setFirstYearAppraisalData(p => ({ ...p, training3How: e.target.value }))} />
                                 </SimpleGrid>
 
@@ -5227,36 +5133,35 @@ export const StaffProfilePage = () => {
                                 <Textarea label="Interview Notes" autosize minRows={4} mb="md"
                                     value={firstYearAppraisalData.interviewNotes} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, interviewNotes: e.target.value }))} />
-                                <Textarea label="Achievements and contributions" autosize minRows={3} mb="md"
-                                    value={firstYearAppraisalData.achievements} readOnly={isViewMode && !isAdmin}
-                                    onChange={e => setFirstYearAppraisalData(p => ({ ...p, achievements: e.target.value }))} />
-                                <Textarea label="Areas for Improvement" autosize minRows={3} mb="md"
-                                    value={firstYearAppraisalData.areasForImprovement} readOnly={isViewMode && !isAdmin}
-                                    onChange={e => setFirstYearAppraisalData(p => ({ ...p, areasForImprovement: e.target.value }))} />
-                                <Textarea label="Career Development" autosize minRows={3} mb="md"
-                                    value={firstYearAppraisalData.careerDevelopment} readOnly={isViewMode && !isAdmin}
-                                    onChange={e => setFirstYearAppraisalData(p => ({ ...p, careerDevelopment: e.target.value }))} />
-                                <Textarea label="Training sessions agreed" autosize minRows={2} mb="md"
-                                    value={firstYearAppraisalData.trainingSessionsAgreed} readOnly={isViewMode && !isAdmin}
-                                    onChange={e => setFirstYearAppraisalData(p => ({ ...p, trainingSessionsAgreed: e.target.value }))} />
-                                <Textarea label="Key developmental areas" autosize minRows={3} mb="md"
-                                    value={firstYearAppraisalData.developmentalAreas} readOnly={isViewMode && !isAdmin}
-                                    onChange={e => setFirstYearAppraisalData(p => ({ ...p, developmentalAreas: e.target.value }))} />
-                                <TextInput label="Overall performance grade" mb="md"
-                                    value={firstYearAppraisalData.performanceGrade} readOnly={isViewMode && !isAdmin}
-                                    onChange={e => setFirstYearAppraisalData(p => ({ ...p, performanceGrade: e.target.value }))} />
                                 <Textarea label="Appraisee's comments" autosize minRows={3} mb="md"
                                     value={firstYearAppraisalData.appraiseeComments} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, appraiseeComments: e.target.value }))} />
 
+                                <Box mt="xl" mb="md">
+                                    <Text fw={700} size="sm" mb={4} c="dimmed">
+                                        Comments from the reviewer:
+                                    </Text>
+                                    <Textarea
+                                        placeholder="e.g. She is progressing well..."
+                                        value={firstYearAppraisalData.reviewerComments2 || ''}
+                                        readOnly={isViewMode && !isAdmin}
+                                        onChange={(e) => setFirstYearAppraisalData(prev => ({
+                                            ...prev, reviewerComments2: e.target.value
+                                        }))}
+                                        autosize
+                                        minRows={3}
+                                        radius="md"
+                                    />
+                                </Box>
+
                                 {/* ── Signatures ── */}
-                                <Box style={{ borderTop: '2px solid #E51690' }} pt="lg" mt="lg">
+                                <Box style={{ borderTop: '2px solid #267FBA' }} pt="lg" mt="lg">
                                     <Text fw={700} size="sm" mb="xs" ta="center" c="dimmed" style={{ fontStyle: 'italic' }}>
                                         I hereby confirm that this is a fair and accurate representation of the appraisal discussion.
                                     </Text>
                                     <SimpleGrid cols={2} mt="md">
-                                        <Paper withBorder p="md" radius="md" style={{ borderColor: '#E51690', background: !isAdmin ? '#f0fff4' : 'white' }}>
-                                            <Text fw={700} size="sm" c="#E51690" mb="xs">Signature (Appraisee)</Text>
+                                        <Paper withBorder p="md" radius="md" style={{ borderColor: '#267FBA', background: !isAdmin ? '#f0fff4' : 'white' }}>
+                                            <Text fw={700} size="sm" c="#267FBA" mb="xs">Signature (Appraisee)</Text>
                                             {!isAdmin ? (
                                                 <>
                                                     <SignaturePad
@@ -5273,7 +5178,7 @@ export const StaffProfilePage = () => {
                                                                     { headers: { Authorization: `Bearer ${token}` } }
                                                                 );
                                                                 setFirstYearAppraisalData(p => ({ ...p, signatureDate: today }));
-                                                                notifications.show({ title: 'Signed', message: 'Your signature has been saved.', color: '#E51690' });
+                                                                notifications.show({ title: 'Signed', message: 'Your signature has been saved.', color: '#267FBA' });
                                                                 const targetUserId = profile?.user?.id || profile?.id || id;
                                                                 const reviewFormsRes = await axios.get(`/api/v1/staff/${targetUserId}/review-forms`, { headers: { Authorization: `Bearer ${token}` } });
                                                                 setReviewForms(reviewFormsRes.data);
@@ -5283,7 +5188,7 @@ export const StaffProfilePage = () => {
                                                         }}
                                                     />
                                                     {!firstYearAppraisalData.appraiseeSignature && (
-                                                        <Text size="xs" c="#E51690" fw={600} mt={4} ta="center">👆 Tap above to open the signature pad</Text>
+                                                        <Text size="xs" c="#267FBA" fw={600} mt={4} ta="center">👆 Tap above to open the signature pad</Text>
                                                     )}
                                                 </>
                                             ) : (
@@ -5294,8 +5199,8 @@ export const StaffProfilePage = () => {
                                                 />
                                             )}
                                         </Paper>
-                                        <Paper withBorder p="md" radius="md" style={{ borderColor: '#1EBAF2' }}>
-                                            <Text fw={700} size="sm" c="#1EBAF2" mb="xs">Signature (Appraiser)</Text>
+                                        <Paper withBorder p="md" radius="md" style={{ borderColor: '#139639' }}>
+                                            <Text fw={700} size="sm" c="#139639" mb="xs">Signature (Appraiser)</Text>
                                             {isAdmin ? (
                                                 <SignaturePad
                                                     label="Appraiser Signature"
@@ -5325,8 +5230,8 @@ export const StaffProfilePage = () => {
                         </Paper>
 
                         {/* ═══════ Action Plan Section ═══════ */}
-                        <Paper p={0} radius="lg" withBorder mt="xl" style={{ border: '3px solid #E51690', overflow: 'hidden' }}>
-                            <Box style={{ background: 'linear-gradient(135deg, #1EBAF2 0%, #E51690 100%)', padding: '18px 28px' }}>
+                        <Paper p={0} radius="lg" withBorder mt="xl" style={{ border: '3px solid #267FBA', overflow: 'hidden' }}>
+                            <Box style={{ background: 'linear-gradient(135deg, #139639 0%, #267FBA 100%)', padding: '18px 28px' }}>
                                 <Text size="xl" fw={900} c="white" tt="uppercase" style={{ letterSpacing: '2px' }}>Lets Care All</Text>
                                 <Text size="lg" fw={800} c="white" mt={4}>Action Plan</Text>
                             </Box>
@@ -5338,13 +5243,15 @@ export const StaffProfilePage = () => {
 
                                 {(firstYearAppraisalData.actionPlanItems || []).map((item, idx) => (
                                     <SimpleGrid cols={3} key={idx} mb="xs">
-                                        <TextInput placeholder="Key Areas Discussed" value={item.keyArea} readOnly={isViewMode && !isAdmin}
+                                        <Textarea placeholder="Key Areas Discussed" value={item.keyArea} readOnly={isViewMode && !isAdmin}
+                                            autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                             onChange={e => {
                                                 const updated = [...firstYearAppraisalData.actionPlanItems];
                                                 updated[idx] = { ...updated[idx], keyArea: e.target.value };
                                                 setFirstYearAppraisalData(p => ({ ...p, actionPlanItems: updated }));
                                             }} />
-                                        <TextInput placeholder="Action Plan to Follow" value={item.actionPlan} readOnly={isViewMode && !isAdmin}
+                                        <Textarea placeholder="Action Plan to Follow" value={item.actionPlan} readOnly={isViewMode && !isAdmin}
+                                            autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                             onChange={e => {
                                                 const updated = [...firstYearAppraisalData.actionPlanItems];
                                                 updated[idx] = { ...updated[idx], actionPlan: e.target.value };
@@ -5365,6 +5272,23 @@ export const StaffProfilePage = () => {
                                             actionPlanItems: [...p.actionPlanItems, { keyArea: '', actionPlan: '', targetDate: '' }]
                                         }))}>+ Add Row</Button>
                                 )}
+
+                                <Box mt="xl">
+                                    <Text fw={700} size="sm" mb={4} c="dimmed">
+                                        Comments from the reviewer:
+                                    </Text>
+                                    <Textarea
+                                        placeholder="e.g. She is progressing well..."
+                                        value={firstYearAppraisalData.reviewerComments3 || ''}
+                                        readOnly={isViewMode && !isAdmin}
+                                        onChange={(e) => setFirstYearAppraisalData(prev => ({
+                                            ...prev, reviewerComments3: e.target.value
+                                        }))}
+                                        autosize
+                                        minRows={3}
+                                        radius="md"
+                                    />
+                                </Box>
                             </Box>
                         </Paper>
 
@@ -5380,7 +5304,7 @@ export const StaffProfilePage = () => {
                             {(isAdmin || (!isAdmin && isViewMode)) && (
                                 <Button
                                     loading={reviewFormLoading}
-                                    style={{ background: 'linear-gradient(135deg, #1EBAF2 0%, #E51690 100%)' }}
+                                    style={{ background: 'linear-gradient(135deg, #139639 0%, #267FBA 100%)' }}
                                     onClick={async () => {
                                         setReviewFormLoading(true);
                                         try {
@@ -5409,14 +5333,14 @@ export const StaffProfilePage = () => {
                                                     appraisalPayload,
                                                     { headers: { Authorization: `Bearer ${token}` } }
                                                 );
-                                                notifications.show({ title: 'Updated', message: 'Appraisal form updated successfully', color: '#E51690' });
+                                                notifications.show({ title: 'Updated', message: 'Appraisal form updated successfully', color: '#267FBA' });
                                             } else {
                                                 await axios.post(
                                                     `/api/v1/staff/${targetUserId}/review-forms`,
                                                     appraisalPayload,
                                                     { headers: { Authorization: `Bearer ${token}` } }
                                                 );
-                                                notifications.show({ title: 'Saved', message: 'Appraisal form saved successfully', color: '#E51690' });
+                                                notifications.show({ title: 'Saved', message: 'Appraisal form saved successfully', color: '#267FBA' });
                                             }
 
                                             // Refresh
@@ -5463,51 +5387,86 @@ export const StaffProfilePage = () => {
                     setEditingReviewFormId(null);
                 }}
                 title={
+                    reviewFormType === 'review' || reviewFormType === 'supervision' ? null : (
                     isViewMode ? (
                         <Group gap="md">
-                            <ThemeIcon variant="gradient" gradient={{ from: '#1EBAF2', to: '#E51690', deg: 90 }} size="lg" radius="md">
+                            <ThemeIcon variant="gradient" gradient={{ from: '#139639', to: '#267FBA', deg: 90 }} size="lg" radius="md">
                                 <FileText size={20} />
                             </ThemeIcon>
                             <Box>
                                 <Title order={3} size={20} fw={800} c="brandBlue.9">
-                                    {reviewFormType === 'review' ? `${reviewFormSubType} Employment Review` : reviewFormType === 'appraisal' ? `${reviewFormSubType}` : `${reviewFormSubType} Supervision`}
+                                    {`${reviewFormSubType}`}
                                 </Title>
                                 <Text size="sm" c="dimmed" fw={600}>Lets Care All</Text>
                             </Box>
                         </Group>
                     ) : (
-                        reviewFormType === 'review' 
-                            ? `${reviewFormSubType} Employment Review` 
-                            : reviewFormType === 'appraisal' 
-                                ? `${reviewFormSubType}` 
-                                : `${reviewFormSubType} Supervision`
+                        `${reviewFormSubType}`
+                    )
                     )
                 }
-                size={isViewMode ? "xl" : "xl"}
-                centered
-                radius="md"
+                {...(reviewFormType === 'appraisal' ? { size: 'xl' as const } : {})}
+                fullScreen={reviewFormType === 'review' || reviewFormType === 'supervision'}
+                centered={reviewFormType === 'appraisal'}
+                radius={reviewFormType === 'review' || reviewFormType === 'supervision' ? 0 : 'md'}
+                transitionProps={reviewFormType === 'review' || reviewFormType === 'supervision' ? { transition: 'fade', duration: 200 } : undefined}
                 styles={{
-                    content: isViewMode ? {
+                    header: reviewFormType === 'review' || reviewFormType === 'supervision' ? { display: 'none' } : undefined,
+                    content: reviewFormType === 'appraisal' && isViewMode ? {
                         background: 'linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%)',
                     } : {},
-                    body: isViewMode ? {
+                    body: reviewFormType === 'review' || reviewFormType === 'supervision' ? { padding: 0 } : (isViewMode ? {
                         padding: 0,
                         maxHeight: '80vh',
                         overflow: 'hidden',
-                    } : {},
+                    } : {}),
                 }}
             >
                 {isViewMode ? (
-                    <ScrollArea h="calc(80vh - 120px)" type="scroll">
+                    <ScrollArea h={reviewFormType === 'review' || reviewFormType === 'supervision' ? '100vh' : 'calc(80vh - 120px)'} type="scroll" p={reviewFormType === 'review' || reviewFormType === 'supervision' ? 'md' : undefined}>
+                        {(reviewFormType === 'review' || reviewFormType === 'supervision') && (
+                            <Box
+                                style={{
+                                    position: 'sticky',
+                                    top: 0,
+                                    zIndex: 100,
+                                    background: 'white',
+                                    borderBottom: '1px solid #e9ecef',
+                                    padding: '12px 20px',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    marginBottom: 16,
+                                }}
+                            >
+                                <Text fw={700} size="lg">
+                                    {reviewFormType === 'review'
+                                        ? `${reviewFormSubType} Employment Review`
+                                        : `${reviewFormSubType} Supervision`}
+                                </Text>
+                                <ActionIcon
+                                    variant="subtle"
+                                    color="gray"
+                                    size="lg"
+                                    onClick={() => {
+                                        setReviewFormModal(false);
+                                        setIsViewMode(false);
+                                        setEditingReviewFormId(null);
+                                    }}
+                                >
+                                    <X size={20} />
+                                </ActionIcon>
+                            </Box>
+                        )}
                         <Box p="xl">
 
                             {/* Review/Appraisal Form View Mode – Branded Employment Review */}
                             {reviewFormType !== 'supervision' && (
                                 <>
                             {/* ── Branded Employment Review Form (View) ── */}
-                            <Paper p={0} radius="lg" mb="xl" withBorder style={{ border: '3px solid #E51690', overflow: 'hidden' }}>
+                            <Paper p={0} radius="lg" mb="xl" withBorder style={{ border: '3px solid #267FBA', overflow: 'hidden' }}>
                                 {/* Green/Blue header bar with logo */}
-                                <Box style={{ background: 'linear-gradient(135deg, #1EBAF2 0%, #E51690 100%)', padding: '20px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <Box style={{ background: 'linear-gradient(135deg, #139639 0%, #267FBA 100%)', padding: '20px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <Box>
                                         <Text size="xl" fw={900} c="white" tt="uppercase" style={{ letterSpacing: '2px' }}>Lets Care All</Text>
                                         <Text size="lg" fw={800} c="white" mt={4}>{reviewFormSubType} Employment Review</Text>
@@ -5518,31 +5477,31 @@ export const StaffProfilePage = () => {
                                 <Box p="xl">
                                     {/* Staff Info Row */}
                                     <SimpleGrid cols={2} spacing="lg" mb="lg">
-                                        <Box p="md" style={{ border: '1px solid #1EBAF2', borderRadius: '8px' }}>
-                                            <Text size="xs" fw={700} c="#1EBAF2" mb={4} tt="uppercase">Staff Name</Text>
+                                        <Box p="md" style={{ border: '1px solid #139639', borderRadius: '8px' }}>
+                                            <Text size="xs" fw={700} c="#139639" mb={4} tt="uppercase">Staff Name</Text>
                                             <Text size="md" fw={700}>{reviewFormData.staffName || '-'}</Text>
                                         </Box>
-                                        <Box p="md" style={{ border: '1px solid #1EBAF2', borderRadius: '8px' }}>
-                                            <Text size="xs" fw={700} c="#1EBAF2" mb={4} tt="uppercase">Start Date</Text>
+                                        <Box p="md" style={{ border: '1px solid #139639', borderRadius: '8px' }}>
+                                            <Text size="xs" fw={700} c="#139639" mb={4} tt="uppercase">Start Date</Text>
                                             <Text size="md" fw={700}>{reviewFormData.startDate ? new Date(reviewFormData.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}</Text>
                                         </Box>
                                     </SimpleGrid>
-                                    <Box p="md" mb="lg" style={{ border: '1px solid #1EBAF2', borderRadius: '8px' }}>
-                                        <Text size="xs" fw={700} c="#1EBAF2" mb={4} tt="uppercase">Date of Review</Text>
+                                    <Box p="md" mb="lg" style={{ border: '1px solid #139639', borderRadius: '8px' }}>
+                                        <Text size="xs" fw={700} c="#139639" mb={4} tt="uppercase">Date of Review</Text>
                                         <Text size="md" fw={700}>{reviewFormData.dateOfReview ? new Date(reviewFormData.dateOfReview).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}</Text>
                                     </Box>
 
                                     {/* Documentation Comments */}
                                     {reviewFormData.documentationComments && !reviewFormData.documentationComments.startsWith('{') && (
-                                        <Box p="md" mb="lg" style={{ border: '1px solid #E51690', borderRadius: '8px', background: '#f8fdf8' }}>
-                                            <Text size="xs" fw={700} c="#E51690" mb={6} tt="uppercase">Check that all documentation is complete and add comments here:</Text>
+                                        <Box p="md" mb="lg" style={{ border: '1px solid #267FBA', borderRadius: '8px', background: '#f8fdf8' }}>
+                                            <Text size="xs" fw={700} c="#267FBA" mb={6} tt="uppercase">Check that all documentation is complete and add comments here:</Text>
                                             <Text size="sm" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8 }}>{reviewFormData.documentationComments}</Text>
                                         </Box>
                                     )}
 
                                     {/* Grading Instruction */}
-                                    <Box mb="lg" p="sm" style={{ background: 'linear-gradient(135deg, #E3F2FD 0%, #FDE6F4 100%)', borderRadius: '8px', border: '1px solid #90CAF9' }}>
-                                        <Text size="sm" fw={700} c="#1EBAF2" ta="center">
+                                    <Box mb="lg" p="sm" style={{ background: 'linear-gradient(135deg, #e3f0f8 0%, #e6f5eb 100%)', borderRadius: '8px', border: '1px solid #b8d4ea' }}>
+                                        <Text size="sm" fw={700} c="#139639" ta="center">
                                             For the following areas please grade each section from 1–4 (1 poor, 2 below average, 3 good and 4 excellent)
                                         </Text>
                                     </Box>
@@ -5550,18 +5509,18 @@ export const StaffProfilePage = () => {
                                     {/* Performance Grading – 2×2 table */}
                                     <SimpleGrid cols={2} spacing="md" mb="lg">
                                         {[
-                                            { label: 'Overall work performance', grade: reviewFormData.jobPerformanceGrade },
-                                            { label: 'Progress in training/induction', grade: reviewFormData.trainingDevelopmentGrade },
-                                            { label: 'Team-working performance', grade: reviewFormData.communicationSkillsGrade },
-                                            { label: 'Attendance performance', grade: reviewFormData.attendancePunctualityGrade },
+                                            { label: 'Overall work performance', grade: reviewFormData.jobPerformanceGrade, comment: reviewFormData.reviewerCommentOverallWork },
+                                            { label: 'Progress in training/induction', grade: reviewFormData.trainingDevelopmentGrade, comment: reviewFormData.reviewerCommentProgressTraining },
+                                            { label: 'Team-working performance', grade: reviewFormData.communicationSkillsGrade, comment: reviewFormData.reviewerCommentTeamWorking },
+                                            { label: 'Attendance performance', grade: reviewFormData.attendancePunctualityGrade, comment: reviewFormData.reviewerCommentAttendance },
                                         ].map((item) => (
-                                            <Box key={item.label} p="md" style={{ border: '1px solid #1EBAF2', borderRadius: '8px' }}>
+                                            <Box key={item.label} p="md" style={{ border: '1px solid #139639', borderRadius: '8px' }}>
                                                 <Text size="sm" fw={700} c="#333" mb={8}>{item.label}</Text>
                                                 <Group gap={6}>
                                                     {['1','2','3','4'].map(g => (
                                                         <Box key={g} style={{
                                                             width: 36, height: 36, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                            background: item.grade === g ? (g === '4' ? '#E51690' : g === '3' ? '#1EBAF2' : g === '2' ? '#F57C00' : '#C62828') : '#f0f0f0',
+                                                            background: item.grade === g ? (g === '4' ? '#267FBA' : g === '3' ? '#139639' : g === '2' ? '#F57C00' : '#C62828') : '#f0f0f0',
                                                             color: item.grade === g ? 'white' : '#666', fontWeight: 800, fontSize: '14px',
                                                             border: item.grade === g ? 'none' : '1px solid #ddd'
                                                         }}>
@@ -5569,30 +5528,36 @@ export const StaffProfilePage = () => {
                                                         </Box>
                                                     ))}
                                                 </Group>
+                                                {item.comment && (
+                                                    <Box mt="xs">
+                                                        <Text fw={600} size="sm" mb={4} c="dimmed">Comments from the reviewer:</Text>
+                                                        <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>{item.comment}</Text>
+                                                    </Box>
+                                                )}
                                             </Box>
                                         ))}
                                     </SimpleGrid>
 
                                     {/* Recommended for Further Review */}
-                                    <Box p="md" mb="lg" style={{ border: `2px solid ${reviewFormData.recommendedForReview === 'YES' ? '#E51690' : reviewFormData.recommendedForReview === 'NO' ? '#C62828' : '#1EBAF2'}`, borderRadius: '8px', background: reviewFormData.recommendedForReview === 'YES' ? '#f1f8f1' : reviewFormData.recommendedForReview === 'NO' ? '#fff5f5' : 'white' }}>
+                                    <Box p="md" mb="lg" style={{ border: `2px solid ${reviewFormData.recommendedForReview === 'YES' ? '#267FBA' : reviewFormData.recommendedForReview === 'NO' ? '#C62828' : '#139639'}`, borderRadius: '8px', background: reviewFormData.recommendedForReview === 'YES' ? '#f1f8f1' : reviewFormData.recommendedForReview === 'NO' ? '#fff5f5' : 'white' }}>
                                         <Text size="sm" fw={800} c="#333" mb={6}>Recommended for further period of review</Text>
                                         <Badge size="lg" variant="filled" color={reviewFormData.recommendedForReview === 'YES' ? 'green' : reviewFormData.recommendedForReview === 'NO' ? 'red' : 'gray'}>
                                             {reviewFormData.recommendedForReview || 'Not specified'}
                                         </Badge>
                                         {reviewFormData.reviewReasons && (
-                                            <Box mt="md" p="sm" style={{ background: 'rgba(255,255,255,0.8)', borderRadius: '6px', borderLeft: '3px solid #1EBAF2' }}>
-                                                <Text size="xs" fw={700} c="#1EBAF2" mb={4}>State reasons, and period of review:</Text>
+                                            <Box mt="md" p="sm" style={{ background: 'rgba(255,255,255,0.8)', borderRadius: '6px', borderLeft: '3px solid #139639' }}>
+                                                <Text size="xs" fw={700} c="#139639" mb={4}>State reasons, and period of review:</Text>
                                                 <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>{reviewFormData.reviewReasons}</Text>
                                             </Box>
                                         )}
                                     </Box>
 
-                                    <Divider my="md" color="#E51690" size="sm" />
+                                    <Divider my="md" color="#267FBA" size="sm" />
 
                                     {/* Signatures Section */}
                                     <SimpleGrid cols={2} spacing="lg">
-                                        <Box p="md" style={{ border: '2px solid #E51690', borderRadius: '8px', background: !isAdmin ? '#f0fff4' : 'white' }}>
-                                            <Text size="sm" fw={800} c="#E51690" mb={8}>Sign and Date (Care Staff)</Text>
+                                        <Box p="md" style={{ border: '2px solid #267FBA', borderRadius: '8px', background: !isAdmin ? '#f0fff4' : 'white' }}>
+                                            <Text size="sm" fw={800} c="#267FBA" mb={8}>Sign and Date (Care Staff)</Text>
                                             {!isAdmin ? (
                                                 <>
                                                     <SignaturePad
@@ -5608,7 +5573,7 @@ export const StaffProfilePage = () => {
                                                                     { careStaffSignature: dataURL, careStaffDate: today },
                                                                     { headers: { Authorization: `Bearer ${token}` } }
                                                                 );
-                                                                notifications.show({ title: 'Signed', message: 'Your signature has been saved.', color: '#E51690' });
+                                                                notifications.show({ title: 'Signed', message: 'Your signature has been saved.', color: '#267FBA' });
                                                                 const targetUserId = profile?.user?.id || profile?.id || id;
                                                                 const reviewFormsRes = await axios.get(`/api/v1/staff/${targetUserId}/review-forms`, { headers: { Authorization: `Bearer ${token}` } });
                                                                 setReviewForms(reviewFormsRes.data);
@@ -5618,7 +5583,7 @@ export const StaffProfilePage = () => {
                                                         }}
                                                     />
                                                     {!reviewFormData.careStaffSignature && (
-                                                        <Text size="xs" c="#E51690" fw={600} mt={4} ta="center">👆 Tap above to open the signature pad</Text>
+                                                        <Text size="xs" c="#267FBA" fw={600} mt={4} ta="center">👆 Tap above to open the signature pad</Text>
                                                     )}
                                                 </>
                                             ) : (
@@ -5638,8 +5603,8 @@ export const StaffProfilePage = () => {
                                                 </Group>
                                             )}
                                         </Box>
-                                        <Box p="md" style={{ border: '1px solid #1EBAF2', borderRadius: '8px' }}>
-                                            <Text size="sm" fw={800} c="#1EBAF2" mb={8}>Sign and Date (Reviewer)</Text>
+                                        <Box p="md" style={{ border: '1px solid #139639', borderRadius: '8px' }}>
+                                            <Text size="sm" fw={800} c="#139639" mb={8}>Sign and Date (Reviewer)</Text>
                                             {isAdmin ? (
                                                 <SignaturePad
                                                     label="Reviewer Signature"
@@ -5848,7 +5813,41 @@ export const StaffProfilePage = () => {
                         </Box>
                     </ScrollArea>
                 ) : (
-                    <ScrollArea h="calc(80vh - 120px)" type="scroll">
+                    <ScrollArea h={reviewFormType === 'review' || reviewFormType === 'supervision' ? '100vh' : 'calc(80vh - 120px)'} type="scroll" p={reviewFormType === 'review' || reviewFormType === 'supervision' ? 'md' : undefined}>
+                        {(reviewFormType === 'review' || reviewFormType === 'supervision') && (
+                            <Box
+                                style={{
+                                    position: 'sticky',
+                                    top: 0,
+                                    zIndex: 100,
+                                    background: 'white',
+                                    borderBottom: '1px solid #e9ecef',
+                                    padding: '12px 20px',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    marginBottom: 16,
+                                }}
+                            >
+                                <Text fw={700} size="lg">
+                                    {reviewFormType === 'review'
+                                        ? `${reviewFormSubType} Employment Review`
+                                        : `${reviewFormSubType} Supervision`}
+                                </Text>
+                                <ActionIcon
+                                    variant="subtle"
+                                    color="gray"
+                                    size="lg"
+                                    onClick={() => {
+                                        setReviewFormModal(false);
+                                        setIsViewMode(false);
+                                        setEditingReviewFormId(null);
+                                    }}
+                                >
+                                    <X size={20} />
+                                </ActionIcon>
+                            </Box>
+                        )}
                         <Box p="xl">
                             {reviewFormType === 'supervision' && (reviewFormSubType === '1st Year 6th Month' || reviewFormSubType === '2nd Year 6th Month') ? (
                                 <Stack gap="lg">
@@ -6032,7 +6031,7 @@ export const StaffProfilePage = () => {
                                                         notifications.show({
                                                             title: 'Success',
                                                             message: 'Supervision form updated successfully',
-                                                            color: '#E51690',
+                                                            color: '#267FBA',
                                                         });
                                                     } else {
                                                         // Create new form
@@ -6044,7 +6043,7 @@ export const StaffProfilePage = () => {
                                                         notifications.show({
                                                             title: 'Success',
                                                             message: 'Supervision form saved successfully',
-                                                            color: '#E51690',
+                                                            color: '#267FBA',
                                                         });
                                                     }
 
@@ -6089,9 +6088,9 @@ export const StaffProfilePage = () => {
                             ) : (
                                 <Stack gap="lg">
                                     {/* ── Branded Employment Review Form (Edit Mode – Admin) ── */}
-                                    <Paper p={0} radius="lg" withBorder style={{ border: '3px solid #E51690', overflow: 'hidden' }}>
+                                    <Paper p={0} radius="lg" withBorder style={{ border: '3px solid #267FBA', overflow: 'hidden' }}>
                                         {/* Green/Blue header with logo */}
-                                        <Box style={{ background: 'linear-gradient(135deg, #1EBAF2 0%, #E51690 100%)', padding: '20px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <Box style={{ background: 'linear-gradient(135deg, #139639 0%, #267FBA 100%)', padding: '20px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                             <Box>
                                                 <Text size="xl" fw={900} c="white" tt="uppercase" style={{ letterSpacing: '2px' }}>Lets Care All</Text>
                                                 <Text size="lg" fw={800} c="white" mt={4}>{reviewFormSubType} Employment Review</Text>
@@ -6106,14 +6105,14 @@ export const StaffProfilePage = () => {
                                                     value={reviewFormData.staffName}
                                                     onChange={(e) => setReviewFormData({ ...reviewFormData, staffName: e.target.value })}
                                                     required
-                                                    styles={{ label: { color: '#1EBAF2', fontWeight: 700 } }}
+                                                    styles={{ label: { color: '#139639', fontWeight: 700 } }}
                                                 />
                                                 <TextInput
                                                     label="Start Date"
                                                     type="date"
                                                     value={reviewFormData.startDate}
                                                     onChange={(e) => setReviewFormData({ ...reviewFormData, startDate: e.target.value })}
-                                                    styles={{ label: { color: '#1EBAF2', fontWeight: 700 } }}
+                                                    styles={{ label: { color: '#139639', fontWeight: 700 } }}
                                                 />
                                             </SimpleGrid>
                                             <TextInput
@@ -6123,7 +6122,7 @@ export const StaffProfilePage = () => {
                                                 onChange={(e) => setReviewFormData({ ...reviewFormData, dateOfReview: e.target.value })}
                                                 required
                                                 mb="md"
-                                                styles={{ label: { color: '#1EBAF2', fontWeight: 700 } }}
+                                                styles={{ label: { color: '#139639', fontWeight: 700 } }}
                                             />
                                             <Textarea
                                                 label="Check that all documentation is complete and add comments here:"
@@ -6131,74 +6130,126 @@ export const StaffProfilePage = () => {
                                                 onChange={(e) => setReviewFormData({ ...reviewFormData, documentationComments: e.target.value })}
                                                 minRows={3}
                                                 mb="md"
-                                                styles={{ label: { color: '#E51690', fontWeight: 700 } }}
+                                                styles={{ label: { color: '#267FBA', fontWeight: 700 } }}
                                             />
 
                                             {/* Grading Instruction */}
-                                            <Box mb="md" p="sm" style={{ background: 'linear-gradient(135deg, #E3F2FD 0%, #FDE6F4 100%)', borderRadius: '8px', border: '1px solid #90CAF9' }}>
-                                                <Text size="sm" fw={700} c="#1EBAF2" ta="center">
+                                            <Box mb="md" p="sm" style={{ background: 'linear-gradient(135deg, #e3f0f8 0%, #e6f5eb 100%)', borderRadius: '8px', border: '1px solid #b8d4ea' }}>
+                                                <Text size="sm" fw={700} c="#139639" ta="center">
                                                     For the following areas please grade each section from 1–4 (1 poor, 2 below average, 3 good and 4 excellent)
                                                 </Text>
                                             </Box>
 
                                             <SimpleGrid cols={2} spacing="md" mb="md">
-                                                <Select
-                                                    label="Overall work performance"
-                                                    value={reviewFormData.jobPerformanceGrade}
-                                                    onChange={(value) => setReviewFormData({ ...reviewFormData, jobPerformanceGrade: value || '' })}
-                                                    data={[
-                                                        { value: '1', label: '1 – Poor' },
-                                                        { value: '2', label: '2 – Below Average' },
-                                                        { value: '3', label: '3 – Good' },
-                                                        { value: '4', label: '4 – Excellent' },
-                                                    ]}
-                                                    placeholder="Select grade (1-4)"
-                                                    styles={{ label: { color: '#1EBAF2', fontWeight: 700 } }}
-                                                />
-                                                <Select
-                                                    label="Progress in training/induction"
-                                                    value={reviewFormData.trainingDevelopmentGrade}
-                                                    onChange={(value) => setReviewFormData({ ...reviewFormData, trainingDevelopmentGrade: value || '' })}
-                                                    data={[
-                                                        { value: '1', label: '1 – Poor' },
-                                                        { value: '2', label: '2 – Below Average' },
-                                                        { value: '3', label: '3 – Good' },
-                                                        { value: '4', label: '4 – Excellent' },
-                                                    ]}
-                                                    placeholder="Select grade (1-4)"
-                                                    styles={{ label: { color: '#1EBAF2', fontWeight: 700 } }}
-                                                />
+                                                <Box>
+                                                    <Select
+                                                        label="Overall work performance"
+                                                        value={reviewFormData.jobPerformanceGrade}
+                                                        onChange={(value) => setReviewFormData({ ...reviewFormData, jobPerformanceGrade: value || '' })}
+                                                        data={[
+                                                            { value: '1', label: '1 – Poor' },
+                                                            { value: '2', label: '2 – Below Average' },
+                                                            { value: '3', label: '3 – Good' },
+                                                            { value: '4', label: '4 – Excellent' },
+                                                        ]}
+                                                        placeholder="Select grade (1-4)"
+                                                        styles={{ label: { color: '#139639', fontWeight: 700 } }}
+                                                    />
+                                                    <Box mt="xs">
+                                                        <Text fw={600} size="sm" mb={4}>Comments from the reviewer:</Text>
+                                                        <Textarea
+                                                            placeholder="e.g. She is progressing well..."
+                                                            value={reviewFormData.reviewerCommentOverallWork || ''}
+                                                            onChange={(e) => setReviewFormData({ ...reviewFormData, reviewerCommentOverallWork: e.target.value })}
+                                                            autosize
+                                                            minRows={2}
+                                                            radius="md"
+                                                        />
+                                                    </Box>
+                                                </Box>
+                                                <Box>
+                                                    <Select
+                                                        label="Progress in training/induction"
+                                                        value={reviewFormData.trainingDevelopmentGrade}
+                                                        onChange={(value) => setReviewFormData({ ...reviewFormData, trainingDevelopmentGrade: value || '' })}
+                                                        data={[
+                                                            { value: '1', label: '1 – Poor' },
+                                                            { value: '2', label: '2 – Below Average' },
+                                                            { value: '3', label: '3 – Good' },
+                                                            { value: '4', label: '4 – Excellent' },
+                                                        ]}
+                                                        placeholder="Select grade (1-4)"
+                                                        styles={{ label: { color: '#139639', fontWeight: 700 } }}
+                                                    />
+                                                    <Box mt="xs">
+                                                        <Text fw={600} size="sm" mb={4}>Comments from the reviewer:</Text>
+                                                        <Textarea
+                                                            placeholder="e.g. She is progressing well..."
+                                                            value={reviewFormData.reviewerCommentProgressTraining || ''}
+                                                            onChange={(e) => setReviewFormData({ ...reviewFormData, reviewerCommentProgressTraining: e.target.value })}
+                                                            autosize
+                                                            minRows={2}
+                                                            radius="md"
+                                                        />
+                                                    </Box>
+                                                </Box>
                                             </SimpleGrid>
                                             <SimpleGrid cols={2} spacing="md" mb="md">
-                                                <Select
-                                                    label="Team-working performance"
-                                                    value={reviewFormData.communicationSkillsGrade}
-                                                    onChange={(value) => setReviewFormData({ ...reviewFormData, communicationSkillsGrade: value || '' })}
-                                                    data={[
-                                                        { value: '1', label: '1 – Poor' },
-                                                        { value: '2', label: '2 – Below Average' },
-                                                        { value: '3', label: '3 – Good' },
-                                                        { value: '4', label: '4 – Excellent' },
-                                                    ]}
-                                                    placeholder="Select grade (1-4)"
-                                                    styles={{ label: { color: '#1EBAF2', fontWeight: 700 } }}
-                                                />
-                                                <Select
-                                                    label="Attendance performance"
-                                                    value={reviewFormData.attendancePunctualityGrade}
-                                                    onChange={(value) => setReviewFormData({ ...reviewFormData, attendancePunctualityGrade: value || '' })}
-                                                    data={[
-                                                        { value: '1', label: '1 – Poor' },
-                                                        { value: '2', label: '2 – Below Average' },
-                                                        { value: '3', label: '3 – Good' },
-                                                        { value: '4', label: '4 – Excellent' },
-                                                    ]}
-                                                    placeholder="Select grade (1-4)"
-                                                    styles={{ label: { color: '#1EBAF2', fontWeight: 700 } }}
-                                                />
+                                                <Box>
+                                                    <Select
+                                                        label="Team-working performance"
+                                                        value={reviewFormData.communicationSkillsGrade}
+                                                        onChange={(value) => setReviewFormData({ ...reviewFormData, communicationSkillsGrade: value || '' })}
+                                                        data={[
+                                                            { value: '1', label: '1 – Poor' },
+                                                            { value: '2', label: '2 – Below Average' },
+                                                            { value: '3', label: '3 – Good' },
+                                                            { value: '4', label: '4 – Excellent' },
+                                                        ]}
+                                                        placeholder="Select grade (1-4)"
+                                                        styles={{ label: { color: '#139639', fontWeight: 700 } }}
+                                                    />
+                                                    <Box mt="xs">
+                                                        <Text fw={600} size="sm" mb={4}>Comments from the reviewer:</Text>
+                                                        <Textarea
+                                                            placeholder="e.g. She is progressing well..."
+                                                            value={reviewFormData.reviewerCommentTeamWorking || ''}
+                                                            onChange={(e) => setReviewFormData({ ...reviewFormData, reviewerCommentTeamWorking: e.target.value })}
+                                                            autosize
+                                                            minRows={2}
+                                                            radius="md"
+                                                        />
+                                                    </Box>
+                                                </Box>
+                                                <Box>
+                                                    <Select
+                                                        label="Attendance performance"
+                                                        value={reviewFormData.attendancePunctualityGrade}
+                                                        onChange={(value) => setReviewFormData({ ...reviewFormData, attendancePunctualityGrade: value || '' })}
+                                                        data={[
+                                                            { value: '1', label: '1 – Poor' },
+                                                            { value: '2', label: '2 – Below Average' },
+                                                            { value: '3', label: '3 – Good' },
+                                                            { value: '4', label: '4 – Excellent' },
+                                                        ]}
+                                                        placeholder="Select grade (1-4)"
+                                                        styles={{ label: { color: '#139639', fontWeight: 700 } }}
+                                                    />
+                                                    <Box mt="xs">
+                                                        <Text fw={600} size="sm" mb={4}>Comments from the reviewer:</Text>
+                                                        <Textarea
+                                                            placeholder="e.g. She is progressing well..."
+                                                            value={reviewFormData.reviewerCommentAttendance || ''}
+                                                            onChange={(e) => setReviewFormData({ ...reviewFormData, reviewerCommentAttendance: e.target.value })}
+                                                            autosize
+                                                            minRows={2}
+                                                            radius="md"
+                                                        />
+                                                    </Box>
+                                                </Box>
                                             </SimpleGrid>
 
-                                            <Divider my="md" color="#E51690" size="sm" />
+                                            <Divider my="md" color="#267FBA" size="sm" />
 
                                             <Select
                                                 label="Recommended for further period of review"
@@ -6206,7 +6257,7 @@ export const StaffProfilePage = () => {
                                                 onChange={(value) => setReviewFormData({ ...reviewFormData, recommendedForReview: value || '' })}
                                                 data={['YES', 'NO']}
                                                 mb="md"
-                                                styles={{ label: { color: '#E51690', fontWeight: 700 } }}
+                                                styles={{ label: { color: '#267FBA', fontWeight: 700 } }}
                                             />
                                             {reviewFormData.recommendedForReview === 'YES' && (
                                                 <Textarea
@@ -6215,11 +6266,11 @@ export const StaffProfilePage = () => {
                                                     onChange={(e) => setReviewFormData({ ...reviewFormData, reviewReasons: e.target.value })}
                                                     minRows={3}
                                                     mb="md"
-                                                    styles={{ label: { color: '#E51690', fontWeight: 700 } }}
+                                                    styles={{ label: { color: '#267FBA', fontWeight: 700 } }}
                                                 />
                                             )}
 
-                                            <Divider my="md" color="#1EBAF2" size="sm" />
+                                            <Divider my="md" color="#139639" size="sm" />
 
                                             {/* Signatures */}
                                             <SimpleGrid cols={2} spacing="lg">
@@ -6238,7 +6289,7 @@ export const StaffProfilePage = () => {
                                                         value={reviewFormData.careStaffDate}
                                                         onChange={(e) => setReviewFormData({ ...reviewFormData, careStaffDate: e.target.value })}
                                                         mt="xs"
-                                                        styles={{ label: { color: '#E51690', fontWeight: 700 } }}
+                                                        styles={{ label: { color: '#267FBA', fontWeight: 700 } }}
                                                     />
                                                 </Box>
                                                 <Box>
@@ -6256,7 +6307,7 @@ export const StaffProfilePage = () => {
                                                         value={reviewFormData.reviewerDate}
                                                         onChange={(e) => setReviewFormData({ ...reviewFormData, reviewerDate: e.target.value })}
                                                         mt="xs"
-                                                        styles={{ label: { color: '#1EBAF2', fontWeight: 700 } }}
+                                                        styles={{ label: { color: '#139639', fontWeight: 700 } }}
                                                     />
                                                 </Box>
                                             </SimpleGrid>
@@ -6301,13 +6352,13 @@ export const StaffProfilePage = () => {
                                                         dateOfReview: reviewFormData.dateOfReview,
                                                         documentationComments: reviewFormData.documentationComments,
                                                         jobPerformanceGrade: reviewFormData.jobPerformanceGrade,
-                                                        jobPerformanceReason: reviewFormData.jobPerformanceReason,
+                                                        jobPerformanceReason: reviewFormData.reviewerCommentOverallWork,
                                                         trainingDevelopmentGrade: reviewFormData.trainingDevelopmentGrade,
-                                                        trainingDevelopmentReason: reviewFormData.trainingDevelopmentReason,
+                                                        trainingDevelopmentReason: reviewFormData.reviewerCommentProgressTraining,
                                                         communicationSkillsGrade: reviewFormData.communicationSkillsGrade,
-                                                        communicationSkillsReason: reviewFormData.communicationSkillsReason,
+                                                        communicationSkillsReason: reviewFormData.reviewerCommentTeamWorking,
                                                         attendancePunctualityGrade: reviewFormData.attendancePunctualityGrade,
-                                                        attendancePunctualityReason: reviewFormData.attendancePunctualityReason,
+                                                        attendancePunctualityReason: reviewFormData.reviewerCommentAttendance,
                                                         recommendedForReview: reviewFormData.recommendedForReview,
                                                         reviewReasons: reviewFormData.reviewReasons,
                                                         careStaffSignature: reviewFormData.careStaffSignature,
@@ -6326,7 +6377,7 @@ export const StaffProfilePage = () => {
                                                         notifications.show({
                                                             title: 'Success',
                                                             message: 'Form updated successfully',
-                                                            color: '#E51690',
+                                                            color: '#267FBA',
                                                         });
                                                     } else {
                                                         // Create new form
@@ -6338,7 +6389,7 @@ export const StaffProfilePage = () => {
                                                         notifications.show({
                                                             title: 'Success',
                                                             message: 'Form saved successfully',
-                                                            color: '#E51690',
+                                                            color: '#267FBA',
                                                         });
                                                     }
 

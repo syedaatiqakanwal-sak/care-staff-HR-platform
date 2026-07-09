@@ -4,12 +4,12 @@ export const theme: MantineThemeOverride = createTheme({
     primaryColor: 'brandBlue',
     colors: {
         brandBlue: [
-            '#EAF8FE', '#CFF0FC', '#B4E8FA', '#99DFF7', '#7ED7F5',
-            '#1EBAF2', '#19A7DA', '#158FBB', '#0F7296', '#0A556F'
+            '#e6f5eb', '#c2e8d1', '#9ddbb6', '#79ce9b', '#54c180',
+            '#139639', '#118233', '#0e7a2d', '#0b6224', '#084a1b'
         ],
         brandPink: [
-            '#FDE6F4', '#FACCE9', '#F7B3DE', '#F499D3', '#F180C8',
-            '#E51690', '#CD1481', '#AD116D', '#8C0D58', '#690943'
+            '#e3f0f8', '#b8d4ea', '#8db8dc', '#629cce', '#3780c0',
+            '#267FBA', '#2172a7', '#1d6a9e', '#185388', '#133d72'
         ],
         brandGray: [
             '#FFFFFF', '#F5F5F5', '#EDECF1', '#E2E1E8', '#D2D1D8',
@@ -47,8 +47,8 @@ export const theme: MantineThemeOverride = createTheme({
             styles: (theme: any) => ({
                 root: {
                     backgroundColor: '#ffffff', // Solid white instead of glass
-                    border: '1px solid rgba(30, 186, 242, 0.2)',
-                    boxShadow: '0 8px 32px rgba(30, 186, 242, 0.12)',
+                    border: '1px solid rgba(19, 150, 57, 0.2)',
+                    boxShadow: '0 8px 32px rgba(19, 150, 57, 0.12)',
                     transition: 'all 0.25s ease',
                     color: theme.other?.textPrimary || '#1f2937',
                 }
@@ -62,12 +62,12 @@ export const theme: MantineThemeOverride = createTheme({
             styles: () => ({
                 root: {
                     backgroundColor: '#ffffff', // Solid white
-                    border: '1px solid rgba(30, 186, 242, 0.2)',
-                    boxShadow: '0 8px 32px rgba(30, 186, 242, 0.12)',
+                    border: '1px solid rgba(19, 150, 57, 0.2)',
+                    boxShadow: '0 8px 32px rgba(19, 150, 57, 0.12)',
                     transition: 'transform 0.25s ease, box-shadow 0.25s ease',
                     '&:hover': {
                         transform: 'translateY(-4px)',
-                        boxShadow: '0 12px 40px rgba(229, 22, 144, 0.2)',
+                        boxShadow: '0 12px 40px rgba(38, 127, 186, 0.2)',
                     }
                 }
             })
@@ -76,7 +76,7 @@ export const theme: MantineThemeOverride = createTheme({
             styles: () => ({
                 content: {
                     backgroundColor: '#ffffff',
-                    border: '1px solid rgba(30, 186, 242, 0.2)',
+                    border: '1px solid rgba(19, 150, 57, 0.2)',
                     boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.2)',
                     borderRadius: '24px',
                 },
@@ -94,7 +94,7 @@ export const theme: MantineThemeOverride = createTheme({
                 root: {
                     transition: 'all 0.2s ease',
                     fontWeight: 700,
-                    boxShadow: '0 4px 14px 0 rgba(30, 186, 242, 0.2)',
+                    boxShadow: '0 4px 14px 0 rgba(19, 150, 57, 0.2)',
                 }
             }
         },
@@ -106,9 +106,9 @@ export const theme: MantineThemeOverride = createTheme({
             styles: () => ({
                 input: {
                     backgroundColor: '#ffffff',
-                    borderColor: 'rgba(30, 186, 242, 0.35)',
+                    borderColor: 'rgba(19, 150, 57, 0.35)',
                     '&:focus': {
-                        borderColor: '#1EBAF2',
+                        borderColor: '#139639',
                     }
                 }
             })
@@ -121,13 +121,12 @@ export const theme: MantineThemeOverride = createTheme({
             styles: () => ({
                 input: {
                     backgroundColor: '#ffffff',
-                    borderColor: 'rgba(30, 186, 242, 0.35)',
+                    borderColor: 'rgba(19, 150, 57, 0.35)',
                     '&:focus': {
-                        borderColor: '#1EBAF2',
+                        borderColor: '#139639',
                     }
                 }
             })
         }
     },
 });
-

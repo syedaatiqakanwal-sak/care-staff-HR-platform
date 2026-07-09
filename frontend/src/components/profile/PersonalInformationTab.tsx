@@ -1,7 +1,10 @@
 import { Paper, Tabs, Text, Button, Group, Box, Title } from '@mantine/core';
-import { User, FileCheck, Edit, Save, X } from 'lucide-react';
-import { useState } from 'react';
+import { User, Globe, FileCheck, Edit, Save, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { PersonalDetailsTab } from './PersonalDetailsTab';
+import { IdentityAddressTab } from './IdentityAddressTab';
+import { IdentityDocumentsTab } from './IdentityDocumentsTab';
 import { ReferencesTab } from './ReferencesTab';
 import { notifications } from '@mantine/notifications';
 
@@ -9,10 +12,11 @@ import { notifications } from '@mantine/notifications';
 interface PersonalInformationTabProps {
     profile: any;
     onProfileChange?: (field: string, value: any) => void;
-    onSave?: () => Promise<void>;
+    onSave?: () => Promise<boolean | void>;
 }
 
 export const PersonalInformationTab = ({ profile, onProfileChange, onSave }: PersonalInformationTabProps) => {
+    const [searchParams] = useSearchParams();
     const [subTab, setSubTab] = useState<string | null>('details');
     const [isEditing, setIsEditing] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -20,12 +24,11 @@ export const PersonalInformationTab = ({ profile, onProfileChange, onSave }: Per
     const handleSave = async () => {
         if (onSave) {
             setSaving(true);
-            await onSave();
+            const saved = await onSave();
             setSaving(false);
+            if (saved === false) return;
         }
         setIsEditing(false);
-        // Notification is handled by parent, but we can keep or remove this one. 
-        // Parent shows "Profile Updated" green check. We can avoid double toast.
     };
 
     const handleCancel = (e: React.MouseEvent) => {
@@ -37,6 +40,27 @@ export const PersonalInformationTab = ({ profile, onProfileChange, onSave }: Per
             color: 'gray'
         });
     };
+
+    useEffect(() => {
+        const section = searchParams.get('section');
+        if (!section) return;
+
+        if (section === 'references') {
+            setSubTab('references');
+            return;
+        }
+        if (section === 'details') {
+            setSubTab('details');
+            return;
+        }
+        if (section === 'identity') {
+            setSubTab('identity');
+            return;
+        }
+        if (section === 'identity-documents') {
+            setSubTab('identity-documents');
+        }
+    }, [searchParams]);
 
     return (
         <Paper p={{ base: 'md', md: 'xl' }} radius="24px" shadow="xs" style={{ position: 'relative' }}>
@@ -65,8 +89,10 @@ export const PersonalInformationTab = ({ profile, onProfileChange, onSave }: Per
 
             {/* Inner Tabs */}
             <style>{`
-                .tab-details[data-active] { background-color: #E51690 !important; color: white !important; border-color: #E51690 !important; box-shadow: 0 4px 12px rgba(229, 22, 144, 0.3) !important; }
+                .tab-details[data-active] { background-color: #267FBA !important; color: white !important; border-color: #267FBA !important; box-shadow: 0 4px 12px rgba(38, 127, 186, 0.3) !important; }
+                .tab-identity[data-active] { background-color: #F57C00 !important; color: white !important; border-color: #F57C00 !important; box-shadow: 0 4px 12px rgba(245, 124, 0, 0.3) !important; }
                 .tab-references[data-active] { background-color: #6A1B9A !important; color: white !important; border-color: #6A1B9A !important; box-shadow: 0 4px 12px rgba(106, 27, 154, 0.3) !important; }
+                .tab-documents[data-active] { background-color: #00897B !important; color: white !important; border-color: #00897B !important; box-shadow: 0 4px 12px rgba(0, 137, 123, 0.3) !important; }
             `}</style>
             <Tabs
                 value={subTab}
@@ -107,6 +133,20 @@ export const PersonalInformationTab = ({ profile, onProfileChange, onSave }: Per
                         Personal Details
                     </Tabs.Tab>
                     <Tabs.Tab 
+                        value="identity" 
+                        leftSection={<Globe size={18} />}
+                        className="tab-identity"
+                    >
+                        Identity & Address
+                    </Tabs.Tab>
+                    <Tabs.Tab 
+                        value="identity-documents" 
+                        leftSection={<FileCheck size={18} />}
+                        className="tab-documents"
+                    >
+                        Identity & Documents
+                    </Tabs.Tab>
+                    <Tabs.Tab 
                         value="references" 
                         leftSection={<FileCheck size={18} />}
                         className="tab-references"
@@ -117,6 +157,21 @@ export const PersonalInformationTab = ({ profile, onProfileChange, onSave }: Per
 
                 <Tabs.Panel value="details">
                     <PersonalDetailsTab profile={profile} isEditing={isEditing} onProfileChange={onProfileChange} />
+                </Tabs.Panel>
+
+                <Tabs.Panel value="identity">
+                    <IdentityAddressTab
+                        profile={profile}
+                        isEditing={isEditing}
+                    />
+                </Tabs.Panel>
+
+                <Tabs.Panel value="identity-documents">
+                    <IdentityDocumentsTab
+                        profile={profile}
+                        isEditing={isEditing}
+                        onProfileChange={onProfileChange}
+                    />
                 </Tabs.Panel>
 
                 <Tabs.Panel value="references">

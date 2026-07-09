@@ -4,6 +4,9 @@ import { VleCredential } from '../vle-credentials/vle-credential.entity';
 
 export enum UserRole {
     ADMIN = 'ADMIN',
+    MANAGER = 'MANAGER',
+    HR = 'HR',
+    SUPERVISOR = 'SUPERVISOR',
     STAFF = 'STAFF',
 }
 
@@ -27,6 +30,9 @@ export class User {
 
     @Column({ default: true })
     isActive: boolean;
+
+    @Column({ default: false })
+    readOnly: boolean;
 
     @Column({ nullable: true })
     lastLoginAt: Date;

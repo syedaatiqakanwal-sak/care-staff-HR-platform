@@ -9,7 +9,6 @@ import {
     Anchor,
     Stack,
     Box,
-    SegmentedControl,
     Group
 } from '@mantine/core';
 import { Mail, Lock } from 'lucide-react';
@@ -18,6 +17,7 @@ import { notifications } from '@mantine/notifications';
 import { Check, X } from 'lucide-react';
 import { useState } from 'react';
 import axios from 'axios';
+import { setSessionFromLogin } from '../utils/auth';
 
 function loginErrorMessage(error: unknown): string {
     if (!axios.isAxiosError(error)) {
@@ -38,7 +38,6 @@ function loginErrorMessage(error: unknown): string {
 
 export const LoginPage = () => {
     const navigate = useNavigate();
-    const [role, setRole] = useState<'staff' | 'admin'>('staff');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
@@ -48,28 +47,20 @@ export const LoginPage = () => {
         setLoading(true);
 
         try {
-            const endpoint = role === 'staff'
-                ? '/api/v1/auth/login/staff'
-                : '/api/v1/auth/login/admin';
-
-            const response = await axios.post(endpoint, {
+            const response = await axios.post('/api/v1/auth/login/admin', {
                 email,
                 password
             });
 
-            // Store token and user details
-            localStorage.setItem('token', response.data.access_token);
-            localStorage.setItem('role', response.data.user.role); // Server returned role
-            localStorage.setItem('userName', response.data.user.name);
-            localStorage.setItem('userId', response.data.user.id);
+            setSessionFromLogin(response.data);
 
             notifications.show({
                 title: 'Welcome Back!',
-                message: `Successfully logged in to ${role} portal.`,
-                color: '#E51690',
+                message: 'Successfully logged in.',
+                color: '#267FBA',
                 icon: <Check size={16} />,
             });
-            navigate(role === 'staff' ? '/dashboard/me' : '/dashboard');
+            navigate('/dashboard');
         } catch (error: unknown) {
             console.error('Login failed:', error);
             notifications.show({
@@ -105,21 +96,8 @@ export const LoginPage = () => {
                 <Paper p={30} radius="xl" withBorder w="100%" shadow="sm">
                     <Title order={2} ta="center" fw={800} mb={4} c="brandBlue.5">Welcome Back</Title>
                     <Text c="dimmed" size="sm" ta="center" mb={20}>
-                        Log in to your portal
+                        Log in to the admin portal
                     </Text>
-
-                    <SegmentedControl
-                        fullWidth
-                        radius="md"
-                        mb="md"
-                        value={role}
-                        onChange={(val) => setRole(val as 'staff' | 'admin')}
-                        data={[
-                            { label: 'Staff Portal', value: 'staff' },
-                            { label: 'Admin Portal', value: 'admin' },
-                        ]}
-                        color="brandBlue.5"
-                    />
 
                     <form onSubmit={handleLogin}>
                         <Stack gap="md">

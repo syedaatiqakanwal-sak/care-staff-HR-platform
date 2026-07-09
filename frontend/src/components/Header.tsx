@@ -6,6 +6,11 @@ import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { notifications as mantineNotifications } from '@mantine/notifications';
 
+const DBS_NOTIFICATION_SHOWN_KEY = 'dbs_notification_shown';
+
+const isDbsDeclarationNotification = (n: { title?: string; metadata?: { kind?: string } }) =>
+    n.metadata?.kind === 'dbs_declaration_due' || n.title === 'DBS declaration due';
+
 export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onSearch?: (val: string) => void }) => {
     const navigate = useNavigate();
     const [notifications, setNotifications] = useState<any[]>([]);
@@ -74,6 +79,23 @@ export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onS
 
             // 2. Handle Other Notifications (Show individual popups)
             otherNotifications.forEach((n: any) => {
+                if (isDbsDeclarationNotification(n)) {
+                    knownIdsRef.current.add(n.id);
+                    if (sessionStorage.getItem(DBS_NOTIFICATION_SHOWN_KEY)) {
+                        return;
+                    }
+                    mantineNotifications.show({
+                        title: n.title,
+                        message: n.message,
+                        color: 'brandBlue',
+                        icon: <Mail size={18} />,
+                        autoClose: 5000,
+                        withCloseButton: true,
+                    });
+                    sessionStorage.setItem(DBS_NOTIFICATION_SHOWN_KEY, '1');
+                    return;
+                }
+
                 mantineNotifications.show({
                     title: n.title,
                     message: n.message, // Standard message for others
@@ -140,14 +162,14 @@ export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onS
                         boxShadow: '0 6px 12px rgba(0,0,0,0.1)'
                     }}
                 >
-                    <img src="/assets/logo.png" alt="Inspire London College Logo" style={{ height: 36, width: 'auto' }} />
+                    <img src="/assets/logo.png" alt="Lets Care All Logo" style={{ height: 36, width: 'auto' }} />
                 </Box>
                 <Box hiddenFrom="sm">
-                    <Text fw={900} size="lg" c="#1A1A1A" style={{ lineHeight: 1, letterSpacing: '-0.5px' }}>Inspire London College</Text>
+                    <Text fw={900} size="lg" c="#1A1A1A" style={{ lineHeight: 1, letterSpacing: '-0.5px' }}>Lets Care All</Text>
                 </Box>
                 <Box visibleFrom="sm">
-                    <Text fw={900} size="24px" c="#1A1A1A" style={{ lineHeight: 1, letterSpacing: '-0.5px' }}>Inspire London College</Text>
-                    <Text size="11px" c="#1EBAF2" opacity={0.9} fw={700} tt="uppercase" style={{ fontSize: '10px', letterSpacing: '1.5px', marginTop: '4px' }}>learning management portal</Text>
+                    <Text fw={900} size="24px" c="#1A1A1A" style={{ lineHeight: 1, letterSpacing: '-0.5px' }}>Lets Care All</Text>
+                    <Text size="11px" c="#139639" opacity={0.9} fw={700} tt="uppercase" style={{ fontSize: '10px', letterSpacing: '1.5px', marginTop: '4px' }}>learning management portal</Text>
                 </Box>
             </Link>
 
@@ -163,7 +185,7 @@ export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onS
                 styles={{
                     input: {
                         backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                        border: '1px solid rgba(30, 186, 242, 0.35)',
+                        border: '1px solid rgba(19, 150, 57, 0.35)',
                         color: '#333333',
                         '&::placeholder': { color: 'rgba(51, 51, 51, 0.6)' }
                     }
@@ -176,7 +198,7 @@ export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onS
                 <Menu shadow="md" width={320} position="bottom-end" radius="md">
                     <Menu.Target>
                         <ActionIcon variant="filled" color="rgba(255,255,255,0.1)" size="lg" radius="xl">
-                            <Indicator disabled={unreadCount === 0} color="#E51690" size={8} offset={2} withBorder processing>
+                            <Indicator disabled={unreadCount === 0} color="#267FBA" size={8} offset={2} withBorder processing>
                                 <Bell size={18} color="#1A1A1A" />
                             </Indicator>
                         </ActionIcon>
@@ -191,9 +213,9 @@ export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onS
                                 <Menu.Item
                                     key={notif.id}
                                     leftSection={
-                                        notif.metadata?.certificateId ? <ShieldCheck size={16} color="#1EBAF2" /> : <Mail size={16} />
+                                        notif.metadata?.certificateId ? <ShieldCheck size={16} color="#139639" /> : <Mail size={16} />
                                     }
-                                    style={{ backgroundColor: notif.isRead ? 'transparent' : 'rgba(30, 186, 242, 0.1)' }}
+                                    style={{ backgroundColor: notif.isRead ? 'transparent' : 'rgba(19, 150, 57, 0.1)' }}
                                     onClick={() => handleMarkRead(notif.id, notif.metadata)}
                                 >
                                     <Text size="sm" fw={700} c={notif.isRead ? 'dimmed' : 'dark'}>{notif.title}</Text>
@@ -215,7 +237,9 @@ export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onS
                                         {localStorage.getItem('userName') || 'User'}
                                     </Text>
                                     <Text size="10px" c="white" opacity={0.7} fw={700} mt={2}>
-                                        {(localStorage.getItem('role') || '').toLowerCase() === 'admin' ? 'Admin Portal 🚀' : 'Staff Portal'}
+                                        {['admin', 'manager', 'hr', 'supervisor'].includes((localStorage.getItem('role') || '').toLowerCase())
+                                            ? `${(localStorage.getItem('role') || 'Management').charAt(0).toUpperCase() + (localStorage.getItem('role') || '').slice(1)} Portal`
+                                            : 'Staff Portal'}
                                     </Text>
                                 </Box>
                                 <Avatar color="white" radius="xl" size="md" styles={{ placeholder: { backgroundColor: 'rgba(255,255,255,0.2)', color: 'white', fontWeight: 900 } }}>
@@ -227,7 +251,7 @@ export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onS
 
                     <Menu.Dropdown>
                         <Menu.Label>Account Management</Menu.Label>
-                        {(localStorage.getItem('role') || '').toLowerCase() !== 'admin' && (
+                        {!['admin', 'manager', 'hr', 'supervisor'].includes((localStorage.getItem('role') || '').toLowerCase()) && (
                             <Menu.Item
                                 component={Link}
                                 to="/dashboard/me"

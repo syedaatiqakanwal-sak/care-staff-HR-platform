@@ -55,18 +55,28 @@ export class AuthController {
     }
 
     @Throttle({ default: { ttl: 900000, limit: 5 } })
+    @Public()
+    @Post('login/management')
+    async loginManagement(@Body() req: LoginDto) {
+        return this.authService.loginManagement(req);
+    }
+
+    @Throttle({ default: { ttl: 900000, limit: 5 } })
+    @Public()
     @Post('forgot-password')
     async forgotPassword(@Body() body: { email: string }) {
         return this.authService.forgotPassword(body.email);
     }
 
     @Throttle({ default: { ttl: 900000, limit: 10 } })
+    @Public()
     @Post('verify-otp')
     async verifyOtp(@Body() body: { email: string, otp: string }) {
         return this.authService.verifyOtp(body.email, body.otp);
     }
 
     @Throttle({ default: { ttl: 900000, limit: 5 } })
+    @Public()
     @Post('reset-password')
     async resetPassword(@Body() body: { email: string, otp: string, newPassword: string }) {
         return this.authService.resetPassword(body.email, body.otp, body.newPassword);

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Box, Center, Stack, Title, Text, Button, Container, Group } from '@mantine/core';
+import { Box, Center, Stack, Title, Text, Button, Container, Group, Anchor } from '@mantine/core';
 
 export const LandingPage = () => {
     return (
@@ -22,7 +22,7 @@ export const LandingPage = () => {
                     width: '600px',
                     height: '600px',
                     borderRadius: '50%',
-                    background: 'linear-gradient(135deg, rgba(30, 186, 242, 0.2) 0%, rgba(229, 22, 144, 0.12) 100%)',
+                    background: 'linear-gradient(135deg, rgba(19, 150, 57, 0.2) 0%, rgba(38, 127, 186, 0.12) 100%)',
                     filter: 'blur(80px)'
                 }}
             />
@@ -34,7 +34,7 @@ export const LandingPage = () => {
                     width: '500px',
                     height: '500px',
                     borderRadius: '50%',
-                    background: 'linear-gradient(135deg, rgba(30, 186, 242, 0.12) 0%, rgba(229, 22, 144, 0.08) 100%)',
+                    background: 'linear-gradient(135deg, rgba(19, 150, 57, 0.12) 0%, rgba(38, 127, 186, 0.08) 100%)',
                     filter: 'blur(80px)'
                 }}
             />
@@ -57,7 +57,7 @@ export const LandingPage = () => {
                         >
                             <img
                                 src="/assets/logo.png"
-                                alt="Inspire London College Logo"
+                                alt="Lets Care All Logo"
                                 style={{
                                     height: 96,
                                     width: 'auto'
@@ -74,15 +74,15 @@ export const LandingPage = () => {
                                 style={{
                                     letterSpacing: '-2px',
                                     lineHeight: 1,
-                                    background: 'linear-gradient(135deg, #1EBAF2 0%, #E51690 100%)',
+                                    background: 'linear-gradient(135deg, #139639 0%, #267FBA 100%)',
                                     WebkitBackgroundClip: 'text',
                                     WebkitTextFillColor: 'transparent',
                                     paddingBottom: '8px'
                                 }}
                             >
-                                Inspire London College
+                                Lets Care All
                             </Title>
-                            <Text size="md" c="#1EBAF2" ta="center" fw={800} tt="uppercase" opacity={0.7} style={{ letterSpacing: '3px' }}>
+                            <Text size="md" c="#139639" ta="center" fw={800} tt="uppercase" opacity={0.7} style={{ letterSpacing: '3px' }}>
                                 Education Management Portal
                             </Text>
                             <Text size="md" c="dimmed" ta="center" fw={600} maw={500} mt="md">
@@ -99,8 +99,8 @@ export const LandingPage = () => {
                                 fullWidth
                                 style={{
                                     height: 52,
-                                    background: 'linear-gradient(135deg, #1EBAF2 0%, #E51690 100%)',
-                                    boxShadow: '0 10px 25px rgba(30, 186, 242, 0.3)',
+                                    background: 'linear-gradient(135deg, #139639 0%, #267FBA 100%)',
+                                    boxShadow: '0 10px 25px rgba(19, 150, 57, 0.3)',
                                     fontSize: '16px',
                                     fontWeight: 900
                                 }}
@@ -114,9 +114,38 @@ export const LandingPage = () => {
             </Center>
 
             <Box p={16} ta="center" style={{ zIndex: 1 }}>
-                <Text size="xs" c="#1EBAF2" fw={800} opacity={0.6} style={{ letterSpacing: '2px' }}>
-                    © {new Date().getFullYear()} INSPIRE LONDON COLLEGE • LEARNING SYSTEMS
-                </Text>
+                <Group justify="center" gap={10} wrap="wrap">
+                    <Text size="xs" c="#139639" fw={800} opacity={0.6} style={{ letterSpacing: '2px' }}>
+                        © {new Date().getFullYear()} INSPIRE LONDON COLLEGE • LEARNING SYSTEMS
+                    </Text>
+                    <Group gap={4}>
+                        <Text size="xs" c="#139639" fw={700} opacity={0.7}>Developer</Text>
+                        <Anchor
+                            href="https://pk.linkedin.com/in/syeda-atiqa-kanwal-838490390?trk=people-guest_people_search-card"
+                            target="_blank"
+                            c="#139639"
+                            style={{ display: 'inline-flex', alignItems: 'center' }}
+                            aria-label="LinkedIn profile"
+                        >
+                            <Box
+                                style={{
+                                    width: 16,
+                                    height: 16,
+                                    backgroundColor: '#0A66C2',
+                                    borderRadius: 3,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    lineHeight: 1
+                                }}
+                            >
+                                <Text size="xs" fw={900} c="white" style={{ fontFamily: 'Inter, system-ui, sans-serif', fontSize: 9 }}>
+                                    in
+                                </Text>
+                            </Box>
+                        </Anchor>
+                    </Group>
+                </Group>
             </Box>
         </Box>
     );

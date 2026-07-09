@@ -1,10 +1,11 @@
 import { Paper, Title, Text, Stack, Button, Box, Group, Divider, Card, ThemeIcon } from '@mantine/core';
 import { Key, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { isStrictAdmin } from '../utils/roles';
 
 export const SettingsPage = () => {
     const navigate = useNavigate();
-    const isAdmin = localStorage.getItem('role') === 'admin';
+    const isAdmin = isStrictAdmin();
 
     return (
         <Paper p={{ base: 'md', md: 'xl' }} radius="24px" shadow="xs">

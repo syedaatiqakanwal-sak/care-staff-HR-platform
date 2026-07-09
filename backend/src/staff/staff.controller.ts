@@ -1,14 +1,47 @@
-import { Controller, Get, Put, Post, Delete, Body, UseGuards, Request, Param, ForbiddenException, Res, Query, UseInterceptors, UploadedFile, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import {
+    Controller,
+    Get,
+    Put,
+    Patch,
+    Post,
+    Delete,
+    Body,
+    UseGuards,
+    Request,
+    Param,
+    ForbiddenException,
+    Res,
+    Query,
+    UseInterceptors,
+    UploadedFile,
+    BadRequestException,
+    UnauthorizedException,
+    NotFoundException,
+    Logger,
+    HttpException,
+    InternalServerErrorException,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import { StaffService } from './staff.service';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction } from '../audit/audit-action.enum';
+import { clientIpFromRequest } from '../audit/audit-request.util';
 import { AuthGuard } from '@nestjs/passport';
 import { JwtOrApiTokenGuard } from './jwt-or-api-token.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserRole } from '../users/user.entity';
+import {
+    DASHBOARD_ROLES,
+    MANAGEMENT_ROLES,
+    canEditOtherStaffProfiles,
+    canViewOtherStaffProfiles,
+} from '../users/role.utils';
 import { UpdateStaffDto } from './dto/update-staff.dto';
 import { CreateReviewFormDto } from './dto/create-review-form.dto';
 import { CreateAddressDto } from './dto/create-address.dto';
+import { UpdateAddressDto } from './dto/update-address.dto';
+import { LinkAddressProofDto } from './dto/link-address-proof.dto';
 import { HttpCode } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -28,15 +61,29 @@ type UploadedImageFile = {
 @Controller('staff')
 @UseGuards(JwtOrApiTokenGuard, RolesGuard)
 export class StaffController {
+    private readonly logger = new Logger(StaffController.name);
+
     constructor(
         private staffService: StaffService,
         private jwtService: JwtService,
+        private audit: AuditService,
     ) { }
 
     @Get('me')
     @Roles(UserRole.STAFF)
-    getMyProfile(@Request() req) {
-        return this.staffService.getProfileByUserId(req.user.userId);
+    async getMyProfile(@Request() req) {
+        if (!req.user?.userId) {
+            throw new UnauthorizedException('Authentication required');
+        }
+        try {
+            return await this.staffService.getProfileByUserId(req.user.userId);
+        } catch (error) {
+            if (error instanceof HttpException) {
+                throw error;
+            }
+            this.logger.error(`GET /staff/me failed for user ${req.user.userId}`, error instanceof Error ? error.stack : error);
+            throw new InternalServerErrorException('Failed to load staff profile');
+        }
     }
 
     @Put('me')
@@ -50,47 +97,62 @@ export class StaffController {
         // or just manually strip the sensitive ones again if using the same DTO.
 
         // Let's strip sensitive admin-only fields for self-update:
-        const { employmentStatus, ilccsNumber, lcaNumber, inductionDate, rapidInductionDate, role, ...allowed } = body as any;
+        const { employmentStatus, ilccsNumber, lcaNumber, startDate, inductionDate, rapidInductionDate, role, ...allowed } = body as any;
         return this.staffService.updateProfileByUserId(req.user.userId, allowed);
     }
 
     @Get(':id')
-    @Roles(UserRole.ADMIN, UserRole.STAFF) // Allow both to hit endpoint
+    @Roles(...DASHBOARD_ROLES, UserRole.STAFF)
     async getProfileById(@Param('id') id: string, @Request() req) {
-        // Access Control Logic
-        // We assume :id is the USER ID (consistent with Dashboard and isSelf check)
+        // :id is the USER id (see dashboard stats — staff.id === users.id)
         const loggedInUser = req.user;
-        
-        // Get requested staff profile to get staffId
-        const requestedProfile = await this.staffService.getProfileByUserId(id);
-        const staffId = requestedProfile.id;
-        
-        if (loggedInUser.role !== 'ADMIN') {
-            // Get logged-in user's staff profile to get their staffId
-            const loggedInProfile = await this.staffService.getProfileByUserId(loggedInUser.userId);
-            if (loggedInProfile.id !== staffId) {
-                throw new ForbiddenException('Aap doosron ka data nahi dekh sakte!');
-            }
+        if (!loggedInUser?.userId) {
+            throw new UnauthorizedException('Authentication required');
         }
 
-        // Use ByUserId for both Admin and Self (if accessing via ID)
-        return requestedProfile;
+        try {
+            const requestedProfile = await this.staffService.getProfileByUserId(id);
+            if (!requestedProfile) {
+                throw new NotFoundException('Staff not found');
+            }
+
+            const staffId = requestedProfile.id;
+            const canViewOthers = canViewOtherStaffProfiles(loggedInUser.role);
+
+            if (!canViewOthers) {
+                const loggedInProfile = await this.staffService.getProfileByUserId(loggedInUser.userId);
+                if (!loggedInProfile || loggedInProfile.id !== staffId) {
+                    throw new ForbiddenException('Aap doosron ka data nahi dekh sakte!');
+                }
+            }
+
+            return requestedProfile;
+        } catch (error) {
+            if (error instanceof HttpException) {
+                throw error;
+            }
+            this.logger.error(
+                `GET /staff/${id} failed`,
+                error instanceof Error ? error.stack : error,
+            );
+            throw new InternalServerErrorException('Failed to load staff profile');
+        }
     }
 
     @Put(':id')
-    @Roles(UserRole.ADMIN)
+    @Roles(...MANAGEMENT_ROLES)
     updateProfileById(@Param('id') id: string, @Body() body: UpdateStaffDto) {
         return this.staffService.updateProfileByUserId(id, body);
     }
 
     @Get()
-    @Roles(UserRole.ADMIN)
+    @Roles(...DASHBOARD_ROLES)
     getAllStaff() {
         return this.staffService.findAll();
     }
 
     @Get('stats')
-    @Roles(UserRole.ADMIN)
+    @Roles(...DASHBOARD_ROLES)
     async getStats() {
         return this.staffService.getStats();
     }
@@ -98,47 +160,73 @@ export class StaffController {
     // --- Address History Endpoints ---
 
     @Get(':id/addresses')
-    @Roles(UserRole.ADMIN, UserRole.STAFF)
+    @Roles(...DASHBOARD_ROLES, UserRole.STAFF)
     getAddresses(@Param('id') id: string, @Request() req) {
-        // Access Control
         const isSelf = req.user.userId === id;
-        const isAdmin = req.user.role === UserRole.ADMIN;
-        if (!isAdmin && !isSelf) throw new ForbiddenException('Access denied');
+        const canViewOthers = canViewOtherStaffProfiles(req.user.role);
+        if (!canViewOthers && !isSelf) throw new ForbiddenException('Access denied');
 
         return this.staffService.getAddresses(id);
     }
 
     @Post(':id/addresses')
-    @Roles(UserRole.ADMIN, UserRole.STAFF)
+    @Roles(...DASHBOARD_ROLES, UserRole.STAFF)
     addAddress(@Param('id') id: string, @Body() body: CreateAddressDto, @Request() req) {
         const isSelf = req.user.userId === id;
-        const isAdmin = req.user.role === UserRole.ADMIN;
-        if (!isAdmin && !isSelf) throw new ForbiddenException('Access denied');
+        const canViewOthers = canViewOtherStaffProfiles(req.user.role);
+        if (!canViewOthers && !isSelf) throw new ForbiddenException('Access denied');
 
         return this.staffService.addAddress(id, body);
     }
 
     @Delete(':id/addresses/:addressId')
-    @Roles(UserRole.ADMIN, UserRole.STAFF)
+    @Roles(...DASHBOARD_ROLES, UserRole.STAFF)
     removeAddress(@Param('id') id: string, @Param('addressId') addressId: string, @Request() req) {
         const isSelf = req.user.userId === id;
-        const isAdmin = req.user.role === UserRole.ADMIN;
-        if (!isAdmin && !isSelf) throw new ForbiddenException('Access denied');
+        const canViewOthers = canViewOtherStaffProfiles(req.user.role);
+        if (!canViewOthers && !isSelf) throw new ForbiddenException('Access denied');
 
         return this.staffService.removeAddress(id, addressId);
+    }
+
+    @Patch(':id/addresses/:addressId')
+    @Roles(...DASHBOARD_ROLES, UserRole.STAFF)
+    updateAddress(
+        @Param('id') id: string,
+        @Param('addressId') addressId: string,
+        @Body() body: UpdateAddressDto,
+        @Request() req,
+    ) {
+        const isSelf = req.user.userId === id;
+        const canViewOthers = canViewOtherStaffProfiles(req.user.role);
+        if (!canViewOthers && !isSelf) throw new ForbiddenException('Access denied');
+
+        return this.staffService.updateAddress(id, addressId, body);
+    }
+
+    @Put(':id/addresses/:addressId/proof')
+    @Roles(...MANAGEMENT_ROLES)
+    linkAddressProof(
+        @Param('id') id: string,
+        @Param('addressId') addressId: string,
+        @Body() body: LinkAddressProofDto,
+        @Request() req,
+    ) {
+        const canViewOthers = canViewOtherStaffProfiles(req.user.role);
+        if (!canViewOthers && req.user.userId !== id) {
+            throw new ForbiddenException('Access denied');
+        }
+        return this.staffService.linkAddressProof(id, addressId, body.proofDocumentId);
     }
 
     // --- Review Form Endpoints ---
 
     @Post(':id/review-forms')
-    @Roles(UserRole.ADMIN, UserRole.STAFF)
+    @Roles(...DASHBOARD_ROLES, UserRole.STAFF)
     createReviewForm(@Param('id') id: string, @Body() body: CreateReviewFormDto, @Request() req) {
-        // Access Control: Staff can only create forms for themselves
         const isSelf = req.user.userId === id;
-        // Normalize role comparison (handle both uppercase and lowercase)
-        const userRole = typeof req.user.role === 'string' ? req.user.role.toUpperCase() : req.user.role;
-        const isAdmin = userRole === UserRole.ADMIN || userRole === 'ADMIN';
-        if (!isAdmin && !isSelf) {
+        const canManageOthers = canEditOtherStaffProfiles(req.user.role);
+        if (!canManageOthers && !isSelf) {
             throw new ForbiddenException('You can only create review forms for yourself.');
         }
 
@@ -149,11 +237,11 @@ export class StaffController {
     }
 
     @Get(':id/review-forms')
-    @Roles(UserRole.ADMIN, UserRole.STAFF)
+    @Roles(...DASHBOARD_ROLES, UserRole.STAFF)
     getReviewForms(@Param('id') id: string, @Request() req) {
         const isSelf = req.user.userId === id;
-        const isAdmin = req.user.role === UserRole.ADMIN;
-        if (!isAdmin && !isSelf) throw new ForbiddenException('Access denied');
+        const canViewOthers = canViewOtherStaffProfiles(req.user.role);
+        if (!canViewOthers && !isSelf) throw new ForbiddenException('Access denied');
 
         return this.staffService.getProfileByUserId(id).then(profile => {
             return this.staffService.getReviewFormsByStaffId(profile.id);
@@ -161,11 +249,10 @@ export class StaffController {
     }
 
     @Get('review-forms/:formId')
-    @Roles(UserRole.ADMIN, UserRole.STAFF)
+    @Roles(...DASHBOARD_ROLES, UserRole.STAFF)
     async getReviewForm(@Param('formId') formId: string, @Request() req) {
         const form = await this.staffService.getReviewFormById(formId);
-        // Staff can only view their own review forms
-        if (req.user.role !== UserRole.ADMIN) {
+        if (!canViewOtherStaffProfiles(req.user.role)) {
             const profile = await this.staffService.getProfileByUserId(req.user.userId);
             if (form.staff && form.staff.id !== profile.id) {
                 throw new ForbiddenException('Access denied');
@@ -175,13 +262,13 @@ export class StaffController {
     }
 
     @Put('review-forms/:formId')
-    @Roles(UserRole.ADMIN, UserRole.STAFF)
+    @Roles(...DASHBOARD_ROLES, UserRole.STAFF)
     updateReviewForm(@Param('formId') formId: string, @Body() body: Partial<CreateReviewFormDto>, @Request() req) {
         return this.staffService.updateReviewForm(formId, body, req.user);
     }
 
     @Delete('review-forms/:formId')
-    @Roles(UserRole.ADMIN)
+    @Roles(...MANAGEMENT_ROLES)
     deleteReviewForm(@Param('formId') formId: string) {
         return this.staffService.deleteReviewForm(formId);
     }
@@ -190,14 +277,23 @@ export class StaffController {
     @Delete(':id')
     @Roles(UserRole.ADMIN)
     @HttpCode(204)
-    async deleteStaffUser(@Param('id') id: string) {
+    async deleteStaffUser(@Param('id') id: string, @Request() req) {
         await this.staffService.deleteUserCompletely(id);
+        await this.audit.log({
+            userId: req.user.userId,
+            userRole: req.user.role,
+            action: AuditAction.DELETE,
+            entityType: 'user',
+            entityId: id,
+            summary: `Deleted staff user ${id} and dependent records`,
+            ipAddress: clientIpFromRequest(req),
+        });
         return;
     }
 
     // --- Monthly Report Endpoint ---
     @Get(':id/monthly-report')
-    @Roles(UserRole.ADMIN, UserRole.STAFF)
+    @Roles(...DASHBOARD_ROLES, UserRole.STAFF)
     async downloadMonthlyReport(
         @Param('id') id: string,
         @Query('year') year: string,
@@ -207,8 +303,8 @@ export class StaffController {
     ) {
         // Access Control
         const isSelf = req.user.userId === id;
-        const isAdmin = req.user.role === UserRole.ADMIN;
-        if (!isAdmin && !isSelf) {
+        const canViewOthers = canViewOtherStaffProfiles(req.user.role);
+        if (!canViewOthers && !isSelf) {
             throw new ForbiddenException('Access denied');
         }
 
@@ -239,7 +335,7 @@ export class StaffController {
     }
 
     @Get(':id/enrollment-completion-report')
-    @Roles(UserRole.ADMIN, UserRole.STAFF)
+    @Roles(...DASHBOARD_ROLES, UserRole.STAFF)
     async downloadEnrollmentCompletionReport(
         @Param('id') id: string,
         @Request() req,
@@ -247,8 +343,8 @@ export class StaffController {
     ) {
         // Access Control
         const isSelf = req.user.userId === id;
-        const isAdmin = req.user.role === UserRole.ADMIN;
-        if (!isAdmin && !isSelf) {
+        const canViewOthers = canViewOtherStaffProfiles(req.user.role);
+        if (!canViewOthers && !isSelf) {
             throw new ForbiddenException('Access denied');
         }
 
@@ -268,7 +364,7 @@ export class StaffController {
     }
 
     @Get(':id/yearly-report')
-    @Roles(UserRole.ADMIN, UserRole.STAFF)
+    @Roles(...DASHBOARD_ROLES, UserRole.STAFF)
     async downloadYearlyReport(
         @Param('id') id: string,
         @Query('year') year: string,
@@ -277,8 +373,8 @@ export class StaffController {
     ) {
         // Access Control
         const isSelf = req.user.userId === id;
-        const isAdmin = req.user.role === UserRole.ADMIN;
-        if (!isAdmin && !isSelf) {
+        const canViewOthers = canViewOtherStaffProfiles(req.user.role);
+        if (!canViewOthers && !isSelf) {
             throw new ForbiddenException('Access denied');
         }
 
@@ -301,7 +397,7 @@ export class StaffController {
 
     // --- Profile Picture Upload Endpoint ---
     @Post(':id/profile-picture')
-    @Roles(UserRole.ADMIN, UserRole.STAFF)
+    @Roles(...DASHBOARD_ROLES, UserRole.STAFF)
     @UseInterceptors(
         FileInterceptor('file', {
             storage: diskStorage({
@@ -335,8 +431,8 @@ export class StaffController {
     ) {
         // Access Control
         const isSelf = req.user.userId === id;
-        const isAdmin = req.user.role === UserRole.ADMIN;
-        if (!isAdmin && !isSelf) {
+        const canViewOthers = canViewOtherStaffProfiles(req.user.role);
+        if (!canViewOthers && !isSelf) {
             throw new ForbiddenException('You can only upload your own profile picture.');
         }
 

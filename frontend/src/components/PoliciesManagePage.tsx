@@ -36,7 +36,8 @@ type PolicyRow = {
 
 export const PoliciesManagePage = () => {
   const role = (localStorage.getItem('role') || '').toLowerCase();
-  const isAdmin = role === 'admin';
+  const isAdmin = ['admin', 'manager', 'hr'].includes(role);
+  const canEdit = isAdmin && localStorage.getItem('readOnly') !== 'true';
   const token = localStorage.getItem('token');
 
   const [loading, setLoading] = useState(true);
@@ -123,12 +124,12 @@ export const PoliciesManagePage = () => {
         await axios.post('/api/v1/policies', fd, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        notifications.show({ title: 'Created', message: 'Policy created successfully', color: '#E51690' });
+        notifications.show({ title: 'Created', message: 'Policy created successfully', color: '#267FBA' });
       } else {
         await axios.patch(`/api/v1/policies/${editing.id}`, fd, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        notifications.show({ title: 'Updated', message: 'Policy updated successfully', color: '#E51690' });
+        notifications.show({ title: 'Updated', message: 'Policy updated successfully', color: '#267FBA' });
       }
 
       setModalOpen(false);
@@ -164,7 +165,7 @@ export const PoliciesManagePage = () => {
 
     try {
       await axios.delete(`/api/v1/policies/${p.id}`, { headers: { Authorization: `Bearer ${token}` } });
-      notifications.show({ title: 'Deleted', message: 'Policy deleted', color: '#E51690' });
+      notifications.show({ title: 'Deleted', message: 'Policy deleted', color: '#267FBA' });
       await fetchPolicies();
     } catch (err: any) {
       notifications.show({ title: 'Error', message: err?.response?.data?.message || 'Failed to delete policy.', color: 'red' });
@@ -174,12 +175,11 @@ export const PoliciesManagePage = () => {
   const downloadPdf = async (p: PolicyRow) => {
     if (!token) return;
     try {
-      const tokenRes = await axios.get(`/api/v1/policies/${p.id}/view-token`, {
+      const pdfRes = await axios.get(`/api/v1/policies/${p.id}/file`, {
         headers: { Authorization: `Bearer ${token}` },
+        responseType: 'blob',
       });
-      const streamUrl = `/api/v1/policies/${p.id}/stream?token=${encodeURIComponent(tokenRes.data.token)}`;
-      const pdfRes = await axios.get(streamUrl, { responseType: 'blob' });
-      const blobUrl = URL.createObjectURL(pdfRes.data);
+      const blobUrl = URL.createObjectURL(new Blob([pdfRes.data], { type: 'application/pdf' }));
       window.open(blobUrl, '_blank');
       setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
     } catch (err: any) {
@@ -195,7 +195,7 @@ export const PoliciesManagePage = () => {
         <Title order={2} fw={900}>Manage Policies</Title>
         <Group>
           <Button variant="light" onClick={fetchPolicies}>Refresh</Button>
-          <Button leftSection={<Plus size={16} />} color="brandBlue" onClick={openCreate}>
+          <Button leftSection={<Plus size={16} />} color="brandBlue" onClick={openCreate} disabled={!canEdit}>
             Add Policy
           </Button>
         </Group>
@@ -241,7 +241,7 @@ export const PoliciesManagePage = () => {
                       <ActionIcon variant="light" color="brandBlue" onClick={() => openEdit(p)} title="Edit">
                         <Edit size={16} />
                       </ActionIcon>
-                      <ActionIcon variant="light" color="#E51690" onClick={() => openNewVersion(p)} title="Upload New Version">
+                      <ActionIcon variant="light" color="#267FBA" onClick={() => openNewVersion(p)} title="Upload New Version">
                         <Upload size={16} />
                       </ActionIcon>
                       <ActionIcon variant="light" color="gray" onClick={() => downloadPdf(p)} title="Open PDF">
@@ -318,7 +318,7 @@ export const PoliciesManagePage = () => {
 
           <Group justify="flex-end" mt="lg">
             <Button variant="default" onClick={() => setModalOpen(false)}>Cancel</Button>
-            <Button color="brandBlue" loading={saving} onClick={save}>
+            <Button color="brandBlue" loading={saving} onClick={save} disabled={!canEdit}>
               Save
             </Button>
           </Group>

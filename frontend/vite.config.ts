@@ -10,7 +10,7 @@ export default defineConfig({
     proxy: {
       // 502 from /api/* in dev usually means nothing is listening here — start Nest (backend) on this port.
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:4002',
         changeOrigin: true,
         secure: false,
       },

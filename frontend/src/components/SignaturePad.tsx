@@ -129,13 +129,13 @@ export const SignaturePad = ({
                             alignItems: 'center',
                             justifyContent: 'center',
                             backgroundColor: disabled ? '#f5f5f5' : '#f0fff4',
-                            borderColor: disabled ? '#dee2e6' : '#E51690',
+                            borderColor: disabled ? '#dee2e6' : '#267FBA',
                             borderWidth: disabled ? '1px' : '2px',
                             borderStyle: disabled ? 'solid' : 'dashed',
                         }}
                         onClick={handleOpen}
                     >
-                        <Text size="sm" c={disabled ? 'dimmed' : '#E51690'} fw={disabled ? 400 : 600}>
+                        <Text size="sm" c={disabled ? 'dimmed' : '#267FBA'} fw={disabled ? 400 : 600}>
                             {disabled ? 'Signature locked' : '✍️ Click here to sign'}
                         </Text>
                     </Paper>

@@ -150,7 +150,7 @@ export const ReferenceSubmissionPage = () => {
                 notifications.show({
                     title: 'Success',
                     message: response.data.message || 'Thank you. Your reference has been successfully submitted.',
-                    color: '#E51690',
+                    color: '#267FBA',
                     icon: <CheckCircle size={16} />,
                 });
                 
@@ -207,7 +207,7 @@ export const ReferenceSubmissionPage = () => {
             <Container size="md" py="xl">
                 <Paper p="xl" radius="lg" withBorder>
                     <Stack align="center" gap="md">
-                        <CheckCircle size={64} color="#E51690" />
+                        <CheckCircle size={64} color="#267FBA" />
                         <Title order={2}>Reference Already Submitted</Title>
                         <Text c="dimmed" ta="center">
                             This reference has already been completed and submitted. Thank you for your response.
@@ -254,7 +254,7 @@ export const ReferenceSubmissionPage = () => {
                     p="xl"
                     mb="xl"
                     style={{
-                        background: 'linear-gradient(135deg, #1EBAF2 0%, #0F7296 100%)',
+                        background: 'linear-gradient(135deg, #139639 0%, #0e7a2d 100%)',
                         color: 'white',
                         borderRadius: '8px',
                     }}

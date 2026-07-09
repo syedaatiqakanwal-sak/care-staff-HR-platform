@@ -5,6 +5,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserRole } from '../users/user.entity';
+import { DASHBOARD_ROLES, MANAGEMENT_ROLES } from '../users/role.utils';
 
 @Controller('courses')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -12,13 +13,13 @@ export class CoursesController {
     constructor(private readonly coursesService: CoursesService) { }
 
     @Post()
-    @Roles(UserRole.ADMIN)
+    @Roles(...MANAGEMENT_ROLES)
     create(@Body() createCourseDto: CreateCourseDto) {
         return this.coursesService.create(createCourseDto);
     }
 
     @Get()
-    @Roles(UserRole.ADMIN, UserRole.STAFF)
+    @Roles(...DASHBOARD_ROLES, UserRole.STAFF)
     findAll() {
         return this.coursesService.findAll();
     }
@@ -30,7 +31,7 @@ export class CoursesController {
     }
 
     @Delete(':id')
-    @Roles(UserRole.ADMIN)
+    @Roles(...MANAGEMENT_ROLES)
     remove(@Param('id') id: string) {
         return this.coursesService.remove(id);
     }

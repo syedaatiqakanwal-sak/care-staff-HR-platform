@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
 import { VleCredential } from './vle-credential.entity';
 import { User, UserRole } from '../users/user.entity';
+import { canEditOtherStaffProfiles, canViewOtherStaffProfiles } from '../users/role.utils';
 
 @Injectable()
 export class VleCredentialsService {
@@ -57,7 +58,7 @@ export class VleCredentialsService {
         const requesterId = requestUser.id || requestUser.userId;
 
         // RBAC: Only Admin or the user themselves can view
-        if (requestUser.role !== UserRole.ADMIN && requesterId !== targetUserId) {
+        if (!canViewOtherStaffProfiles(requestUser.role) && requesterId !== targetUserId) {
             throw new ForbiddenException('You can only view your own credentials');
         }
 
@@ -76,7 +77,7 @@ export class VleCredentialsService {
 
         // ROLE-AWARE RESPONSE LOGIC
         // Update: Allow both Admin AND Owner (Staff) to see the real password so they can use it.
-        if (requestUser.role === UserRole.ADMIN || requestUser.id === targetUserId || requestUser['userId'] === targetUserId) {
+        if (canEditOtherStaffProfiles(requestUser.role) || requestUser.id === targetUserId || requestUser['userId'] === targetUserId) {
             return {
                 ...creds,
                 password: this.decrypt(creds.password) // Show Real Password
@@ -92,7 +93,7 @@ export class VleCredentialsService {
 
     async updateCredentials(adminUser: User | any, targetUserId: string, updateDto: { username: string; password?: string }) {
         // RBAC Check
-        if (adminUser.role !== UserRole.ADMIN && !adminUser.isApiToken) {
+        if (!canEditOtherStaffProfiles(adminUser.role) && !adminUser.isApiToken) {
             throw new ForbiddenException('Only Admins can update VLE credentials');
         }
 

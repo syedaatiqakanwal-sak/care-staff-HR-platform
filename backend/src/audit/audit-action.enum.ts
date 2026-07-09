@@ -1,0 +1,6 @@
+export enum AuditAction {
+  CREATE = 'CREATE',
+  UPDATE = 'UPDATE',
+  DELETE = 'DELETE',
+  VIEW_RESTRICTED = 'VIEW_RESTRICTED',
+}

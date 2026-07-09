@@ -14,6 +14,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { UserRole } from '../users/user.entity';
+import { DASHBOARD_ROLES } from '../users/role.utils';
 import { StartPolicyReadingDto } from './dto/start-policy-reading.dto';
 import { FinishPolicyReadingDto } from './dto/finish-policy-reading.dto';
 import { PoliciesService } from './policies.service';
@@ -53,13 +54,13 @@ export class PolicyReadingController {
   }
 
   @Get('admin')
-  @Roles(UserRole.ADMIN)
+  @Roles(...DASHBOARD_ROLES)
   admin() {
     return this.policiesService.adminSessions();
   }
 
   @Get('admin/grouped')
-  @Roles(UserRole.ADMIN)
+  @Roles(...DASHBOARD_ROLES)
   adminGroupedDetail(@Query('staffId') staffId: string, @Query('policyId') policyId: string, @Query('date') date: string) {
     if (!staffId || !policyId || !date) {
       throw new BadRequestException('staffId, policyId, and date are required');
@@ -68,7 +69,7 @@ export class PolicyReadingController {
   }
 
   @Get('admin/report/pdf')
-  @Roles(UserRole.ADMIN)
+  @Roles(...DASHBOARD_ROLES)
   async reportPdf(
     @Query('staffId') staffId: string,
     @Query('policyId') policyId: string,
@@ -105,13 +106,13 @@ export class PolicyReadingController {
   }
 
   @Get(':id')
-  @Roles(UserRole.ADMIN)
+  @Roles(...DASHBOARD_ROLES)
   adminDetail(@Param('id') id: string) {
     return this.policiesService.adminGetById(id);
   }
 
   @Get(':id/pdf')
-  @Roles(UserRole.ADMIN)
+  @Roles(...DASHBOARD_ROLES)
   async pdf(@Param('id') id: string, @Res() res: Response) {
     const session = await this.policiesService.adminGetById(id);
     const doc = this.policyReportService.createSessionReportPdf(session as any);

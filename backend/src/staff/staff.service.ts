@@ -1,18 +1,24 @@
-import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
+import { QueryFailedError, In } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { StaffProfile } from './staff-profile.entity';
-import { User } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
 
 import { AddressHistory } from './address-history.entity';
 import { ReviewForm } from './review-form.entity';
 import { CreateReviewFormDto } from './dto/create-review-form.dto';
 import { CreateAddressDto } from './dto/create-address.dto';
+import { UpdateAddressDto } from './dto/update-address.dto';
 import { TrainingRecord, TrainingStatus } from '../training/training-record.entity';
 import { TrainingService } from '../training/training.service';
 import { Course } from '../courses/course.entity';
 import * as puppeteer from 'puppeteer';
+import { EmailService } from '../email/email.service';
+import { StaffDocument } from '../documents/staff-document.entity';
+import { User, UserRole } from '../users/user.entity';
+import { Notification } from '../notifications/notification.entity';
+import { NotificationsService } from '../notifications/notifications.service';
 
 /** Escape HTML special characters to prevent XSS in generated PDF templates */
 function escapeHtml(unsafe: string | null | undefined): string {
@@ -25,8 +31,11 @@ function escapeHtml(unsafe: string | null | undefined): string {
         .replace(/'/g, '&#039;');
 }
 
+export type StaffProfileResponse = StaffProfile & { inductionDate?: Date };
+
 @Injectable()
 export class StaffService {
+    private readonly logger = new Logger(StaffService.name);
     constructor(
         @InjectRepository(StaffProfile)
         private staffRepository: Repository<StaffProfile>,
@@ -38,19 +47,36 @@ export class StaffService {
         private trainingRepository: Repository<TrainingRecord>,
         @InjectRepository(Course)
         private readonly courseRepository: Repository<Course>,
+        @InjectRepository(StaffDocument)
+        private readonly staffDocumentRepository: Repository<StaffDocument>,
+        @InjectRepository(User)
+        private readonly usersRepository: Repository<User>,
+        @InjectRepository(Notification)
+        private readonly notificationRepository: Repository<Notification>,
         private readonly trainingService: TrainingService,
+        private readonly emailService: EmailService,
+        private readonly notificationsService: NotificationsService,
         private usersService: UsersService,
     ) { }
 
-    async createProfile(user: User, firstName: string, lastName: string, phoneNumber?: string, ilccsNumber?: string, department?: string, lcaNumber?: string) {
+    async createProfile(
+        user: User,
+        firstName: string,
+        lastName: string,
+        phoneNumber?: string,
+        ilccsNumber?: string,
+        department?: string,
+        lcaNumber?: string,
+        middleName?: string,
+    ) {
         const profile = this.staffRepository.create({
             user,
-            // userId was removed from entity, relying on relation
             firstName,
             lastName,
+            middleName,
             phoneNumber,
             ilccsNumber,
-            lcaNumber, // Explicitly separate
+            lcaNumber,
             department,
         });
         return this.staffRepository.save(profile);
@@ -83,30 +109,81 @@ export class StaffService {
 
     // --- GET METHODS ---
 
-    async getProfileByUserId(userId: string): Promise<StaffProfile & { inductionDate?: Date }> {
-        const profile = await this.staffRepository.findOne({
-            where: { user: { id: userId } },
-            relations: ['user']
-        });
-        if (!profile) throw new NotFoundException('Profile not found for this user');
+    private serializeProfile(profile: StaffProfile): StaffProfileResponse {
+        const { user, ...rest } = profile;
+        const safeUser = user
+            ? ({
+                  id: user.id,
+                  email: user.email,
+                  role: user.role,
+                  isActive: user.isActive,
+                  lastLoginAt: user.lastLoginAt,
+                  createdAt: user.createdAt,
+                  updatedAt: user.updatedAt,
+              } as User)
+            : ({} as User);
 
         return {
-            ...profile,
-            inductionDate: profile.inductionDate || profile.user?.createdAt
+            ...(rest as StaffProfile),
+            user: safeUser,
+            inductionDate: profile.inductionDate || user?.createdAt,
         };
     }
 
-    async getProfileByStaffId(staffId: string): Promise<StaffProfile & { inductionDate?: Date }> {
-        const profile = await this.staffRepository.findOne({
-            where: { id: staffId }, // Use PK
-            relations: ['user']
-        });
-        if (!profile) throw new NotFoundException('Profile not found');
+    async getProfileByUserId(userId: string): Promise<StaffProfileResponse> {
+        if (!userId?.trim()) {
+            throw new NotFoundException('Profile not found for this user');
+        }
 
-        return {
-            ...profile,
-            inductionDate: profile.inductionDate || profile.user?.createdAt
-        };
+        try {
+            const profile = await this.staffRepository.findOne({
+                where: { user: { id: userId } },
+                relations: ['user'],
+            });
+            if (!profile) {
+                throw new NotFoundException('Profile not found for this user');
+            }
+            return this.serializeProfile(profile);
+        } catch (error) {
+            if (error instanceof NotFoundException) {
+                throw error;
+            }
+            if (error instanceof QueryFailedError) {
+                this.logger.error(
+                    `Database error loading profile for user ${userId}: ${error.message}`,
+                    error.stack,
+                );
+            }
+            throw error;
+        }
+    }
+
+    async getProfileByStaffId(staffId: string): Promise<StaffProfileResponse> {
+        if (!staffId?.trim()) {
+            throw new NotFoundException('Profile not found');
+        }
+
+        try {
+            const profile = await this.staffRepository.findOne({
+                where: { id: staffId },
+                relations: ['user'],
+            });
+            if (!profile) {
+                throw new NotFoundException('Profile not found');
+            }
+            return this.serializeProfile(profile);
+        } catch (error) {
+            if (error instanceof NotFoundException) {
+                throw error;
+            }
+            if (error instanceof QueryFailedError) {
+                this.logger.error(
+                    `Database error loading profile ${staffId}: ${error.message}`,
+                    error.stack,
+                );
+            }
+            throw error;
+        }
     }
 
     // --- UPDATE METHODS ---
@@ -132,22 +209,20 @@ export class StaffService {
     }
 
     private async performUpdate(profile: StaffProfile, data: Partial<StaffProfile> & { email?: string }) {
-        if (data.email) {
+        const { email, ...profileFields } = data;
+
+        if (email) {
             // Check for duplicate email
-            const existingUser = await this.usersService.findByEmail(data.email);
+            const existingUser = await this.usersService.findByEmail(email);
             // profile.user.id is guaranteed to exist due to relations=['user']
             if (existingUser && existingUser.id !== profile.user.id) {
                 throw new ConflictException('Email already in use by another user');
             }
             // Update User email
-            await this.usersService.update(profile.user.id, { email: data.email });
+            await this.usersService.update(profile.user.id, { email });
         }
 
-        const { email, employmentStatus, ...profileFields } = data;
         Object.assign(profile, profileFields);
-        if (employmentStatus !== undefined) {
-            profile.employmentStatus = employmentStatus;
-        }
         return this.staffRepository.save(profile);
     }
 
@@ -212,17 +287,8 @@ export class StaffService {
             // If never logged in, INACTIVE.
             const isActive = lastLogin && lastLogin >= twentyDaysAgo;
 
-            const employmentStatus = row.employmentStatus || 'Active';
-            const employmentBadgeMap: Record<string, string> = {
-                Active: 'ACTIVE',
-                Left: 'LEFT',
-                Paused: 'PAUSED',
-                Suspended: 'SUSPENDED',
-                'On Hold': 'PAUSED',
-                Leaver: 'LEFT',
-                Inactive: 'SUSPENDED',
-            };
-            const employmentBadge = employmentBadgeMap[employmentStatus] ?? String(employmentStatus).toUpperCase();
+            const employmentStatus = row.employmentStatus || 'ACTIVE';
+            const employmentStatusBadge = String(employmentStatus).toUpperCase();
 
             return {
                 id: row.userId,
@@ -231,7 +297,7 @@ export class StaffService {
                 role: row.department || row.role, // Use department as display role if available
                 status: isActive ? 'ACTIVE' : 'INACTIVE',
                 employmentStatus,
-                employmentBadge,
+                employmentStatusBadge,
                 lastLoginAt: row.lastLoginAt,
                 ilccsNumber: row.ilccsNumber,
                 profilePicture: row.profilePicture ? `/api/v1/staff/${row.userId}/profile-picture` : null
@@ -271,18 +337,133 @@ export class StaffService {
 
     // --- Address History Methods ---
 
-    async getAddresses(staffId: string) {
-        // staffId passed here is expected to be the staffProfile ID, but usually we deal with userId in controllers.
-        // Let's resolve userId to staffProfile ID first, or just query by staffProfile relations.
-        // Actually, our entity relations: AddressHistory -> StaffProfile.
-        // If we have userId, we find the profile first.
-        const profile = await this.staffRepository.findOne({ where: { user: { id: staffId } } });
-        if (!profile) return []; // Or throw
+    private detectAddressGaps(
+        addresses: AddressHistory[],
+    ): { hasGap: boolean; gapSummary: string | null } {
+        if (addresses.length < 2) {
+            return { hasGap: false, gapSummary: null };
+        }
 
-        return this.addressRepository.find({
-            where: { staffProfile: { id: profile.id } },
-            order: { dateFrom: 'DESC' }
+        const sorted = [...addresses].sort(
+            (a, b) => new Date(a.dateFrom).getTime() - new Date(b.dateFrom).getTime(),
+        );
+
+        const missingYears: number[] = [];
+        for (let i = 0; i < sorted.length - 1; i++) {
+            const endYear = new Date(sorted[i].dateTo).getFullYear();
+            const startYear = new Date(sorted[i + 1].dateFrom).getFullYear();
+            if (startYear > endYear + 1) {
+                for (let year = endYear + 1; year < startYear; year++) {
+                    missingYears.push(year);
+                }
+            }
+        }
+
+        if (missingYears.length === 0) {
+            return { hasGap: false, gapSummary: null };
+        }
+
+        const uniqueYears = [...new Set(missingYears)].sort((a, b) => a - b);
+        const gapSummary =
+            uniqueYears.length === 1
+                ? `Year ${uniqueYears[0]} is not covered between address records`
+                : `Years ${uniqueYears.join(', ')} are not covered between address records`;
+
+        return { hasGap: true, gapSummary };
+    }
+
+    private async maybeNotifyAddressGap(
+        profile: StaffProfile,
+        hasGap: boolean,
+        gapSummary: string | null,
+    ): Promise<void> {
+        if (!hasGap || !gapSummary) {
+            if (!hasGap && profile.addressGapNotifiedAt) {
+                await this.staffRepository.update(profile.id, { addressGapNotifiedAt: null });
+            }
+            return;
+        }
+
+        const dedupeKey = `address-gap-${profile.id}-${gapSummary}`;
+        const existingCount = await this.notificationRepository
+            .createQueryBuilder('n')
+            .where("n.metadata->>'dedupeKey' = :dedupeKey", { dedupeKey })
+            .getCount();
+
+        if (existingCount > 0) {
+            return;
+        }
+
+        const admins = await this.usersRepository.find({
+            where: { role: UserRole.ADMIN, isActive: true },
+            select: ['id'],
         });
+        if (!admins.length) {
+            return;
+        }
+
+        const staffName = `${profile.firstName || ''} ${profile.lastName || ''}`.replace(/\s+/g, ' ').trim();
+        const lcacs = profile.lcaNumber || profile.ilccsNumber || 'N/A';
+        const title = 'Address history gap detected';
+        const message = `Gap detected in address history for ${staffName} (Staff Number: ${lcacs}). ${gapSummary}.`;
+
+        for (const admin of admins) {
+            await this.notificationsService.createForUser(admin.id, title, message, {
+                kind: 'address_history_gap',
+                dedupeKey,
+                staffProfileId: profile.id,
+                staffName,
+                lcacsNumber: lcacs,
+                gapSummary,
+            });
+        }
+
+        await this.staffRepository.update(profile.id, { addressGapNotifiedAt: new Date() });
+    }
+
+    private async enrichAddressesResponse(profile: StaffProfile, addresses: AddressHistory[]) {
+        const proofIds = addresses
+            .map((addr) => addr.proofDocumentId)
+            .filter((id): id is string => Boolean(id));
+
+        const proofDocs = new Map<string, { id: string; fileName: string }>();
+        if (proofIds.length > 0) {
+            const docs = await this.staffDocumentRepository.find({
+                where: { id: In(proofIds) },
+                select: ['id', 'fileName'],
+            });
+            for (const doc of docs) {
+                proofDocs.set(doc.id, { id: doc.id, fileName: doc.fileName });
+            }
+        }
+
+        const { hasGap, gapSummary } = this.detectAddressGaps(addresses);
+        await this.maybeNotifyAddressGap(profile, hasGap, gapSummary);
+
+        return {
+            addresses: addresses.map((addr) => ({
+                ...addr,
+                proofDocument: addr.proofDocumentId
+                    ? proofDocs.get(addr.proofDocumentId) ?? null
+                    : null,
+            })),
+            hasGap,
+            gapSummary,
+        };
+    }
+
+    async getAddresses(userId: string) {
+        const profile = await this.staffRepository.findOne({ where: { user: { id: userId } } });
+        if (!profile) {
+            return { addresses: [], hasGap: false, gapSummary: null };
+        }
+
+        const addresses = await this.addressRepository.find({
+            where: { staffProfile: { id: profile.id } },
+            order: { dateFrom: 'DESC' },
+        });
+
+        return this.enrichAddressesResponse(profile, addresses);
     }
 
     async addAddress(userId: string, data: CreateAddressDto) {
@@ -298,6 +479,32 @@ export class StaffService {
             staffProfile: profile,
             staffId: profile.id
         });
+        const saved = await this.addressRepository.save(address);
+        const allAddresses = await this.addressRepository.find({
+            where: { staffProfile: { id: profile.id } },
+            order: { dateFrom: 'DESC' },
+        });
+        await this.enrichAddressesResponse(profile, allAddresses);
+        return saved;
+    }
+
+    async linkAddressProof(userId: string, addressId: string, proofDocumentId: string) {
+        const profile = await this.staffRepository.findOne({ where: { user: { id: userId } } });
+        if (!profile) throw new NotFoundException('Staff Profile not found');
+
+        const address = await this.addressRepository.findOne({
+            where: { id: addressId, staffProfile: { id: profile.id } },
+        });
+        if (!address) throw new NotFoundException('Address not found');
+
+        const doc = await this.staffDocumentRepository.findOne({
+            where: { id: proofDocumentId, staffId: profile.id },
+        });
+        if (!doc) {
+            throw new BadRequestException('Proof document must belong to this staff member');
+        }
+
+        address.proofDocumentId = proofDocumentId;
         return this.addressRepository.save(address);
     }
 
@@ -312,6 +519,26 @@ export class StaffService {
 
         if (!address) throw new NotFoundException('Address not found');
         return this.addressRepository.remove(address);
+    }
+
+    async updateAddress(userId: string, addressId: string, dto: UpdateAddressDto) {
+        const profile = await this.staffRepository.findOne({ where: { user: { id: userId } } });
+        if (!profile) throw new NotFoundException('Staff Profile not found');
+
+        const address = await this.addressRepository.findOne({
+            where: { id: addressId, staffProfile: { id: profile.id } },
+        });
+        if (!address) throw new NotFoundException('Address not found');
+
+        const trim = (s?: string) => (s != null && String(s).trim() !== '' ? String(s).trim() : null);
+        if (dto.line1 !== undefined) address.line1 = trim(dto.line1);
+        if (dto.line2 !== undefined) address.line2 = trim(dto.line2) ?? '';
+        if (dto.town !== undefined) address.town = trim(dto.town) ?? '';
+        if (dto.postcode !== undefined) address.postcode = trim(dto.postcode) ?? '';
+        if (dto.dateFrom !== undefined && trim(dto.dateFrom)) address.dateFrom = trim(dto.dateFrom)!;
+        if (dto.dateTo !== undefined && trim(dto.dateTo)) address.dateTo = trim(dto.dateTo)!;
+
+        return this.addressRepository.save(address);
     }
 
     // --- Review Form Methods ---
@@ -329,6 +556,7 @@ export class StaffService {
     async createReviewForm(staffId: string, dto: CreateReviewFormDto): Promise<ReviewForm> {
         const profile = await this.staffRepository.findOne({
             where: { id: staffId },
+            relations: ['user'],
         });
         if (!profile) throw new NotFoundException('Staff Profile not found');
 
@@ -338,7 +566,26 @@ export class StaffService {
             ...dto,
             staff: profile,
         });
-        return this.reviewFormRepository.save(reviewForm);
+        const saved = await this.reviewFormRepository.save(reviewForm);
+
+        if (profile.user?.email) {
+            try {
+                await this.emailService.sendReviewScheduleEmail(profile.user.email, {
+                    formType: dto.formType,
+                    staffName: dto.staffName,
+                    reviewDate: dto.dateOfReview,
+                    notes: dto.documentationComments || undefined,
+                });
+            } catch (error) {
+                this.logger.warn(
+                    `Review form created but schedule email failed for staffId=${staffId}: ${
+                        error instanceof Error ? error.message : String(error)
+                    }`,
+                );
+            }
+        }
+
+        return saved;
     }
 
     async getReviewFormsByStaffId(staffId: string): Promise<ReviewForm[]> {

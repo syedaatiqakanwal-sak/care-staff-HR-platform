@@ -35,8 +35,21 @@ export const isAuthenticated = (): boolean => {
 export const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('role');
+    localStorage.removeItem('readOnly');
     localStorage.removeItem('userName');
-    // Optional: Redirect to login if called explicitly, usually handled by component logic
+    localStorage.removeItem('userId');
+    sessionStorage.removeItem('dbs_notification_shown');
 };
 
 export const getToken = () => localStorage.getItem('token');
+
+export const setSessionFromLogin = (data: {
+    access_token: string;
+    user: { id: string; role: string; name?: string; readOnly?: boolean };
+}) => {
+    localStorage.setItem('token', data.access_token);
+    localStorage.setItem('role', data.user.role);
+    localStorage.setItem('readOnly', String(Boolean(data.user.readOnly)));
+    if (data.user.name) localStorage.setItem('userName', data.user.name);
+    localStorage.setItem('userId', data.user.id);
+};

@@ -1,12 +1,13 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { MantineProvider, AppShell, Text, Group, Container, Drawer, Burger, Box } from '@mantine/core'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { MantineProvider, AppShell, Text, Group, Drawer, Burger, Box } from '@mantine/core'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { theme } from './theme'
 import { LandingPage } from './components/LandingPage'
 import { LoginPage } from './components/LoginPage'
 import { SignupPage } from './components/SignupPage'
 import { DashboardView } from './components/DashboardView'
+import { StaffDirectoryPage } from './components/StaffDirectoryPage'
 import { StaffProfilePage } from './components/StaffProfilePage'
 import { TopHeader } from './components/Header'
 import { Sidebar } from './components/Sidebar'
@@ -16,13 +17,18 @@ import { ApiTokensPage } from './components/ApiTokensPage'
 import { ForgotPasswordPage } from './components/ForgotPasswordPage'
 import { PageWrapper } from './components/PageWrapper'
 import { ProtectedRoute } from './components/ProtectedRoute'
+import { AdminRoute, StrictAdminRoute, AuditViewRoute } from './components/RoleRoute'
 import { PoliciesPage } from './components/PoliciesPage'
 import { PolicyReportsPage } from './components/PolicyReportsPage'
 import { PoliciesManagePage } from './components/PoliciesManagePage'
 import { PolicyAnalytics } from './components/PolicyAnalytics'
+import { HrReportsPage } from './components/HrReportsPage'
+import { AuditLogPage } from './components/AuditLogPage'
 import { ReferenceSubmissionPage } from './components/ReferenceSubmissionPage'
 import { ReferenceAnalyticsPage } from './components/ReferenceAnalyticsPage'
+import { HrAnalyticsPage } from './components/HrAnalyticsPage'
 import { useState, useEffect } from 'react'
+import { Linkedin } from 'lucide-react'
 import { Notifications } from '@mantine/notifications'
 import { SidebarProvider, useSidebar } from './contexts/SidebarContext'
 import '@mantine/core/styles.css'
@@ -33,7 +39,17 @@ const GlobalStyles = () => (
   <style>
     {`
       /* GLOBAL NUCLEAR FIX FOR INTERACTIVITY & VISIBILITY */
-      html, body, #root {
+      html, body {
+        overflow-x: hidden;
+        height: 100%;
+        margin: 0;
+        pointer-events: auto !important;
+        background-color: #F5F5F5 !important;
+      }
+
+      #root {
+        height: 100%;
+        overflow: visible;
         pointer-events: auto !important;
         background-color: #F5F5F5 !important;
       }
@@ -62,8 +78,8 @@ const GlobalStyles = () => (
       }
 
       :root {
-        --ilc-primary: #1EBAF2;
-        --ilc-secondary: #E51690;
+        --ilc-primary: #139639;
+        --ilc-secondary: #267FBA;
         --ilc-neutral: #E2E1E8;
       }
 
@@ -84,10 +100,33 @@ const GlobalStyles = () => (
       }
 
       a:hover {
-        color: rgba(30, 186, 242, 0.7);
+        color: rgba(19, 150, 57, 0.7);
       }
 
-      .mantine-AppShell-main,
+      .mantine-AppShell-main {
+        background-color: #F5F5F5 !important;
+        overflow: visible !important;
+      }
+
+      .mantine-AppShell-footer {
+        background-color: transparent !important;
+        border-top: none !important;
+        box-shadow: none !important;
+      }
+
+      .app-footer .linkedin-link {
+        color: #0A66C2 !important;
+        display: inline-flex;
+        align-items: center;
+        line-height: 1;
+        transition: opacity 0.15s ease;
+      }
+
+      .app-footer .linkedin-link:hover {
+        color: #0A66C2 !important;
+        opacity: 0.75;
+      }
+
       .mantine-Card-root,
       .mantine-Paper-root {
         background-color: #E2E1E8;
@@ -99,21 +138,21 @@ const GlobalStyles = () => (
       }
 
       .mantine-Button-root[data-variant="filled"] {
-        background: #1EBAF2 !important;
+        background: #139639 !important;
         color: #fff !important;
       }
 
       .mantine-Button-root[data-variant="filled"]:hover {
-        background: rgba(30, 186, 242, 0.7) !important;
+        background: rgba(19, 150, 57, 0.7) !important;
       }
 
       .mantine-Button-root[data-variant="outline"] {
-        color: #E51690 !important;
-        border-color: #E51690 !important;
+        color: #267FBA !important;
+        border-color: #267FBA !important;
       }
 
       .mantine-Button-root[data-variant="outline"]:hover {
-        background: rgba(229, 22, 144, 0.2) !important;
+        background: rgba(38, 127, 186, 0.2) !important;
       }
 
       .mantine-Button-root[data-disabled="true"] {
@@ -127,7 +166,7 @@ const GlobalStyles = () => (
         right: 8px;
         width: 10px;
         height: 10px;
-        background: rgba(229, 22, 144, 0.35);
+        background: rgba(38, 127, 186, 0.35);
         clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
         pointer-events: none;
       }
@@ -139,7 +178,7 @@ const GlobalStyles = () => (
         left: 8px;
         width: 12px;
         height: 12px;
-        background: rgba(30, 186, 242, 0.2);
+        background: rgba(19, 150, 57, 0.2);
         clip-path: polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0% 50%);
         pointer-events: none;
       }
@@ -150,7 +189,7 @@ const GlobalStyles = () => (
         inset: 10px auto auto 10px;
         width: 12px;
         height: 12px;
-        background: rgba(229, 22, 144, 0.35);
+        background: rgba(38, 127, 186, 0.35);
         clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
         pointer-events: none;
       }
@@ -161,7 +200,7 @@ const GlobalStyles = () => (
         inset: auto 10px 10px auto;
         width: 14px;
         height: 14px;
-        background: rgba(30, 186, 242, 0.2);
+        background: rgba(19, 150, 57, 0.2);
         clip-path: polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0% 50%);
         pointer-events: none;
       }
@@ -177,6 +216,7 @@ function AppLayoutInner({ children, searchQuery, onSearch }: { children: React.R
     <>
       <AppShell
         header={{ height: 80 }}
+        footer={{ height: 56 }}
         navbar={{
           width: { base: 0, sm: collapsed ? 72 : 272 },
           breakpoint: 'sm',
@@ -185,16 +225,23 @@ function AppLayoutInner({ children, searchQuery, onSearch }: { children: React.R
         padding="md"
         styles={{
           header: {
-            background: 'rgba(30, 186, 242, 0.2)',
-            borderBottom: '1px solid rgba(30, 186, 242, 0.35)',
-            boxShadow: '0 4px 15px rgba(30, 186, 242, 0.2)',
+            background: 'rgba(19, 150, 57, 0.2)',
+            borderBottom: '1px solid rgba(19, 150, 57, 0.35)',
+            boxShadow: '0 4px 15px rgba(19, 150, 57, 0.2)',
           },
           navbar: {
             backgroundColor: '#ffffff',
             borderRight: '1px solid #dee2e6',
-            // Allow sidebar content to scroll instead of being cut off
             overflowX: 'hidden',
             overflowY: 'auto',
+          },
+          main: {
+            backgroundColor: '#F5F5F5',
+          },
+          footer: {
+            backgroundColor: 'transparent',
+            borderTop: 'none',
+            boxShadow: 'none',
           },
         }}
       >
@@ -223,38 +270,50 @@ function AppLayoutInner({ children, searchQuery, onSearch }: { children: React.R
           <Sidebar />
         </AppShell.Navbar>
 
-      <AppShell.Main
+      <AppShell.Main>
+        <PageWrapper>
+          {children}
+        </PageWrapper>
+      </AppShell.Main>
+
+      <AppShell.Footer
+        className="app-footer"
+        p={0}
         style={{
-          backgroundColor: '#F5F5F5',
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: 'calc(100dvh - 80px)',
+          backgroundColor: 'transparent',
+          borderTop: 'none',
+          boxShadow: 'none',
         }}
       >
-        <Box style={{ flex: 1, width: '100%', minHeight: 0 }}>
-          <PageWrapper>
-            {children}
-          </PageWrapper>
-        </Box>
-        <Box
-          component="footer"
-          px="sm"
-          py={8}
-          style={{
-            flexShrink: 0,
-            background: '#E2E1E8',
-            borderTop: '1px solid rgba(30, 186, 242, 0.35)',
-          }}
+        <Group
+          justify="space-between"
+          align="center"
+          h={56}
+          px={24}
+          py={12}
+          wrap="wrap"
+          gap="sm"
+          style={{ maxWidth: '100%' }}
         >
-          <Container size="xl">
-            <Group justify="space-between" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: '8px' }}>
-              <Text size="xs" c="#333333" fw={600} style={{ opacity: 0.9 }}>
-                © {new Date().getFullYear()} Lets Care All Ltd. All rights reserved.
-              </Text>
-            </Group>
-          </Container>
-        </Box>
-      </AppShell.Main>
+          <Text size="sm" fw={400} style={{ color: '#6B7280' }}>
+            © {new Date().getFullYear()} Lets Care All Ltd. All rights reserved.
+          </Text>
+          <Group gap="xs" wrap="nowrap">
+            <Text size="sm" fw={400} style={{ color: '#6B7280' }}>
+              Developer
+            </Text>
+            <a
+              className="linkedin-link"
+              href="https://pk.linkedin.com/in/syeda-atiqa-kanwal-838490390?trk=people-guest_people_search-card"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Developer LinkedIn profile"
+            >
+              <Linkedin size={20} strokeWidth={2} color="#0A66C2" />
+            </a>
+          </Group>
+        </Group>
+      </AppShell.Footer>
       </AppShell>
 
       {/* Mobile Drawer */}
@@ -293,13 +352,37 @@ function AppLayout({ children, searchQuery, onSearch }: { children: React.ReactN
   )
 }
 
-const AdminRoute = ({ children }: { children: React.ReactNode }) => {
-  const role = localStorage.getItem('role');
-  if (role !== 'admin') {
-    return <Navigate to="/dashboard/me" replace />;
-  }
-  return <>{children}</>;
-};
+const SITE_NAME = 'Lets Care All';
+
+function getPageTitle(pathname: string): string {
+  if (pathname === '/') return SITE_NAME;
+  if (pathname === '/login') return `Login | ${SITE_NAME}`;
+  if (pathname === '/register') return `Register | ${SITE_NAME}`;
+  if (pathname === '/forgot-password') return `Forgot Password | ${SITE_NAME}`;
+  if (pathname.startsWith('/reference/submit')) return `Reference Submission | ${SITE_NAME}`;
+  if (pathname === '/dashboard' || pathname === '/dashboard/') return `Dashboard | ${SITE_NAME}`;
+  if (pathname === '/dashboard/staff') return `Staff Directory | ${SITE_NAME}`;
+  if (pathname.startsWith('/dashboard/staff/')) return `Staff Profile | ${SITE_NAME}`;
+  if (pathname === '/dashboard/me') return `My Profile | ${SITE_NAME}`;
+  if (pathname === '/courses') return `Courses | ${SITE_NAME}`;
+  if (pathname === '/dashboard/policies') return `Policies | ${SITE_NAME}`;
+  if (pathname === '/dashboard/policies/reports') return `Policy Reports | ${SITE_NAME}`;
+  if (pathname === '/dashboard/policies/manage') return `Manage Policies | ${SITE_NAME}`;
+  if (pathname === '/dashboard/policies/analytics') return `Policy Analytics | ${SITE_NAME}`;
+  if (pathname === '/dashboard/references/analytics') return `Reference Analytics | ${SITE_NAME}`;
+  if (pathname === '/dashboard/reports/analytics') return `HR Analytics | ${SITE_NAME}`;
+  if (pathname === '/settings') return `Settings | ${SITE_NAME}`;
+  if (pathname === '/settings/api-tokens') return `API Tokens | ${SITE_NAME}`;
+  return SITE_NAME;
+}
+
+function PageTitleUpdater() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    document.title = getPageTitle(pathname);
+  }, [pathname]);
+  return null;
+}
 
 function App() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -315,6 +398,7 @@ function App() {
       <GlobalStyles />
       <Notifications position="top-right" zIndex={2000} />
       <BrowserRouter>
+        <PageTitleUpdater />
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
@@ -328,7 +412,15 @@ function App() {
             <Route path="/dashboard" element={
               <AdminRoute>
                 <AppLayout searchQuery={searchQuery} onSearch={setSearchQuery}>
-                  <DashboardView searchQuery={searchQuery} />
+                  <DashboardView />
+                </AppLayout>
+              </AdminRoute>
+            } />
+
+            <Route path="/dashboard/staff" element={
+              <AdminRoute>
+                <AppLayout searchQuery={searchQuery} onSearch={setSearchQuery}>
+                  <StaffDirectoryPage searchQuery={searchQuery} />
                 </AppLayout>
               </AdminRoute>
             } />
@@ -391,6 +483,30 @@ function App() {
               </AdminRoute>
             } />
 
+            <Route path="/dashboard/reports" element={
+              <AdminRoute>
+                <AppLayout>
+                  <HrReportsPage />
+                </AppLayout>
+              </AdminRoute>
+            } />
+
+            <Route path="/dashboard/reports/analytics" element={
+              <AdminRoute>
+                <AppLayout>
+                  <HrAnalyticsPage />
+                </AppLayout>
+              </AdminRoute>
+            } />
+
+            <Route path="/dashboard/audit-logs" element={
+              <AuditViewRoute>
+                <AppLayout>
+                  <AuditLogPage />
+                </AppLayout>
+              </AuditViewRoute>
+            } />
+
             <Route path="/settings" element={
               <AppLayout>
                 <SettingsPage />
@@ -398,9 +514,11 @@ function App() {
             } />
 
             <Route path="/settings/api-tokens" element={
-              <AppLayout>
-                <ApiTokensPage />
-              </AppLayout>
+              <StrictAdminRoute>
+                <AppLayout>
+                  <ApiTokensPage />
+                </AppLayout>
+              </StrictAdminRoute>
             } />
           </Route>
 

@@ -29,7 +29,8 @@ type StaffMember = {
 export const PolicyAnalytics = () => {
   const token = localStorage.getItem('token');
   const role = (localStorage.getItem('role') || '').toLowerCase();
-  const isAdmin = role === 'admin';
+  const canAccess = ['admin', 'manager', 'hr', 'supervisor'].includes(role);
+  const isAdmin = canAccess;
 
   const [loading, setLoading] = useState(true);
   const [staffList, setStaffList] = useState<StaffMember[]>([]);

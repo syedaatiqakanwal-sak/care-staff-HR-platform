@@ -76,6 +76,9 @@ export const ReferenceAnalyticsPage = () => {
     const [downloading, setDownloading] = useState<string | null>(null);
     const [sendingReminders, setSendingReminders] = useState(false);
     const [reminderResult, setReminderResult] = useState<any>(null);
+    const [remindingId, setRemindingId] = useState<string | null>(null);
+
+    const MAX_REMINDERS = 4;
 
     useEffect(() => {
         loadData();
@@ -116,8 +119,8 @@ export const ReferenceAnalyticsPage = () => {
         const statusConfig: Record<string, { color: string; label: string }> = {
             pending: { color: 'yellow', label: 'Pending' },
             opened: { color: 'blue', label: 'Opened' },
-            submitted: { color: '#E51690', label: 'Submitted' },
-            completed: { color: '#E51690', label: 'Completed' },
+            submitted: { color: '#267FBA', label: 'Submitted' },
+            completed: { color: '#267FBA', label: 'Completed' },
             failed: { color: 'red', label: 'Failed' },
         };
 
@@ -190,7 +193,7 @@ export const ReferenceAnalyticsPage = () => {
             notifications.show({
                 title: 'Success',
                 message: 'Reference PDF downloaded successfully',
-                color: '#E51690',
+                color: '#267FBA',
             });
         } catch (error: any) {
             notifications.show({
@@ -252,7 +255,7 @@ export const ReferenceAnalyticsPage = () => {
                 if (result.processed === 0) {
                     notifications.show({
                         title: 'No Reminders to Send',
-                        message: 'No references are currently in the 3 Days Passed category. Only pending references older than 3 days, or opened but not submitted references older than 3 days, can receive reminders.',
+                        message: 'No references are currently eligible for reminders. Only pending references older than 7 days, or opened but not submitted references older than 7 days (and under the 4-reminder cap), can receive reminders.',
                         color: 'blue',
                         autoClose: 8000,
                     });
@@ -274,25 +277,51 @@ export const ReferenceAnalyticsPage = () => {
         }
     };
 
-    // 3 Days Passed category:
-    // - pending and older than 3 days
-    // - opened and not submitted, older than 3 days from opened time
-    // - exclude records that already reached 3 reminders
+    const handleSendSingleReminder = async (ref: Reference) => {
+        if (!window.confirm(`Send a reference reminder email to ${ref.email}?`)) return;
+        try {
+            setRemindingId(ref.id);
+            const token = localStorage.getItem('token');
+            await axios.post(`/api/v1/references/${ref.id}/remind`, {}, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            notifications.show({
+                title: 'Reminder sent',
+                message: `Reminder email sent to ${ref.email}.`,
+                color: 'green',
+            });
+            await loadData();
+        } catch (error: any) {
+            const message = error.response?.data?.message || error.message || 'Failed to send reminder';
+            notifications.show({
+                title: 'Error',
+                message: Array.isArray(message) ? message.join(' ') : message,
+                color: 'red',
+            });
+        } finally {
+            setRemindingId(null);
+        }
+    };
+
+    // Reminder-eligible category (matches the deployed 7-day / 4-reminder system):
+    // - pending and older than 7 days
+    // - opened and not submitted, older than 7 days from opened time
+    // - exclude records that already reached the 4-reminder cap
     const getReminderReferences = () => {
-        const threeDaysAgo = new Date();
-        threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
         return references.filter(ref => {
-            if ((ref.reminderCount || 0) >= 3) return false;
+            if ((ref.reminderCount || 0) >= MAX_REMINDERS) return false;
             if (ref.submittedAt || ref.status.toLowerCase() === 'submitted') return false;
 
             const normalizedStatus = ref.status.toLowerCase();
             if (normalizedStatus === 'pending') {
-                return new Date(ref.createdAt) < threeDaysAgo;
+                return new Date(ref.createdAt) < sevenDaysAgo;
             }
 
             if (normalizedStatus === 'opened') {
-                return !!ref.openedAt && new Date(ref.openedAt) < threeDaysAgo;
+                return !!ref.openedAt && new Date(ref.openedAt) < sevenDaysAgo;
             }
 
             return false;
@@ -402,7 +431,7 @@ export const ReferenceAnalyticsPage = () => {
 
                         <Card withBorder p="md" radius="md">
                             <Group gap="xs" mb="xs">
-                                <ThemeIcon variant="light" color="#E51690" size="lg" radius="md">
+                                <ThemeIcon variant="light" color="#267FBA" size="lg" radius="md">
                                     <CheckCircle size={20} />
                                 </ThemeIcon>
                                 <Box>
@@ -593,7 +622,7 @@ export const ReferenceAnalyticsPage = () => {
                                                             <Tooltip label="Download PDF">
                                                                 <ActionIcon
                                                                     variant="light"
-                                                                    color="#E51690"
+                                                                    color="#267FBA"
                                                                     onClick={() => handleDownloadReference(ref)}
                                                                     loading={downloading === ref.id}
                                                                 >
@@ -602,8 +631,31 @@ export const ReferenceAnalyticsPage = () => {
                                                             </Tooltip>
                                                         </>
                                                     )}
-                                                    {ref.status !== 'submitted' && (
-                                                        <Text size="xs" c="dimmed">-</Text>
+                                                    {ref.status !== 'submitted' && ref.status.toLowerCase() !== 'completed' && (
+                                                        <Group gap={6} wrap="nowrap" align="center">
+                                                            <Text size="xs" c="dimmed">
+                                                                {ref.reminderCount || 0} of {MAX_REMINDERS} sent
+                                                            </Text>
+                                                            <Tooltip
+                                                                label={
+                                                                    (ref.reminderCount || 0) >= MAX_REMINDERS
+                                                                        ? `Maximum of ${MAX_REMINDERS} reminders already sent`
+                                                                        : 'Send reminder now'
+                                                                }
+                                                            >
+                                                                <Button
+                                                                    size="xs"
+                                                                    variant="light"
+                                                                    color="orange"
+                                                                    leftSection={<Send size={14} />}
+                                                                    loading={remindingId === ref.id}
+                                                                    disabled={(ref.reminderCount || 0) >= MAX_REMINDERS}
+                                                                    onClick={() => handleSendSingleReminder(ref)}
+                                                                >
+                                                                    Send Reminder
+                                                                </Button>
+                                                            </Tooltip>
+                                                        </Group>
                                                     )}
                                                 </Group>
                                             </Table.Td>

@@ -32,8 +32,8 @@ const CourseList = ({ category, selectedMonth, courses, onSelect, onEdit, onDele
         <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
             {filteredCourses.map((course: Course, i: number) => {
                 const cardGradients = [
-                    'linear-gradient(135deg, #1EBAF2 0%, #0F7296 100%)', // Blue
-                    'linear-gradient(135deg, #E51690 0%, #E51690 100%)'  // Green
+                    'linear-gradient(135deg, #139639 0%, #0e7a2d 100%)', // Blue
+                    'linear-gradient(135deg, #267FBA 0%, #267FBA 100%)'  // Green
                 ];
                 const bgIdx = i % cardGradients.length;
                 const bg = cardGradients[bgIdx];
@@ -110,7 +110,8 @@ export const CoursesPage = () => {
     const [newSubModule, setNewSubModule] = useState('');
 
     const role = localStorage.getItem('role');
-    const isAdmin = role === 'admin';
+    const isAdmin = ['admin', 'manager', 'hr'].includes((role || '').toLowerCase());
+    const canEdit = isAdmin && localStorage.getItem('readOnly') !== 'true';
 
     // Form State
     const [formData, setFormData] = useState({
@@ -184,7 +185,7 @@ export const CoursesPage = () => {
             });
 
             if (res.ok) {
-                notifications.show({ title: 'Success', message: 'Course deleted', color: '#E51690' });
+                notifications.show({ title: 'Success', message: 'Course deleted', color: '#267FBA' });
                 fetchCourses();
             } else {
                 notifications.show({ title: 'Error', message: 'Failed to delete course', color: 'red' });
@@ -216,7 +217,7 @@ export const CoursesPage = () => {
             });
 
             if (res.ok) {
-                notifications.show({ title: 'Success', message: `Course ${isEdit ? 'updated' : 'added'} successfully`, color: '#E51690' });
+                notifications.show({ title: 'Success', message: `Course ${isEdit ? 'updated' : 'added'} successfully`, color: '#267FBA' });
                 closeCourseModal();
                 fetchCourses();
             } else {
@@ -275,7 +276,7 @@ export const CoursesPage = () => {
                     <Title order={2} size={32} fw={900} c="brandBlue.9">Learning & Development</Title>
                     <Text size="md" c="dimmed" fw={600}>Explore our curriculum of professional training courses.</Text>
                 </Box>
-                {isAdmin && (
+                {canEdit && (
                     <Button leftSection={<Plus size={16} />} onClick={handleCreate} color="brandBlue">
                         Add Course
                     </Button>
@@ -329,7 +330,7 @@ export const CoursesPage = () => {
                             onSelect={handleCourseSelect}
                             onEdit={handleEdit}
                             onDelete={handleDeleteClick}
-                            isAdmin={isAdmin}
+                            isAdmin={canEdit}
                         />
                     </Tabs.Panel>
                 ))}

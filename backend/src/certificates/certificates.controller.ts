@@ -2,6 +2,13 @@ import { Controller, Get, Post, Param, UseGuards, Req, Res, BadRequestException,
 import { CertificatesService } from './certificates.service';
 import { AuthGuard } from '@nestjs/passport';
 import { UserRole } from '../users/user.entity';
+import {
+    isDashboardRole,
+    isManagementRole,
+    isStaffRole,
+    isStrictAdmin,
+    canViewOtherStaffProfiles,
+} from '../users/role.utils';
 import { Public } from '../auth/public.decorator';
 import type { Response } from 'express';
 import { createReadStream } from 'fs';
@@ -16,18 +23,17 @@ export class CertificatesController {
     @Get()
     @UseGuards(AuthGuard('jwt'))
     async findAll(@Req() req) {
-        if (req.user.role === UserRole.ADMIN) {
+        if (isDashboardRole(req.user.role)) {
             return this.certificatesService.findAll();
-        } else {
-            return this.certificatesService.findAllForUser(req.user.userId);
         }
+        return this.certificatesService.findAllForUser(req.user.userId);
     }
 
     @Get('staff/:userId')
     @UseGuards(AuthGuard('jwt'))
     async getForUser(@Param('userId') userId: string, @Req() req) {
         // Admin can view anyone, Staff can only view themselves
-        if (req.user.role !== UserRole.ADMIN && req.user.userId !== userId) {
+        if (!canViewOtherStaffProfiles(req.user.role) && req.user.userId !== userId) {
             throw new ForbiddenException('You can only view your own certificates');
         }
         return this.certificatesService.findAllForUser(userId);
@@ -40,8 +46,8 @@ export class CertificatesController {
         @Body() body: { subModule?: string }, // UPDATED: Accept subModule
         @Req() req
     ) {
-        if (req.user.role !== UserRole.ADMIN) {
-            throw new ForbiddenException('Only admins can mark courses as complete');
+        if (!isManagementRole(req.user.role)) {
+            throw new ForbiddenException('Only management roles can mark courses as complete');
         }
         // Pass the subModule to the service
         return this.certificatesService.markComplete(id, req.user, body.subModule);
@@ -51,8 +57,8 @@ export class CertificatesController {
     @Patch(':id/incomplete')
     @UseGuards(AuthGuard('jwt'))
     async markIncomplete(@Param('id') id: string, @Req() req) {
-        if (req.user.role !== UserRole.ADMIN) {
-            throw new ForbiddenException('Only admins can mark courses as incomplete');
+        if (!isManagementRole(req.user.role)) {
+            throw new ForbiddenException('Only management roles can mark courses as incomplete');
         }
         return this.certificatesService.markIncomplete(id);
     }
@@ -60,8 +66,8 @@ export class CertificatesController {
     @Post()
     @UseGuards(AuthGuard('jwt'))
     async create(@Body() createDto: { userId: string, courseName: string, provider: string, subModule?: string }, @Req() req) {
-        if (req.user.role !== UserRole.ADMIN) {
-            throw new ForbiddenException('Only admins can assign courses');
+        if (!isManagementRole(req.user.role)) {
+            throw new ForbiddenException('Only management roles can assign courses');
         }
         return this.certificatesService.create(createDto);
     }
@@ -78,7 +84,7 @@ export class CertificatesController {
         // Basic ownership check
         const cert = await this.certificatesService.findOne(id);
         if (!cert) throw new NotFoundException('Certificate not found');
-        if (req.user.role !== UserRole.ADMIN && cert.userId !== req.user.userId) {
+        if (!canViewOtherStaffProfiles(req.user.role) && cert.userId !== req.user.userId) {
             throw new ForbiddenException('Access denied');
         }
         const token = await this.certificatesService.generateViewToken(id, req.user);
@@ -94,8 +100,8 @@ export class CertificatesController {
     @Post(':id/force-regenerate')
     @UseGuards(AuthGuard('jwt'))
     async forceRegenerateEndpoint(@Param('id') id: string, @Req() req) {
-        if (req.user.role !== UserRole.ADMIN) {
-            throw new ForbiddenException('Only admins can force-regenerate certificates');
+        if (!isStrictAdmin(req.user.role)) {
+            throw new ForbiddenException('Only administrators can force-regenerate certificates');
         }
         const result = await this.certificatesService.forceRegenerate(id);
         return { success: true, ...result };
@@ -128,7 +134,7 @@ export class CertificatesController {
     @Get(':id/download')
     @UseGuards(AuthGuard('jwt'))
     async download(@Param('id') id: string, @Query('inline') inline: string, @Req() req, @Res() res: Response) {
-        if (req.user.role === UserRole.STAFF) {
+        if (isStaffRole(req.user.role)) {
             throw new ForbiddenException('Staff members are not allowed to download certificates directly');
         }
         const isInline = inline === 'true';
@@ -140,7 +146,7 @@ export class CertificatesController {
         if (!cert) throw new NotFoundException('Certificate not found');
 
         // Security Check: Owner or Admin
-        if (req.user.role !== UserRole.ADMIN && cert.userId !== req.user.userId) {
+        if (!canViewOtherStaffProfiles(req.user.role) && cert.userId !== req.user.userId) {
             throw new ForbiddenException('Access denied');
         }
 

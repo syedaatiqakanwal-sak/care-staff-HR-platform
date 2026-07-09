@@ -1,4 +1,4 @@
-import { Button, Group, Text, Box, Paper, Stack, SimpleGrid, Modal, TextInput, LoadingOverlay, ThemeIcon, Textarea, Badge, Avatar, ActionIcon } from '@mantine/core';
+import { Button, Group, Text, Box, Paper, Stack, SimpleGrid, Modal, TextInput, LoadingOverlay, ThemeIcon, Textarea, Badge, Avatar, ActionIcon, Title, ScrollArea, Alert, Table } from '@mantine/core';
 import { Plus, Briefcase, User, Mail, Phone, Calendar, CheckCircle, XCircle, Clock, Trash, FileCheck } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { notifications } from '@mantine/notifications';
@@ -23,6 +23,10 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
     const { id } = useParams();
     const [savedReferences, setSavedReferences] = useState<any[]>([]);
     const [loadingReferences, setLoadingReferences] = useState(false);
+    const [receivedReferences, setReceivedReferences] = useState<any[]>([]);
+    const [loadingReceived, setLoadingReceived] = useState(false);
+    const [selectedReceivedRef, setSelectedReceivedRef] = useState<any | null>(null);
+    const [receivedModalOpen, setReceivedModalOpen] = useState(false);
 
     // Reference request modals state (for sending reference requests)
     const [typeSelectionModalOpen, setTypeSelectionModalOpen] = useState(false);
@@ -43,7 +47,7 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
         try {
             setLoadingReferences(true);
             const token = localStorage.getItem('token');
-            const targetId = profile?.id || id;
+            const targetId = profile?.id || profile?.user?.id || id;
 
             if (!targetId) {
                 setLoadingReferences(false);
@@ -54,6 +58,18 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setSavedReferences(res.data || []);
+
+            setLoadingReceived(true);
+            try {
+                const receivedRes = await axios.get(`/api/v1/staff/${targetId}/references/received`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                setReceivedReferences(receivedRes.data || []);
+            } catch (err) {
+                console.error('Failed to fetch received references', err);
+            } finally {
+                setLoadingReceived(false);
+            }
         } catch (error) {
             console.error('Failed to fetch saved references', error);
         } finally {
@@ -85,11 +101,39 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
             await axios.post(`/api/v1/references/${refId}/remind`, {}, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            notifications.show({ title: 'Success', message: 'Reminder sent.', color: '#E51690' });
+            notifications.show({ title: 'Success', message: 'Reminder sent.', color: '#267FBA' });
             fetchSavedReferences();
         } catch (error) {
             notifications.show({ title: 'Error', message: 'Failed to send reminder.', color: 'red' });
         }
+    };
+
+    const formatReceivedDate = (dateStr: string | null | undefined) => {
+        if (!dateStr) return '—';
+        return new Date(dateStr).toLocaleDateString('en-GB', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+    };
+
+    const handleViewReceivedRef = async (ref: any) => {
+        try {
+            const token = localStorage.getItem('token');
+            const response = await axios.get(`/api/v1/references/${ref.id}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (response.data.success) {
+                setSelectedReceivedRef(response.data.reference);
+            } else {
+                setSelectedReceivedRef(ref);
+            }
+        } catch {
+            setSelectedReceivedRef(ref);
+        }
+        setReceivedModalOpen(true);
     };
 
     return (
@@ -140,7 +184,7 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                     withBorder={false}
                     style={{ 
                         background: 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
-                        boxShadow: '0 2px 10px rgba(30, 186, 242, 0.08)',
+                        boxShadow: '0 2px 10px rgba(19, 150, 57, 0.08)',
                     }}
                     ta="center"
                 >
@@ -153,7 +197,7 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                     withBorder={false}
                     style={{ 
                         background: 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
-                        boxShadow: '0 2px 10px rgba(30, 186, 242, 0.08)',
+                        boxShadow: '0 2px 10px rgba(19, 150, 57, 0.08)',
                         borderStyle: 'dashed', 
                         border: '2px dashed #dee2e6',
                     }} 
@@ -171,16 +215,16 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                         // Match staff profile card gradients
                         const cardStyles = [
                             {
-                                bg: 'linear-gradient(145deg, #1EBAF2 0%, #0F7296 100%)',
-                                shadow: 'rgba(30, 186, 242, 0.3)'
+                                bg: 'linear-gradient(145deg, #139639 0%, #0e7a2d 100%)',
+                                shadow: 'rgba(19, 150, 57, 0.3)'
                             },
                             {
-                                bg: 'linear-gradient(145deg, #E51690 0%, #E51690 100%)',
-                                shadow: 'rgba(229, 22, 144, 0.3)'
+                                bg: 'linear-gradient(145deg, #267FBA 0%, #267FBA 100%)',
+                                shadow: 'rgba(38, 127, 186, 0.3)'
                             },
                             {
-                                bg: 'linear-gradient(145deg, #0277BD 0%, #29B6F6 100%)',
-                                shadow: 'rgba(2, 119, 189, 0.3)'
+                                bg: 'linear-gradient(145deg, #267FBA 0%, #1d6a9e 100%)',
+                                shadow: 'rgba(38, 127, 186, 0.3)'
                             },
                             {
                                 bg: 'linear-gradient(145deg, #6A1B9A 0%, #8E24AA 100%)',
@@ -265,7 +309,7 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                                                 radius="sm"
                                                 style={{
                                                     backgroundColor: ref.emailStatus === 'sent' 
-                                                        ? 'rgba(229, 22, 144, 0.8)' 
+                                                        ? 'rgba(38, 127, 186, 0.8)' 
                                                         : ref.emailStatus === 'failed' 
                                                         ? 'rgba(198, 40, 40, 0.8)' 
                                                         : 'rgba(245, 124, 0, 0.8)',
@@ -350,19 +394,32 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                                         style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}
                                     >
                                         <Group justify="flex-end" gap="xs" wrap="wrap">
-                                            {ref.emailStatus === 'pending' && (
-                                                <Button
-                                                    variant="subtle"
-                                                    size="xs"
-                                                    color="white"
-                                                    onClick={() => handleSendReminder(ref.id)}
-                                                    style={{ color: 'white' }}
-                                                    w={{ base: '100%', xs: 'auto' }}
-                                                >
-                                                    <Clock size={14} style={{ marginRight: 4 }} />
-                                                    Remind
-                                                </Button>
-                                            )}
+                                            {(() => {
+                                                const refStatus = String(ref.status || '').toLowerCase();
+                                                if (refStatus === 'submitted' || refStatus === 'completed') return null;
+                                                const reminderCount = ref.reminderCount || 0;
+                                                const capReached = reminderCount >= 4;
+                                                return (
+                                                    <Group gap={6} wrap="nowrap" align="center">
+                                                        <Text size="xs" style={{ color: 'rgba(255,255,255,0.85)' }}>
+                                                            {reminderCount} of 4 sent
+                                                        </Text>
+                                                        <Button
+                                                            variant="subtle"
+                                                            size="xs"
+                                                            color="white"
+                                                            onClick={() => handleSendReminder(ref.id)}
+                                                            disabled={capReached}
+                                                            title={capReached ? 'Maximum of 4 reminders already sent' : 'Send reminder now'}
+                                                            style={{ color: 'white' }}
+                                                            w={{ base: '100%', xs: 'auto' }}
+                                                        >
+                                                            <Clock size={14} style={{ marginRight: 4 }} />
+                                                            Remind
+                                                        </Button>
+                                                    </Group>
+                                                );
+                                            })()}
                                             <ActionIcon
                                                 variant="subtle"
                                                 color="red"
@@ -382,6 +439,54 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
             )}
             </Box>
 
+            {/* Received Reference Responses */}
+            <Box mt={32}>
+                <Title order={4} mb={4}>Received Reference Responses</Title>
+                <Text size="sm" c="dimmed" mb={16}>
+                    Reference forms submitted by referees
+                </Text>
+
+                {loadingReceived ? (
+                    <Text size="sm" c="dimmed">Loading...</Text>
+                ) : receivedReferences.length === 0 ? (
+                    <Text size="sm" c="dimmed">No reference responses received yet.</Text>
+                ) : (
+                    receivedReferences.map((ref) => {
+                        return (
+                            <Paper
+                                key={ref.id}
+                                withBorder
+                                p="md"
+                                mb={12}
+                                radius="md"
+                                style={{ borderLeft: '4px solid #2ecc71' }}
+                            >
+                                <Group justify="space-between" wrap="wrap">
+                                    <Box>
+                                        <Text fw={600}>{ref.refereeName || ref.referee_name || ref.name || 'Referee'}</Text>
+                                        <Text size="sm" c="dimmed">{ref.refereeEmail || ref.referee_email || ref.email}</Text>
+                                        <Text size="xs" c="dimmed" mt={2}>
+                                            Submitted: {ref.submittedAt
+                                                ? new Date(ref.submittedAt).toLocaleDateString('en-GB', {
+                                                    day: '2-digit', month: 'short', year: 'numeric'
+                                                })
+                                                : '—'}
+                                        </Text>
+                                    </Box>
+                                    <Button
+                                        variant="subtle"
+                                        size="xs"
+                                        onClick={() => handleViewReceivedRef(ref)}
+                                    >
+                                        View Details
+                                    </Button>
+                                </Group>
+                            </Paper>
+                        );
+                    })
+                )}
+            </Box>
+
             {/* Reference Type Selection Modal */}
             <Modal
                 opened={typeSelectionModalOpen}
@@ -398,7 +503,7 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                         style={{ cursor: 'pointer', transition: 'all 0.2s' }}
                         onMouseEnter={(e) => {
                             e.currentTarget.style.transform = 'translateY(-2px)';
-                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(30, 186, 242, 0.15)';
+                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(19, 150, 57, 0.15)';
                         }}
                         onMouseLeave={(e) => {
                             e.currentTarget.style.transform = 'translateY(0)';
@@ -433,7 +538,7 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                         style={{ cursor: 'pointer', transition: 'all 0.2s' }}
                         onMouseEnter={(e) => {
                             e.currentTarget.style.transform = 'translateY(-2px)';
-                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(30, 186, 242, 0.15)';
+                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(19, 150, 57, 0.15)';
                         }}
                         onMouseLeave={(e) => {
                             e.currentTarget.style.transform = 'translateY(0)';
@@ -578,7 +683,7 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                                         notifications.show({
                                             title: 'Success',
                                             message: 'Reference request sent successfully',
-                                            color: '#E51690',
+                                            color: '#267FBA',
                                         });
                                         setReferenceFormModalOpen(false);
                                         setReferenceType(null);
@@ -614,6 +719,136 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                         </Button>
                     </Group>
                 </Stack>
+            </Modal>
+
+            {/* Received Reference View Modal */}
+            <Modal
+                opened={receivedModalOpen}
+                onClose={() => { setReceivedModalOpen(false); setSelectedReceivedRef(null); }}
+                title={
+                    <Title order={3}>
+                        {selectedReceivedRef?.referenceType === 'personal'
+                            ? 'Character Reference Form'
+                            : 'Professional Reference Form'}
+                    </Title>
+                }
+                size="xl"
+                centered
+            >
+                {selectedReceivedRef && (
+                    <ScrollArea h={600}>
+                        <Stack gap="md">
+                            {/* Header Info */}
+                            <Paper p="md" withBorder style={{ background: '#f0faf4' }}>
+                                <SimpleGrid cols={2} spacing="md">
+                                    <Box>
+                                        <Text size="sm" fw={600} c="dimmed" mb={4}>Candidate Name</Text>
+                                        <Text>{profile?.firstName} {profile?.lastName}</Text>
+                                    </Box>
+                                    <Box>
+                                        <Text size="sm" fw={600} c="dimmed" mb={4}>Referee Name</Text>
+                                        <Text>{selectedReceivedRef.name || selectedReceivedRef.refereeName || '—'}</Text>
+                                    </Box>
+                                    <Box>
+                                        <Text size="sm" fw={600} c="dimmed" mb={4}>Referee Email</Text>
+                                        <Text>{selectedReceivedRef.email || selectedReceivedRef.refereeEmail || '—'}</Text>
+                                    </Box>
+                                    <Box>
+                                        <Text size="sm" fw={600} c="dimmed" mb={4}>Submitted Date</Text>
+                                        <Text>{formatReceivedDate(selectedReceivedRef.submittedAt)}</Text>
+                                    </Box>
+                                </SimpleGrid>
+                            </Paper>
+
+                            {/* Submitted Form Data */}
+                            {selectedReceivedRef.submissionData ? (
+                                <Paper p="md" withBorder>
+                                    <Title order={4} mb="md">Submitted Reference Information</Title>
+                                    <Stack gap="md">
+                                        <Box>
+                                            <Text size="sm" fw={600} c="dimmed" mb={4}>Relationship to Candidate</Text>
+                                            <Text>{selectedReceivedRef.submissionData.relationship || '—'}</Text>
+                                        </Box>
+                                        <Box>
+                                            <Text size="sm" fw={600} c="dimmed" mb={4}>How Long Known</Text>
+                                            <Text>{selectedReceivedRef.submissionData.yearsKnown || selectedReceivedRef.submissionData.howLongKnown || '—'}</Text>
+                                        </Box>
+                                        <Box>
+                                            <Text size="sm" fw={600} c="dimmed" mb={4}>Position(s) Held</Text>
+                                            <Text>{selectedReceivedRef.submissionData.positionHeld || '—'}</Text>
+                                        </Box>
+                                        <SimpleGrid cols={2} spacing="md">
+                                            <Box>
+                                                <Text size="sm" fw={600} c="dimmed" mb={4}>Employment Start Date</Text>
+                                                <Text>{selectedReceivedRef.submissionData.employmentStartDate || '—'}</Text>
+                                            </Box>
+                                            <Box>
+                                                <Text size="sm" fw={600} c="dimmed" mb={4}>Employment End Date</Text>
+                                                <Text>{selectedReceivedRef.submissionData.employmentEndDate || '—'}</Text>
+                                            </Box>
+                                        </SimpleGrid>
+                                        {selectedReceivedRef.submissionData.comments && (
+                                            <Box>
+                                                <Text size="sm" fw={600} c="dimmed" mb={4}>Comments</Text>
+                                                <Text>{selectedReceivedRef.submissionData.comments}</Text>
+                                            </Box>
+                                        )}
+                                        {selectedReceivedRef.submissionData.additionalComments && (
+                                            <Box>
+                                                <Text size="sm" fw={600} c="dimmed" mb={4}>Additional Comments</Text>
+                                                <Text>{selectedReceivedRef.submissionData.additionalComments}</Text>
+                                            </Box>
+                                        )}
+                                        {selectedReceivedRef.submissionData.criteriaRatings &&
+                                         Object.keys(selectedReceivedRef.submissionData.criteriaRatings).length > 0 && (
+                                            <Box>
+                                                <Title order={5} mb="sm">Criteria Ratings</Title>
+                                                <Table withTableBorder withColumnBorders>
+                                                    <Table.Thead>
+                                                        <Table.Tr>
+                                                            <Table.Th>Criteria</Table.Th>
+                                                            <Table.Th>Rating</Table.Th>
+                                                        </Table.Tr>
+                                                    </Table.Thead>
+                                                    <Table.Tbody>
+                                                        {Object.entries(selectedReceivedRef.submissionData.criteriaRatings).map(([key, value]) => (
+                                                            <Table.Tr key={key}>
+                                                                <Table.Td>{key}</Table.Td>
+                                                                <Table.Td>
+                                                                    <Badge color={
+                                                                        value === 'Excellent' ? 'green' :
+                                                                        value === 'Good' ? 'blue' :
+                                                                        value === 'Satisfactory' ? 'yellow' : 'red'
+                                                                    }>
+                                                                        {String(value)}
+                                                                    </Badge>
+                                                                </Table.Td>
+                                                            </Table.Tr>
+                                                        ))}
+                                                    </Table.Tbody>
+                                                </Table>
+                                            </Box>
+                                        )}
+                                        {selectedReceivedRef.submissionData.signature && (
+                                            <Box>
+                                                <Text size="sm" fw={600} c="dimmed" mb={4}>Signature</Text>
+                                                <img
+                                                    src={selectedReceivedRef.submissionData.signature}
+                                                    alt="Signature"
+                                                    style={{ maxWidth: '300px', border: '1px solid #ddd', borderRadius: '4px' }}
+                                                />
+                                            </Box>
+                                        )}
+                                    </Stack>
+                                </Paper>
+                            ) : (
+                                <Alert color="yellow">
+                                    No submission data available for this reference.
+                                </Alert>
+                            )}
+                        </Stack>
+                    </ScrollArea>
+                )}
             </Modal>
 
         </Stack>

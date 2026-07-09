@@ -1,5 +1,6 @@
-import { IsString, IsOptional, IsEmail, IsDate, IsEnum } from 'class-validator';
+import { IsString, IsOptional, IsEmail, IsDate, IsEnum, IsInt, Min, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
+import { EmploymentStatus } from '../employment-status.enum';
 
 export class UpdateStaffDto {
     @IsOptional()
@@ -31,8 +32,8 @@ export class UpdateStaffDto {
     department?: string;
 
     @IsOptional()
-    @IsString()
-    employmentStatus?: string;
+    @IsEnum(EmploymentStatus)
+    employmentStatus?: EmploymentStatus;
 
     @IsOptional()
     @IsString()
@@ -48,6 +49,43 @@ export class UpdateStaffDto {
 
     @IsOptional()
     @IsString()
+    gender?: string | null;
+
+    @IsOptional()
+    @IsString()
+    nextOfKinName?: string | null;
+
+    @IsOptional()
+    @IsString()
+    nextOfKinNumber?: string | null;
+
+    @IsOptional()
+    @IsString()
+    passportNumber?: string | null;
+
+    @IsOptional()
+    @IsDate()
+    @Type(() => Date)
+    passportExpiry?: Date | null;
+
+    @IsOptional()
+    @IsBoolean()
+    isUkNational?: boolean | null;
+
+    @IsOptional()
+    @IsBoolean()
+    isEeaNational?: boolean | null;
+
+    @IsOptional()
+    @IsString()
+    visaType?: string | null;
+
+    @IsOptional()
+    @IsString()
+    visaOrBrpNumber?: string | null;
+
+    @IsOptional()
+    @IsString()
     townOfBirth?: string;
 
     @IsOptional()
@@ -56,11 +94,20 @@ export class UpdateStaffDto {
 
     @IsOptional()
     @IsString()
+    countryOfBirth?: string;
+
+    @IsOptional()
+    @IsString()
     nationalityAtBirth?: string;
 
     @IsOptional()
     @IsString()
     currentNationality?: string;
+
+    @IsOptional()
+    @IsDate()
+    @Type(() => Date)
+    startDate?: Date | null;
 
     @IsOptional()
     @IsDate()
@@ -76,4 +123,41 @@ export class UpdateStaffDto {
     @IsDate()
     @Type(() => Date)
     dateOfBirth?: Date;
+
+    @IsOptional()
+    @IsDate()
+    @Type(() => Date)
+    visaExpiryDate?: Date | null;
+
+    @IsOptional()
+    @IsString()
+    shareCode?: string | null;
+
+    @IsOptional()
+    @IsString()
+    rightToWorkStatus?: string | null;
+
+    @IsOptional()
+    @IsDate()
+    @Type(() => Date)
+    shareCodeGeneratedDate?: Date | null;
+
+    @IsOptional()
+    @IsBoolean()
+    rightToWorkCheckCompleted?: boolean;
+
+    @IsOptional()
+    @IsDate()
+    @Type(() => Date)
+    rightToWorkCheckDate?: Date | null;
+
+    @IsOptional()
+    @IsDate()
+    @Type(() => Date)
+    rightToWorkCheckExpiryDate?: Date | null;
+
+    @IsOptional()
+    @IsInt()
+    @Min(0)
+    annualLeaveAllowanceDays?: number;
 }

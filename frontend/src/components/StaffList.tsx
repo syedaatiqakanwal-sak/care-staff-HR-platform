@@ -19,10 +19,6 @@ type StaffMember = {
   ilccsNumber: string;
 };
 
-function staffDisplayName(s: StaffMember) {
-  return [s.firstName, s.lastName].filter(Boolean).join(' ').trim() || (s.firstName || '').trim() || 'Staff';
-}
-
 type StaffListProps = {
   staff: StaffMember[];
   onSelect: (staff: StaffMember) => void;
@@ -46,8 +42,8 @@ export const StaffList = ({ staff, onSelect }: StaffListProps) => {
     // Sort staff within each group
     sortedGroups.forEach(([_, members]) => {
       members.sort((a, b) => {
-        const aName = staffDisplayName(a).toLowerCase();
-        const bName = staffDisplayName(b).toLowerCase();
+        const aName = `${a.firstName} ${a.lastName}`.toLowerCase();
+        const bName = `${b.firstName} ${b.lastName}`.toLowerCase();
         return aName.localeCompare(bName);
       });
     });
@@ -84,8 +80,8 @@ export const StaffList = ({ staff, onSelect }: StaffListProps) => {
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.transform = 'translateX(4px)';
-                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(30, 186, 242, 0.15)';
-                    e.currentTarget.style.borderColor = 'rgba(30, 186, 242, 0.3)';
+                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(19, 150, 57, 0.15)';
+                    e.currentTarget.style.borderColor = 'rgba(19, 150, 57, 0.3)';
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.transform = 'translateX(0)';
@@ -100,7 +96,7 @@ export const StaffList = ({ staff, onSelect }: StaffListProps) => {
                         width: 36,
                         height: 36,
                         borderRadius: '50%',
-                        backgroundColor: 'rgba(30, 186, 242, 0.1)',
+                        backgroundColor: 'rgba(19, 150, 57, 0.1)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -110,7 +106,7 @@ export const StaffList = ({ staff, onSelect }: StaffListProps) => {
                     </Box>
                     <Box style={{ flex: 1 }}>
                       <Text fw={700} size="sm">
-                        {staffDisplayName(s)}
+                        {s.firstName} {s.lastName}
                       </Text>
                       <Text size="xs" c="dimmed">
                         {s.email}

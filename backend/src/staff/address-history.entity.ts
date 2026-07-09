@@ -31,6 +31,9 @@ export class AddressHistory {
     @Column({ type: 'date' })
     dateTo: string;
 
+    @Column({ name: 'proof_document_id', type: 'uuid', nullable: true })
+    proofDocumentId: string | null;
+
     @CreateDateColumn()
     createdAt: Date;
 

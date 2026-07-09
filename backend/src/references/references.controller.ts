@@ -3,6 +3,7 @@ import { ReferencesService } from './references.service';
 import { AuthGuard } from '@nestjs/passport';
 import { Roles } from '../auth/roles.decorator';
 import { UserRole } from '../users/user.entity';
+import { MANAGEMENT_ROLES, canViewOtherStaffProfiles } from '../users/role.utils';
 import { RolesGuard } from '../auth/roles.guard';
 import { Public } from '../auth/public.decorator';
 import type { Response } from 'express';
@@ -63,7 +64,7 @@ export class ReferencesController {
     }
 
     @Get('analytics')
-    @Roles(UserRole.ADMIN)
+    @Roles(...MANAGEMENT_ROLES)
     async getAnalytics() {
         try {
             const analytics = await this.referencesService.getAnalytics();
@@ -80,7 +81,7 @@ export class ReferencesController {
     }
 
     @Get('analytics/all')
-    @Roles(UserRole.ADMIN)
+    @Roles(...MANAGEMENT_ROLES)
     async getAllReferencesForAnalytics() {
         try {
             const references = await this.referencesService.getAllReferencesForAnalytics();
@@ -97,7 +98,7 @@ export class ReferencesController {
     }
 
     @Post('process-reminders')
-    @Roles(UserRole.ADMIN)
+    @Roles(...MANAGEMENT_ROLES)
     async processReminders(@Req() req: any) {
         try {
             // Extract base URL from request headers as fallback
@@ -137,7 +138,7 @@ export class ReferencesController {
     }
 
     @Post('send-reminders-opened')
-    @Roles(UserRole.ADMIN)
+    @Roles(...MANAGEMENT_ROLES)
     async sendRemindersToOpenedNotSubmitted(@Req() req: any) {
         try {
             // Extract base URL from request headers as fallback
@@ -177,19 +178,19 @@ export class ReferencesController {
     }
 
     @Patch(':id')
-    @Roles(UserRole.ADMIN)
+    @Roles(...MANAGEMENT_ROLES)
     update(@Param('id') id: string, @Body() body) {
         return this.referencesService.update(id, body);
     }
 
     @Delete(':id')
-    @Roles(UserRole.ADMIN)
+    @Roles(...MANAGEMENT_ROLES)
     remove(@Param('id') id: string) {
         return this.referencesService.remove(id);
     }
 
     @Get(':id')
-    @Roles(UserRole.ADMIN)
+    @Roles(...MANAGEMENT_ROLES)
     async getReference(@Param('id') id: string) {
         try {
             const reference = await this.referencesService.findOne(id);
@@ -225,7 +226,7 @@ export class ReferencesController {
     }
 
     @Get(':id/download')
-    @Roles(UserRole.ADMIN)
+    @Roles(...MANAGEMENT_ROLES)
     async downloadReferencePDF(@Param('id') id: string, @Res() res: Response) {
         try {
             const pdfBuffer = await this.referencesService.generateSubmittedReferencePDF(id);
@@ -254,7 +255,7 @@ export class ReferencesController {
     }
 
     @Post(':id/remind')
-    @Roles(UserRole.ADMIN)
+    @Roles(...MANAGEMENT_ROLES)
     async sendReminder(
         @Param('id') id: string,
         @Req() req: any,
@@ -387,7 +388,7 @@ export class StaffReferencesController {
     constructor(private readonly referencesService: ReferencesService) { }
 
     @Post()
-    @Roles(UserRole.ADMIN)
+    @Roles(...MANAGEMENT_ROLES)
     create(@Param('staffId') staffId: string, @Body() body) {
         return this.referencesService.create({
             ...body,
@@ -395,11 +396,23 @@ export class StaffReferencesController {
         });
     }
 
+    @Get('received')
+    async findReceived(@Param('staffId') staffId: string, @Req() req) {
+        const user = req.user;
+        const resolvedStaffId = await this.referencesService.resolveStaffProfileId(staffId);
+        if (!canViewOtherStaffProfiles(user.role)) {
+            const isOwner = await this.referencesService.verifyStaffOwnership(resolvedStaffId, user.userId);
+            if (!isOwner) {
+                throw new ForbiddenException('You can only view your own references');
+            }
+        }
+        return this.referencesService.findReceived(resolvedStaffId);
+    }
+
     @Get()
     async findAll(@Param('staffId') staffId: string, @Req() req) {
         const user = req.user;
-        if (user.role !== UserRole.ADMIN) {
-            // Verify the staffId belongs to the requesting user
+        if (!canViewOtherStaffProfiles(user.role)) {
             const isOwner = await this.referencesService.verifyStaffOwnership(staffId, user.userId);
             if (!isOwner) {
                 throw new ForbiddenException('You can only view your own references');

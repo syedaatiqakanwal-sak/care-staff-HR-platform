@@ -2,7 +2,7 @@ const mammoth = require("mammoth");
 const fs = require("fs");
 const path = require("path");
 
-const inputPath = process.argv[2] || path.join(__dirname, "../src/templates/certificate-sample.docx");
+const inputPath = "c:\\Users\\Computer Arena\\Downloads\\cpdgroup\\Certificate Sample for LetsCare staff.docx";
 const outputPath = path.join(__dirname, "../src/templates/certificate_converted.html");
 
 mammoth.convertToHtml({ path: inputPath })

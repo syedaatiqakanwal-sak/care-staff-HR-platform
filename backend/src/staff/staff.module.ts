@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -16,14 +16,30 @@ import { ApiTokensModule } from '../api-tokens/api-tokens.module';
 import { JwtOrApiTokenGuard } from './jwt-or-api-token.guard';
 import { VleCredentialsModule } from '../vle-credentials/vle-credentials.module';
 import { VleCredentialsController } from '../vle-credentials/vle-credentials.controller';
+import { DashboardModule } from '../dashboard/dashboard.module';
+import { EmailModule } from '../email/email.module';
+import { StaffDocument } from '../documents/staff-document.entity';
+import { User } from '../users/user.entity';
+import { Notification } from '../notifications/notification.entity';
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([StaffProfile, AddressHistory, ReviewForm, TrainingRecord, Course]),
+        forwardRef(() => DashboardModule),
+        TypeOrmModule.forFeature([
+            StaffProfile,
+            AddressHistory,
+            ReviewForm,
+            TrainingRecord,
+            Course,
+            StaffDocument,
+            User,
+            Notification,
+        ]),
         TrainingModule,
-        UsersModule,
+        forwardRef(() => UsersModule),
         ApiTokensModule,
         VleCredentialsModule,
+        EmailModule,
         JwtModule.registerAsync({
             imports: [ConfigModule],
             inject: [ConfigService],
@@ -34,6 +50,6 @@ import { VleCredentialsController } from '../vle-credentials/vle-credentials.con
     ],
     controllers: [StaffController, DashboardController, VleCredentialsController],
     providers: [StaffService, JwtOrApiTokenGuard],
-    exports: [StaffService],
+    exports: [StaffService, JwtOrApiTokenGuard, ApiTokensModule],
 })
 export class StaffModule { }

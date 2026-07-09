@@ -50,7 +50,7 @@ type SessionRow = {
 
 export const PolicyReportsPage = () => {
   const role = (localStorage.getItem('role') || '').toLowerCase();
-  const isAdmin = role === 'admin';
+  const isAdmin = ['admin', 'manager', 'hr', 'supervisor'].includes(role);
   const token = localStorage.getItem('token');
 
   const [loading, setLoading] = useState(true);

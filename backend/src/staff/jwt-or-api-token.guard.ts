@@ -44,8 +44,8 @@ export class JwtOrApiTokenGuard implements CanActivate {
                         ...tokenUser,
                         id: request.tokenUserId || tokenUser.id,
                         userId: request.tokenUserId || tokenUser.id,
-                        // Enforce admin role for API token automation paths.
                         role: UserRole.ADMIN,
+                        readOnly: false,
                         isApiToken: true,
                     };
                 }

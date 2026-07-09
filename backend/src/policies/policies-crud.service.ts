@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Policy } from './policy.entity';
@@ -9,13 +9,14 @@ import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { StaffService } from '../staff/staff.service';
 import { PolicyNotification } from './policy-notification.entity';
+import { isDashboardRole, normalizeUserRole } from '../users/role.utils';
 
 function ensureDir(dir: string) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
 @Injectable()
-export class PoliciesCrudService {
+export class PoliciesCrudService implements OnModuleInit {
   private uploadsDir = path.join(process.cwd(), 'uploads', 'policies');
 
   constructor(
@@ -24,8 +25,19 @@ export class PoliciesCrudService {
     private staffService: StaffService,
   ) {}
 
-  async listPoliciesForRole(role: 'ADMIN' | 'STAFF') {
-    if (role === 'ADMIN') {
+  async onModuleInit() {
+    ensureDir(this.uploadsDir);
+
+    const sample = await this.policiesRepo.findOne({
+      where: { title: 'Sample Safeguarding Policy' },
+    });
+    if (sample) {
+      await this.deletePolicy(sample.id);
+    }
+  }
+
+  async listPoliciesForRole(role: string) {
+    if (isDashboardRole(normalizeUserRole(role))) {
       return this.policiesRepo.find({ order: { createdAt: 'DESC' } });
     }
     return this.policiesRepo.find({ where: { isActive: true }, order: { createdAt: 'DESC' } });
@@ -99,6 +111,46 @@ export class PoliciesCrudService {
     const policy = await this.policiesRepo.findOne({ where: { id } });
     if (!policy) throw new NotFoundException('Policy not found');
     return policy;
+  }
+
+  /**
+   * Resolve the on-disk path for a policy PDF. Handles relative paths, bare filenames,
+   * and Windows-style separators stored in the database.
+   */
+  resolvePolicyFilePath(policy: Policy): string {
+    const raw = (policy.filePath || '').trim();
+    if (!raw) {
+      throw new BadRequestException('Policy file path not set');
+    }
+
+    const uploadsBase = path.resolve(this.uploadsDir);
+    const normalized = raw.replace(/\\/g, '/');
+    const candidates = new Set<string>();
+
+    if (path.isAbsolute(raw)) {
+      candidates.add(path.resolve(raw));
+    }
+
+    candidates.add(path.resolve(process.cwd(), normalized));
+    candidates.add(path.join(uploadsBase, path.basename(normalized)));
+
+    const withoutPrefix = normalized.replace(/^uploads\/policies\/?/i, '');
+    if (withoutPrefix !== normalized) {
+      candidates.add(path.join(uploadsBase, withoutPrefix));
+    }
+    candidates.add(path.join(uploadsBase, withoutPrefix || path.basename(normalized)));
+
+    for (const candidate of candidates) {
+      const resolved = path.resolve(candidate);
+      if (!resolved.startsWith(uploadsBase)) {
+        continue;
+      }
+      if (fs.existsSync(resolved)) {
+        return resolved;
+      }
+    }
+
+    throw new BadRequestException('Policy file not found on server');
   }
 
   async createNotificationsForAllStaff(policyId: string) {

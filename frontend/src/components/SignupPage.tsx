@@ -65,7 +65,7 @@ export const SignupPage = () => {
             notifications.show({
                 title: 'Account Created',
                 message: isAdmin ? 'Staff member added successfully. Redirecting to Dashboard...' : 'Welcome to Lets Care All! Redirecting to login...',
-                color: '#E51690',
+                color: '#267FBA',
                 icon: <Check size={16} />,
                 autoClose: 2000,
             });

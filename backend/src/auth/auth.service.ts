@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { User, UserRole } from '../users/user.entity';
+import { MANAGEMENT_LOGIN_ROLES } from '../users/role.utils';
 import { StaffService } from '../staff/staff.service';
 import { RegisterDto } from './auth.dto';
 import { EmailService } from '../email/email.service';
@@ -17,43 +18,68 @@ export class AuthService {
         private emailService: EmailService,
     ) { }
 
-    async validateUser(email: string, pass: string, requiredRole?: UserRole): Promise<any> {
+    async validateUser(
+        email: string,
+        pass: string,
+        allowedRoles?: UserRole | UserRole[],
+    ): Promise<Omit<User, 'password'> | null> {
         const normalizedEmail = email.toLowerCase().trim();
         const user = await this.usersService.findByEmail(normalizedEmail);
 
-        // 1. Check existence
         if (!user) return null;
 
-        // 2. Check Role (Strict separation)
-        if (requiredRole && user.role !== requiredRole) return null;
+        if (allowedRoles !== undefined) {
+            const roles = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles];
+            if (!roles.includes(user.role)) return null;
+        }
 
-        // 3. Check Status (Must be active)
         if (!user.isActive) return null;
 
-        // 4. Check Password
         if (await bcrypt.compare(pass, user.password)) {
-            const { password, ...result } = user;
+            const { password: _password, ...result } = user;
             return result;
         }
         return null;
+    }
+
+    /** Management portal: MANAGER, HR, SUPERVISOR (not ADMIN — use login/admin). */
+    async loginManagement(loginDto: { email: string; password: string }) {
+        const user = await this.validateUser(loginDto.email, loginDto.password, [
+            UserRole.MANAGER,
+            UserRole.HR,
+            UserRole.SUPERVISOR,
+        ]);
+        if (!user) {
+            throw new UnauthorizedException('Invalid credentials or access denied');
+        }
+        return this.login(user);
     }
 
     async login(user: any) {
         // Update Last Login Timestamp
         await this.usersService.update(user.id, { lastLoginAt: new Date() });
 
-        const payload = { sub: user.id, role: user.role };
+        const readOnly = Boolean(user.readOnly);
+        const payload = { sub: user.id, role: user.role, readOnly };
 
-        let name = 'Admin User';
+        let name = 'User';
         if (user.role === UserRole.STAFF) {
             try {
                 const profile = await this.staffService.getProfileByUserId(user.id);
                 name = `${profile.firstName} ${profile.lastName}`;
-            } catch (e) {
+            } catch {
                 name = 'Staff Member';
             }
         } else if (user.role === UserRole.ADMIN) {
             name = 'Admin';
+        } else if (user.role === UserRole.MANAGER) {
+            name = 'Manager';
+        } else if (user.role === UserRole.HR) {
+            name = 'HR';
+        } else if (user.role === UserRole.SUPERVISOR) {
+            name = 'Supervisor';
+        } else if (MANAGEMENT_LOGIN_ROLES.includes(user.role)) {
+            name = user.role.charAt(0) + user.role.slice(1).toLowerCase();
         }
 
         return {
@@ -61,9 +87,10 @@ export class AuthService {
             user: {
                 id: user.id,
                 email: user.email,
-                role: user.role.toLowerCase(), // Normalize to lowercase for frontend consistency
-                name: name
-            }
+                role: user.role.toLowerCase(),
+                readOnly,
+                name,
+            },
         };
     }
 

@@ -63,7 +63,7 @@ export const ForgotPasswordPage = () => {
             notifications.show({
                 title: 'Verified',
                 message: 'OTP verified successfully.',
-                color: '#E51690',
+                color: '#267FBA',
                 icon: <Check size={16} />
             });
             setStep(3);
@@ -92,7 +92,7 @@ export const ForgotPasswordPage = () => {
             notifications.show({
                 title: 'Success',
                 message: 'Password changed! Logging you in...',
-                color: '#E51690',
+                color: '#267FBA',
                 icon: <Check size={16} />
             });
             setTimeout(() => navigate('/login'), 2000);

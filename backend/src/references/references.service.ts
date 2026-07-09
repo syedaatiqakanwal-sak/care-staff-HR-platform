@@ -1,11 +1,18 @@
 import { Injectable, NotFoundException, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull } from 'typeorm';
+import { Repository, IsNull, In, Brackets } from 'typeorm';
 import { StaffReference, ReferenceStatus } from './reference.entity';
 import { StaffProfile } from '../staff/staff-profile.entity';
 import { EmailService } from '../email/email.service';
 import * as crypto from 'crypto';
 import * as puppeteer from 'puppeteer';
+
+// Reminder policy: up to 4 reminders total.
+// Reminder 1 fires 7 days after the initial request (creation/open);
+// reminders 2-4 fire 7 days after the previous reminder.
+const MAX_REMINDERS = 4;
+const FIRST_REMINDER_AFTER_DAYS = 7;
+const SUBSEQUENT_REMINDER_INTERVAL_DAYS = 7;
 
 @Injectable()
 export class ReferencesService {
@@ -17,11 +24,54 @@ export class ReferencesService {
         private emailService: EmailService,
     ) { }
 
+    async resolveStaffProfileId(staffIdOrUserId: string): Promise<string> {
+        if (!staffIdOrUserId) {
+            throw new BadRequestException('staffId is required');
+        }
+
+        const directProfile = await this.staffRepository.findOne({
+            where: { id: staffIdOrUserId },
+            select: ['id'],
+        });
+        if (directProfile?.id) {
+            return directProfile.id;
+        }
+
+        const profileByUser = await this.staffRepository.findOne({
+            where: { user: { id: staffIdOrUserId } },
+            relations: ['user'],
+        });
+        if (profileByUser?.id) {
+            return profileByUser.id;
+        }
+
+        throw new NotFoundException(`Staff profile not found for identifier ${staffIdOrUserId}`);
+    }
+
     async findAll(staffId: string): Promise<StaffReference[]> {
         return this.referencesRepository.find({
             where: { staffId },
             order: { createdAt: 'DESC' },
         });
+    }
+
+    async findReceived(staffId: string): Promise<StaffReference[]> {
+        const resolvedStaffId = await this.resolveStaffProfileId(staffId);
+        const results = await this.referencesRepository
+            .createQueryBuilder('ref')
+            .where('ref.staffId = :staffId', { staffId: resolvedStaffId })
+            .andWhere(
+                new Brackets((qb) => {
+                    qb.where('ref.status IN (:...statuses)', {
+                        statuses: ['submitted', 'completed'],
+                    }).orWhere('ref.submissionData IS NOT NULL');
+                }),
+            )
+            .orderBy('ref.submittedAt', 'DESC', 'NULLS LAST')
+            .getMany();
+
+        console.log(`[findReceived] staffId=${staffId} resolved=${resolvedStaffId} found=${results.length}`);
+        return results;
     }
 
     /** Verify that a staff profile belongs to a given userId (for authorization checks) */
@@ -385,7 +435,7 @@ export class ReferencesService {
                     <p>We will only collect data for specified, explicit and legitimate use in relation to the recruitment process. By signing this document, you consent to hold the information contained.</p>
                     <p>We are required to keep this information within the Candidate's personnel file. We cannot estimate the exact time period it will be held for. When that period is over, we will delete your data.</p>
                     <p>We have privacy policies that you can request for further information. Please be assured that your data will be securely stored by the Data Protection Officer (DPO) and used only for the successful recruitment of the Candidate.</p>
-                    <p>You have the right to have your data forgotten, to rectify or access your data, to restrict processing, to withdraw your consent, and to be kept informed about the processing of your data. If you would like to discuss this further or withdraw your consent at any time, please contact the organisation's Data Protection Officer.</p>
+                    <p>You have the right to have your data forgotten, to rectify or access your data, to restrict processing, to withdraw your consent, and to be kept informed about the processing of your data. If you would like to discuss this further or withdraw your consent at any time, don't hesitate to get in touch with us via email DPO at info@letscareall.org.uk</p>
                 </div>
 
                 <div class="office-use">
@@ -834,7 +884,7 @@ export class ReferencesService {
                     <p>We will only collect data for specified, explicit and legitimate use in relation to the recruitment process. By signing this document, you consent to hold the information contained.</p>
                     <p>We are required to keep this information within the Candidate's personnel file. We cannot estimate the exact time period it will be held for. When that period is over, we will delete your data.</p>
                     <p>We have privacy policies that you can request for further information. Please be assured that your data will be securely stored by the Data Protection Officer (DPO) and used only for the successful recruitment of the Candidate.</p>
-                    <p>You have the right to have your data forgotten, to rectify or access your data, to restrict processing, to withdraw your consent, and to be kept informed about the processing of your data. If you would like to discuss this further or withdraw your consent at any time, please contact the organisation's Data Protection Officer.</p>
+                    <p>You have the right to have your data forgotten, to rectify or access your data, to restrict processing, to withdraw your consent, and to be kept informed about the processing of your data. If you would like to discuss this further or withdraw your consent at any time, please get in touch with us via email at DPO at info@letscareall.org.uk.</p>
                 </div>
 
                 <div class="office-use">
@@ -1472,9 +1522,10 @@ export class ReferencesService {
         yearsKnown?: string;
         message?: string;
     }): Promise<StaffReference> {
+        const staffProfileId = await this.resolveStaffProfileId(data.staffId);
         // Create reference entry in database
         const savedReference = this.referencesRepository.create({
-            staffId: data.staffId,
+            staffId: staffProfileId,
             referenceType: data.referenceType,
             name: data.name,
             email: data.email,
@@ -1484,7 +1535,7 @@ export class ReferencesService {
             message: data.message || undefined,
             emailStatus: 'pending',
         });
-        (savedReference as any).staffId = data.staffId; // Explicit assignment for TypeORM
+        (savedReference as any).staffId = staffProfileId; // Explicit assignment for TypeORM
         const reference = await this.referencesRepository.save(savedReference);
 
         try {
@@ -1556,12 +1607,12 @@ export class ReferencesService {
             // In production, we need a valid public URL
             if (!configured && !fallback && !requestUrl) {
                 throw new BadRequestException(
-                    'APP_BASE_URL is not configured on the backend. Set APP_BASE_URL to your public frontend URL and restart the server.',
+                    'APP_BASE_URL is not configured on the backend. Set APP_BASE_URL to your public frontend URL (e.g. http://72.62.199.119:81) in backend/.env file and restart the server.',
                 );
             }
             if (baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1')) {
                 throw new BadRequestException(
-                    'APP_BASE_URL is misconfigured (localhost). Set APP_BASE_URL to your public frontend URL so referees can open the link.',
+                    'APP_BASE_URL is misconfigured (localhost). Set APP_BASE_URL to your public frontend URL (e.g. http://72.62.199.119:81) in backend/.env file so referees can open the link.',
                 );
             }
         } else {
@@ -1577,9 +1628,12 @@ export class ReferencesService {
         return `${baseUrl}/reference/submit/${token}`;
     }
 
-    private isTokenExpired(createdAt: Date): boolean {
+    private isTokenExpired(createdAt: Date, lastReminderSentAt?: Date | null): boolean {
+        // Validity is anchored to the most recent contact (last reminder if any, else creation),
+        // so sending a reminder extends the link's lifetime by another expiration window.
+        const referenceDate = lastReminderSentAt || createdAt;
         const expirationDays = 14;
-        const expirationDate = new Date(createdAt);
+        const expirationDate = new Date(referenceDate);
         expirationDate.setDate(expirationDate.getDate() + expirationDays);
         return new Date() > expirationDate;
     }
@@ -1596,7 +1650,7 @@ export class ReferencesService {
         const reference = await this.findByToken(token);
 
         // Check if token is expired
-        if (this.isTokenExpired(reference.createdAt)) {
+        if (this.isTokenExpired(reference.createdAt, reference.lastReminderSentAt)) {
             throw new BadRequestException('This reference link has expired. Please contact the administrator.');
         }
 
@@ -1619,7 +1673,7 @@ export class ReferencesService {
         const reference = await this.findByToken(token);
 
         // Check if token is expired
-        if (this.isTokenExpired(reference.createdAt)) {
+        if (this.isTokenExpired(reference.createdAt, reference.lastReminderSentAt)) {
             throw new BadRequestException('This reference link has expired.');
         }
 
@@ -1653,12 +1707,13 @@ export class ReferencesService {
         },
         requestBaseUrl?: string,
     ): Promise<StaffReference> {
+        const staffProfileId = await this.resolveStaffProfileId(data.staffId);
         // Generate secure token
         const token = this.generateSecureToken();
 
         // Create reference entry in database
         const savedReference = this.referencesRepository.create({
-            staffId: data.staffId,
+            staffId: staffProfileId,
             referenceType: data.referenceType,
             name: data.name,
             email: data.email,
@@ -1670,7 +1725,7 @@ export class ReferencesService {
             status: ReferenceStatus.PENDING,
             emailStatus: 'pending',
         });
-        (savedReference as any).staffId = data.staffId;
+        (savedReference as any).staffId = staffProfileId;
         const reference = await this.referencesRepository.save(savedReference);
 
         try {
@@ -1679,7 +1734,7 @@ export class ReferencesService {
 
             // Get staff information for email
             const staff = await this.staffRepository.findOne({
-                where: { id: data.staffId },
+                where: { id: staffProfileId },
                 relations: ['user'],
             });
             const candidateName = staff
@@ -1713,12 +1768,14 @@ export class ReferencesService {
             throw new BadRequestException('This reference does not have a secure token. Please use the legacy reminder method.');
         }
 
-        if (reference.status === ReferenceStatus.SUBMITTED) {
+        if (reference.status === ReferenceStatus.SUBMITTED || reference.status === ReferenceStatus.COMPLETED) {
             throw new BadRequestException('This reference has already been submitted.');
         }
 
-        // REMOVED: Reminder count limit check - send reminders until submission
-        // References will continue to receive reminders until they submit
+        // Cap reminders at 4 per client requirement.
+        if ((reference.reminderCount || 0) >= MAX_REMINDERS) {
+            throw new BadRequestException(`Maximum of ${MAX_REMINDERS} reminders already sent for this reference.`);
+        }
 
         const referenceUrl = this.getReferenceUrl(reference.token, requestBaseUrl);
 
@@ -1751,9 +1808,9 @@ export class ReferencesService {
             throw new BadRequestException(`Failed to send email: ${emailError.message}`);
         }
 
-        // Update reminder count
+        // Update reminder count and last-sent timestamp
         const reminderCount = (reference.reminderCount || 0) + 1;
-        await this.update(id, { reminderCount });
+        await this.update(id, { reminderCount, lastReminderSentAt: new Date() });
 
         return { success: true, message: 'Reminder sent successfully' };
     }
@@ -1863,17 +1920,9 @@ export class ReferencesService {
         pendingCandidates?: number;
         openedCandidates?: number;
     }> {
-        // Calculate 3 days ago at midnight (start of day) for proper day-based comparison
-        const threeDaysAgo = new Date();
-        threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-        threeDaysAgo.setHours(0, 0, 0, 0); // Set to midnight for day-based comparison
-        
-        // Helper function to normalize date to midnight for comparison
-        const normalizeToMidnight = (date: Date): Date => {
-            const normalized = new Date(date);
-            normalized.setHours(0, 0, 0, 0);
-            return normalized;
-        };
+        const DAY_MS = 1000 * 60 * 60 * 24;
+        const now = Date.now();
+        const daysSince = (date: Date) => Math.floor((now - new Date(date).getTime()) / DAY_MS);
 
         const referencesToReview = await this.referencesRepository.find({
             where: [
@@ -1887,51 +1936,61 @@ export class ReferencesService {
         const excludedReferences: Array<{ ref: StaffReference; reason: string }> = [];
 
         referencesToReview.forEach((ref) => {
-            if (ref.status === ReferenceStatus.SUBMITTED || ref.submittedAt) {
+            if (ref.status === ReferenceStatus.SUBMITTED || ref.status === ReferenceStatus.COMPLETED || ref.submittedAt) {
                 excludedReferences.push({ ref, reason: 'Already submitted' });
                 return;
             }
 
-            // REMOVED: Reminder count limit check - send reminders until submission
-            // References will continue to receive reminders until they submit
+            const reminderCount = ref.reminderCount || 0;
 
-            if (ref.status === ReferenceStatus.OPENED) {
-                if (!ref.openedAt) {
-                    excludedReferences.push({ ref, reason: 'Opened status is missing opened time' });
-                    return;
-                }
+            // Cap: stop once 4 reminders have been sent.
+            if (reminderCount >= MAX_REMINDERS) {
+                excludedReferences.push({ ref, reason: `Maximum ${MAX_REMINDERS} reminders already sent` });
+                return;
+            }
 
-                const openedDate = normalizeToMidnight(new Date(ref.openedAt));
-                if (openedDate > threeDaysAgo) { // > instead of >= to allow exactly 3 days old
-                    const daysSinceOpened = Math.floor((Date.now() - new Date(ref.openedAt).getTime()) / (1000 * 60 * 60 * 24));
+            if (reminderCount === 0) {
+                // Reminder 1: 7 days after the initial request (use openedAt if opened, else createdAt).
+                const anchor = ref.status === ReferenceStatus.OPENED && ref.openedAt ? ref.openedAt : ref.createdAt;
+                const days = daysSince(anchor);
+                if (days < FIRST_REMINDER_AFTER_DAYS) {
                     excludedReferences.push({
                         ref,
-                        reason: `Opened less than 3 days ago (${daysSinceOpened} day${daysSinceOpened === 1 ? '' : 's'} ago)`,
+                        reason: `First reminder not due yet (${days} of ${FIRST_REMINDER_AFTER_DAYS} days since request)`,
                     });
                     return;
                 }
-
                 referencesNeedingReminder.push(ref);
                 return;
             }
 
-            const createdDate = normalizeToMidnight(new Date(ref.createdAt));
-            if (createdDate > threeDaysAgo) { // > instead of >= to allow exactly 3 days old
-                const daysSinceCreated = Math.floor((Date.now() - new Date(ref.createdAt).getTime()) / (1000 * 60 * 60 * 24));
-                excludedReferences.push({
-                    ref,
-                    reason: `Not opened yet and created less than 3 days ago (${daysSinceCreated} day${daysSinceCreated === 1 ? '' : 's'} ago)`,
-                });
+            // Reminders 2-4: spaced SUBSEQUENT_REMINDER_INTERVAL_DAYS after the previous reminder.
+            if (!ref.lastReminderSentAt) {
+                // Fallback anchor if a prior reminder didn't record a timestamp.
+                const days = daysSince(ref.createdAt);
+                if (days < FIRST_REMINDER_AFTER_DAYS) {
+                    excludedReferences.push({ ref, reason: `Next reminder not due yet (${days} days since request)` });
+                    return;
+                }
+                referencesNeedingReminder.push(ref);
                 return;
             }
 
+            const daysSinceLast = daysSince(ref.lastReminderSentAt);
+            if (daysSinceLast < SUBSEQUENT_REMINDER_INTERVAL_DAYS) {
+                excludedReferences.push({
+                    ref,
+                    reason: `Next reminder not due yet (${daysSinceLast} of ${SUBSEQUENT_REMINDER_INTERVAL_DAYS} days since last reminder)`,
+                });
+                return;
+            }
             referencesNeedingReminder.push(ref);
         });
 
         let sent = 0;
         let errors = 0;
         const details: any[] = [];
-        const baseUrl = requestBaseUrl || process.env.APP_BASE_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
+        const baseUrl = requestBaseUrl || process.env.APP_BASE_URL || process.env.FRONTEND_URL || 'http://72.62.199.119:81';
 
         for (const reference of referencesNeedingReminder) {
             try {
@@ -2066,7 +2125,7 @@ export class ReferencesService {
         let errors = 0;
         const details: any[] = [];
 
-        const baseUrl = requestBaseUrl || process.env.APP_BASE_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
+        const baseUrl = requestBaseUrl || process.env.APP_BASE_URL || process.env.FRONTEND_URL || 'http://72.62.199.119:81';
 
         for (const reference of referencesNeedingReminder) {
             try {

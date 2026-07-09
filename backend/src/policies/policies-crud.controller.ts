@@ -18,6 +18,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserRole } from '../users/user.entity';
+import { DASHBOARD_ROLES, MANAGEMENT_ROLES } from '../users/role.utils';
 import { PoliciesCrudService } from './policies-crud.service';
 import { CreatePolicyDto } from './dto/create-policy.dto';
 import { UpdatePolicyDto } from './dto/update-policy.dto';
@@ -27,7 +28,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { Response } from 'express';
 import { JwtService } from '@nestjs/jwt';
-import { Public } from '../auth/public.decorator';
 
 type UploadedPdfFile = {
   filename: string;
@@ -53,14 +53,14 @@ export class PoliciesCrudController {
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Get()
-  @Roles(UserRole.ADMIN, UserRole.STAFF)
+  @Roles(...DASHBOARD_ROLES, UserRole.STAFF)
   list(@Request() req) {
     return this.policiesCrudService.listPoliciesForRole(req.user.role);
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Post()
-  @Roles(UserRole.ADMIN)
+  @Roles(...MANAGEMENT_ROLES)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
@@ -94,7 +94,7 @@ export class PoliciesCrudController {
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Patch(':id')
-  @Roles(UserRole.ADMIN)
+  @Roles(...MANAGEMENT_ROLES)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
@@ -128,7 +128,7 @@ export class PoliciesCrudController {
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Delete(':id')
-  @Roles(UserRole.ADMIN)
+  @Roles(...MANAGEMENT_ROLES)
   remove(@Param('id') id: string) {
     return this.policiesCrudService.deletePolicy(id);
   }
@@ -136,8 +136,32 @@ export class PoliciesCrudController {
   // --- Secure PDF Viewing ---
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Get(':id/file')
+  @Roles(...DASHBOARD_ROLES, UserRole.STAFF)
+  async file(
+    @Param('id') id: string,
+    @Request() req,
+    @Res() res: Response,
+  ) {
+    const policy = await this.policiesCrudService.getPolicyOrThrow(id);
+    const userRole = String(req.user.role || '').toUpperCase();
+    if (userRole === UserRole.STAFF && !policy.isActive) {
+      throw new BadRequestException('Policy not active');
+    }
+
+    const absPath = this.policiesCrudService.resolvePolicyFilePath(policy);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${policy.title.replace(/[^a-z0-9-_ ]/gi, '').slice(0, 60)}.pdf"`,
+    );
+    fs.createReadStream(absPath).pipe(res);
+  }
+
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Get(':id/view-token')
-  @Roles(UserRole.ADMIN, UserRole.STAFF)
+  @Roles(...DASHBOARD_ROLES, UserRole.STAFF)
   async viewToken(@Param('id') id: string, @Request() req) {
     // Validate policy exists (and active if staff)
     const policy = await this.policiesCrudService.getPolicyOrThrow(id);
@@ -157,7 +181,6 @@ export class PoliciesCrudController {
     return { token };
   }
 
-  @Public()
   @Get(':id/stream')
   async stream(@Param('id') id: string, @Query('token') token: string, @Res() res: Response) {
     if (!token) throw new BadRequestException('token required');
@@ -170,18 +193,12 @@ export class PoliciesCrudController {
     if (payload.policyId !== id) throw new BadRequestException('token mismatch');
 
     const policy = await this.policiesCrudService.getPolicyOrThrow(id);
-    const viewerRole = String(payload.role || '').toUpperCase();
-    if (viewerRole === UserRole.STAFF && !policy.isActive) {
+    const payloadRole = String(payload.role || '').toUpperCase();
+    if (payloadRole === UserRole.STAFF && !policy.isActive) {
       throw new BadRequestException('Policy not active');
     }
 
-    const uploadsBase = path.resolve(process.cwd(), 'uploads', 'policies');
-    const absPath = path.resolve(process.cwd(), policy.filePath);
-    // Prevent path traversal
-    if (!absPath.startsWith(uploadsBase)) {
-      throw new BadRequestException('Access denied');
-    }
-    if (!fs.existsSync(absPath)) throw new BadRequestException('File missing');
+    const absPath = this.policiesCrudService.resolvePolicyFilePath(policy);
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${policy.title.replace(/[^a-z0-9-_ ]/gi, '').slice(0, 60)}.pdf"`);

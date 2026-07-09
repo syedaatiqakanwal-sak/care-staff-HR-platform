@@ -61,6 +61,9 @@ export class StaffReference {
     @Column({ default: 0 })
     reminderCount: number;
 
+    @Column({ type: 'timestamp', nullable: true })
+    lastReminderSentAt: Date | null;
+
     @Column({ nullable: true })
     ipAddress: string;
 
