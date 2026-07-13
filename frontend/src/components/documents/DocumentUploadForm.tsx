@@ -72,7 +72,9 @@ export function DocumentUploadForm({ targetUserId, onUploaded, fixedType }: Docu
       {!fixedType && (
         <Select
           label="Document type"
-          data={DOCUMENT_TYPE_OPTIONS}
+          data={DOCUMENT_TYPE_OPTIONS.filter(
+            (opt) => opt.value !== 'PASSPORT' && opt.value !== 'RIGHT_TO_WORK',
+          )}
           value={documentType}
           onChange={(v) => v && setDocumentType(v as StaffDocumentType)}
         />

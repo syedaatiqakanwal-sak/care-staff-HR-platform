@@ -15,7 +15,9 @@ import {
   SegmentedControl,
   Divider,
   Checkbox,
+  Box,
 } from '@mantine/core';
+import { useRef, useState, useEffect } from 'react';
 import { Download, Trash, Shield, FileText } from 'lucide-react';
 import { notifications } from '@mantine/notifications';
 import axios from 'axios';
@@ -77,6 +79,15 @@ export function IdentityDocumentsTab({
   const canUpload = isManagementRole() && canMutate();
   const editable = isEditing;
 
+  const [rtwDocumentName, setRtwDocumentName] = useState<string | null>(null);
+  const [rtwUploading, setRtwUploading] = useState(false);
+  const rtwFileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const rtwDoc = documents.find((d) => d.documentType === 'RIGHT_TO_WORK');
+    setRtwDocumentName(rtwDoc?.fileName ?? null);
+  }, [documents]);
+
   const isUkNationalNo = profile.isUkNational === false;
   const showEeaQuestion = isUkNationalNo;
   const showVisaFields = isUkNationalNo && profile.isEeaNational === false;
@@ -115,6 +126,41 @@ export function IdentityDocumentsTab({
 
   const passportDocs = documents.filter((d) => d.documentType === 'PASSPORT');
 
+  const handleRtwDocumentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !targetUserId) return;
+    setRtwUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('documentType', 'RIGHT_TO_WORK');
+    formData.append('documentName', file.name);
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(`/api/v1/staff/${targetUserId}/documents`, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      setRtwDocumentName(file.name);
+      refetch();
+      notifications.show({
+        title: 'Success',
+        message: 'Right to work document uploaded successfully',
+        color: 'green',
+      });
+    } catch {
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to upload document. Please try again.',
+        color: 'red',
+      });
+    } finally {
+      setRtwUploading(false);
+      if (rtwFileInputRef.current) rtwFileInputRef.current.value = '';
+    }
+  };
+
   return (
     <Stack gap="xl">
       <Paper p="lg" radius="md" withBorder>
@@ -130,13 +176,9 @@ export function IdentityDocumentsTab({
             onChange={(e) => onProfileChange?.('passportNumber', e.currentTarget.value || null)}
           />
           <TextInput
-            label="Passport expiry"
-            type="date"
-            value={
-              profile.passportExpiry
-                ? String(profile.passportExpiry).slice(0, 10)
-                : ''
-            }
+            label="Issuing authority"
+            placeholder="Enter issuing authority"
+            value={profile.passportExpiry ? String(profile.passportExpiry) : ''}
             readOnly={!editable}
             onChange={(e) =>
               onProfileChange?.('passportExpiry', e.currentTarget.value || null)
@@ -323,6 +365,50 @@ export function IdentityDocumentsTab({
               )}
             </>
           )}
+
+          <Box mt={16}>
+              <Text fw={600} size="sm" mb={8}>
+                Right to Work Document
+              </Text>
+              {rtwDocumentName ? (
+                <Group gap={8}>
+                  <Text size="sm" c="dimmed">
+                    {rtwDocumentName}
+                  </Text>
+                  <Button
+                    variant="light"
+                    size="xs"
+                    color="blue"
+                    onClick={() => rtwFileInputRef.current?.click()}
+                    loading={rtwUploading}
+                  >
+                    Replace Document
+                  </Button>
+                </Group>
+              ) : (
+                <Group gap={8}>
+                  <Text size="sm" c="dimmed">
+                    No document uploaded
+                  </Text>
+                  <Button
+                    variant="light"
+                    size="xs"
+                    color="green"
+                    onClick={() => rtwFileInputRef.current?.click()}
+                    loading={rtwUploading}
+                  >
+                    Upload Document
+                  </Button>
+                </Group>
+              )}
+              <input
+                type="file"
+                ref={rtwFileInputRef}
+                style={{ display: 'none' }}
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                onChange={handleRtwDocumentUpload}
+              />
+          </Box>
         </Stack>
         <Text size="xs" c="dimmed" mt="sm">
           Save via &quot;Edit Personal Info&quot; on the Personal tab header.

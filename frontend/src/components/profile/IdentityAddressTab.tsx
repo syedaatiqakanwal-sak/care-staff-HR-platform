@@ -51,6 +51,56 @@ export const IdentityAddressTab = ({ profile, isEditing }: IdentityAddressTabPro
     }>({ line1: '', line2: '', town: '', postcode: '', dateFrom: '', dateTo: '' });
     const [savingEdit, setSavingEdit] = useState(false);
 
+    const [clientGapStatus, setClientGapStatus] = useState<{
+        hasGap: boolean;
+        color: 'yellow' | 'green';
+        message: string;
+    } | null>(null);
+
+    const checkAddressGaps = (addressList: AddressRecord[]) => {
+        if (!addressList || addressList.length === 0) {
+            return {
+                hasGap: true,
+                color: 'yellow' as const,
+                message: 'No address records found. Please add 5 years of address history.',
+            };
+        }
+        const today = new Date();
+        const fiveYearsAgo = new Date();
+        fiveYearsAgo.setFullYear(today.getFullYear() - 5);
+        const sorted = [...addressList]
+            .filter((a) => a.dateFrom)
+            .sort((a, b) => new Date(a.dateFrom!).getTime() - new Date(b.dateFrom!).getTime());
+        if (sorted.length === 0) {
+            return { hasGap: true, color: 'yellow' as const, message: 'No valid address records found.' };
+        }
+        const earliestDate = new Date(sorted[0].dateFrom!);
+        if (earliestDate > fiveYearsAgo) {
+            return {
+                hasGap: true,
+                color: 'yellow' as const,
+                message: `⚠️ Address history gap detected. Coverage starts from ${earliestDate.toLocaleDateString('en-GB')} but should go back to ${fiveYearsAgo.toLocaleDateString('en-GB')}. Please add missing address records.`,
+            };
+        }
+        for (let i = 0; i < sorted.length - 1; i++) {
+            const currentEnd = sorted[i].dateTo ? new Date(sorted[i].dateTo!) : today;
+            const nextStart = new Date(sorted[i + 1].dateFrom!);
+            const diffDays = (nextStart.getTime() - currentEnd.getTime()) / (1000 * 60 * 60 * 24);
+            if (diffDays > 1) {
+                return {
+                    hasGap: true,
+                    color: 'yellow' as const,
+                    message: `⚠️ Address gap detected between ${currentEnd.toLocaleDateString('en-GB')} and ${nextStart.toLocaleDateString('en-GB')}. Please add the missing address record.`,
+                };
+            }
+        }
+        return {
+            hasGap: false,
+            color: 'green' as const,
+            message: '✓ Address history covers the full 5-year period.',
+        };
+    };
+
     // Fetch Addresses
     const fetchAddresses = async () => {
         if (!profile?.user?.id && !profile?.id) return;
@@ -82,6 +132,12 @@ export const IdentityAddressTab = ({ profile, isEditing }: IdentityAddressTabPro
     useEffect(() => {
         fetchAddresses();
     }, [profile]);
+
+    useEffect(() => {
+        if (addresses !== undefined) {
+            setClientGapStatus(checkAddressGaps(addresses));
+        }
+    }, [addresses]);
 
     const handleAddAddress = async () => {
         const targetId = profile.user?.id || profile.id;
@@ -342,6 +398,12 @@ export const IdentityAddressTab = ({ profile, isEditing }: IdentityAddressTabPro
                         Add Address
                     </Button>
                 </Group>
+
+                {clientGapStatus && (
+                    <Alert color={clientGapStatus.color} mb={12}>
+                        {clientGapStatus.message}
+                    </Alert>
+                )}
 
                 {hasGap && (
                     <Alert
