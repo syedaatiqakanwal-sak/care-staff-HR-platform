@@ -1,37 +1,147 @@
 import { Injectable } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
+import Imap from 'node-imap';
 
 @Injectable()
 export class EmailService {
     private transporter;
 
     constructor() {
-        // Support both SMTP and Gmail service
-        if (process.env.SMTP_HOST) {
-            this.transporter = nodemailer.createTransport({
-                host: process.env.SMTP_HOST,
-                port: parseInt(process.env.SMTP_PORT || '587'),
-                secure: process.env.SMTP_SECURE === 'true',
-                auth: {
-                    user: process.env.SMTP_USER || process.env.EMAIL_USER,
-                    pass: process.env.SMTP_PASS || process.env.EMAIL_PASS,
-                },
-            });
-        } else {
-            // Fallback to Gmail service
-            this.transporter = nodemailer.createTransport({
-                service: 'gmail',
-                auth: {
-                    user: process.env.EMAIL_USER,
-                    pass: process.env.EMAIL_PASS,
-                },
-            });
-        }
+        const host = process.env.SMTP_HOST || 'mail.letscareall.org.uk';
+        const port = parseInt(process.env.SMTP_PORT || '587', 10);
+        const secure = process.env.SMTP_SECURE === 'true';
+        const user = process.env.SMTP_USER || process.env.EMAIL_USER;
+        const passSource = process.env.SMTP_PASS
+            ? 'SMTP_PASS'
+            : process.env.EMAIL_PASS
+              ? 'EMAIL_PASS'
+              : 'MISSING';
+
+        this.transporter = nodemailer.createTransport({
+            host,
+            port,
+            secure,
+            auth: {
+                user,
+                pass: process.env.SMTP_PASS || process.env.EMAIL_PASS,
+            },
+            tls: {
+                rejectUnauthorized: false,
+            },
+        });
+
+        console.log('[EmailService] Transporter config:', {
+            host,
+            port,
+            secure,
+            authUser: user,
+            authPassSource: passSource,
+            authPassSet: Boolean(process.env.SMTP_PASS || process.env.EMAIL_PASS),
+            authPassLength: (process.env.SMTP_PASS || process.env.EMAIL_PASS || '').length,
+            tls: { rejectUnauthorized: false },
+            envLoaded: {
+                SMTP_HOST: process.env.SMTP_HOST,
+                SMTP_PORT: process.env.SMTP_PORT,
+                SMTP_SECURE: process.env.SMTP_SECURE,
+                SMTP_USER: process.env.SMTP_USER,
+                EMAIL_USER: process.env.EMAIL_USER,
+            },
+        });
+    }
+
+    private logNodemailerError(context: string, error: any) {
+        console.error(`[EmailService] ${context} Nodemailer error:`, {
+            message: error?.message,
+            name: error?.name,
+            code: error?.code,
+            command: error?.command,
+            response: error?.response,
+            responseCode: error?.responseCode,
+            errno: error?.errno,
+            syscall: error?.syscall,
+            address: error?.address,
+            port: error?.port,
+            stack: error?.stack,
+        });
+    }
+
+    // Copy sent email to Sent folder via IMAP
+    private async saveSentEmail(rawEmail: string): Promise<void> {
+        return new Promise((resolve) => {
+            try {
+                const imap = new Imap({
+                    user: process.env.IMAP_USER || process.env.EMAIL_USER || '',
+                    password: process.env.IMAP_PASS || process.env.EMAIL_PASS || '',
+                    host: process.env.IMAP_HOST || 'imap.gmail.com',
+                    port: parseInt(process.env.IMAP_PORT || '993'),
+                    tls: true,
+                    tlsOptions: { rejectUnauthorized: false },
+                    connTimeout: 10000,
+                    authTimeout: 10000,
+                });
+
+                imap.once('ready', () => {
+                    const sentFolders = ['[Gmail]/Sent Mail', 'Sent', 'Sent Items', 'INBOX.Sent'];
+                    let folderIndex = 0;
+
+                    const tryFolder = () => {
+                        if (folderIndex >= sentFolders.length) {
+                            imap.end();
+                            resolve();
+                            return;
+                        }
+                        const folder = sentFolders[folderIndex++];
+                        imap.append(
+                            Buffer.from(rawEmail),
+                            { mailbox: folder, flags: ['\\Seen'] },
+                            (err) => {
+                                if (err) {
+                                    tryFolder();
+                                } else {
+                                    imap.end();
+                                    resolve();
+                                }
+                            },
+                        );
+                    };
+                    tryFolder();
+                });
+
+                imap.once('error', () => {
+                    resolve();
+                });
+
+                imap.once('end', () => {
+                    resolve();
+                });
+
+                imap.connect();
+            } catch {
+                resolve();
+            }
+        });
+    }
+
+    private scheduleSaveToSent(mailOptions: nodemailer.SendMailOptions): void {
+        setImmediate(async () => {
+            try {
+                const msg = await new Promise<string>((resolve, reject) => {
+                    const mail = nodemailer.createTransport({ jsonTransport: true });
+                    mail.sendMail(mailOptions, (err, inf) => {
+                        if (err) reject(err);
+                        else resolve(inf.message as string);
+                    });
+                });
+                await this.saveSentEmail(msg);
+            } catch {
+                // Silent fail
+            }
+        });
     }
 
     async sendOtp(to: string, otp: string) {
         const mailOptions = {
-            from: `"CPD Group Support" <${process.env.EMAIL_USER}>`,
+            from: `"Lets Care All HR" <${process.env.EMAIL_USER}>`,
             to: to,
             subject: 'Your Password Reset Code',
             html: `
@@ -49,10 +159,11 @@ export class EmailService {
 
         try {
             const info = await this.transporter.sendMail(mailOptions);
+            this.scheduleSaveToSent(mailOptions);
             console.log('Message sent: %s', info.messageId);
             return info;
         } catch (error) {
-            console.error('Error sending email:', error);
+            this.logNodemailerError('sendOtp', error);
             throw new Error('Failed to send email');
         }
     }
@@ -83,10 +194,11 @@ export class EmailService {
 
         try {
             const info = await this.transporter.sendMail(mailOptions);
+            this.scheduleSaveToSent(mailOptions);
             console.log('Reference email sent: %s', info.messageId);
             return info;
         } catch (error) {
-            console.error('Error sending reference email:', error);
+            this.logNodemailerError('sendReferenceEmail', error);
             throw new Error('Failed to send reference email');
         }
     }
@@ -209,10 +321,11 @@ export class EmailService {
 
         try {
             const info = await this.transporter.sendMail(mailOptions);
+            this.scheduleSaveToSent(mailOptions);
             console.log('Reference link email sent: %s', info.messageId);
             return info;
         } catch (error) {
-            console.error('Error sending reference link email:', error);
+            this.logNodemailerError('sendReferenceLinkEmail', error);
             throw new Error('Failed to send reference link email');
         }
     }
@@ -273,10 +386,11 @@ export class EmailService {
 
         try {
             const info = await this.transporter.sendMail(mailOptions);
+            this.scheduleSaveToSent(mailOptions);
             console.log(`Reference reminder email #${reminderNumber} sent: %s`, info.messageId);
             return info;
         } catch (error) {
-            console.error('Error sending reference reminder email:', error);
+            this.logNodemailerError('sendReferenceReminderEmail', error);
             throw new Error('Failed to send reference reminder email');
         }
     }
@@ -322,10 +436,11 @@ export class EmailService {
 
         try {
             const info = await this.transporter.sendMail(mailOptions);
+            this.scheduleSaveToSent(mailOptions);
             console.log('Review schedule email sent: %s', info.messageId);
             return info;
         } catch (error) {
-            console.error('Error sending review schedule email:', error);
+            this.logNodemailerError('sendReviewScheduleEmail', error);
             throw new Error('Failed to send review schedule email');
         }
     }
