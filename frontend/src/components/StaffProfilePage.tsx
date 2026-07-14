@@ -2397,6 +2397,11 @@ export const StaffProfilePage = () => {
                 .tab-certificates[data-active] { background-color: #267FBA !important; color: white !important; box-shadow: 0 4px 12px rgba(38, 127, 186, 0.3) !important; }
                 .tab-work-performance[data-active] { background-color: #C62828 !important; color: white !important; box-shadow: 0 4px 12px rgba(198, 40, 40, 0.3) !important; }
                 .tab-monthly-report[data-active] { background-color: #00897B !important; color: white !important; box-shadow: 0 4px 12px rgba(0, 137, 123, 0.3) !important; }
+                .tab-recruitment[data-active] {
+                    background-color: #139639 !important;
+                    color: #000000 !important;
+                    border-color: #139639 !important;
+                }
             `}</style>
             <Container size="xl" p={0} style={{ width: '100%', maxWidth: '100%' }}>
                 {/* Profile Banner */}

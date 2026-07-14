@@ -12,10 +12,12 @@ import {
   Center,
   Badge,
   Alert,
+  Box,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import axios from 'axios';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Upload } from 'lucide-react';
 import { isManagementRole, canMutate } from '../../utils/roles';
 import {
   employmentStatusBadgeColor,
@@ -69,6 +71,8 @@ export function RecruitmentTab({ profile, onEmploymentStatusChange }: Recruitmen
   const [employmentStatus, setEmploymentStatus] = useState(profile.employmentStatus || 'ACTIVE');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [itemDocuments, setItemDocuments] = useState<Record<string, string | null>>({});
+  const itemFileRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const fetchRecruitment = useCallback(async () => {
     if (!targetUserId) return;
@@ -118,6 +122,45 @@ export function RecruitmentTab({ profile, onEmploymentStatusChange }: Recruitmen
       notifications.show({ title: 'Error', message: String(msg), color: 'red' });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleItemDocumentUpload = async (
+    itemKey: string,
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file || !targetUserId) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('documentType', 'OTHER');
+    formData.append('documentName', `${itemKey}_${file.name}`);
+
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(`/api/v1/staff/${targetUserId}/documents`, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      setItemDocuments((prev) => ({ ...prev, [itemKey]: file.name }));
+      notifications.show({
+        title: 'Success',
+        message: 'Document uploaded successfully',
+        color: 'green',
+      });
+    } catch {
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to upload document',
+        color: 'red',
+      });
+    }
+
+    if (itemFileRefs.current[itemKey]) {
+      itemFileRefs.current[itemKey]!.value = '';
     }
   };
 
@@ -206,6 +249,44 @@ export function RecruitmentTab({ profile, onEmploymentStatusChange }: Recruitmen
                   Shadow ends: {new Date(record.shadowEndDate).toLocaleDateString('en-GB')} (14
                   days from start)
                 </Text>
+              )}
+              {!isShadow && (
+              <Box mt={8} pt={8} style={{ borderTop: '1px solid #f0f0f0' }}>
+                {itemDocuments[item.key] ? (
+                  <Group gap={8} align="center">
+                    <Text size="xs" c="dimmed">
+                      📄 {itemDocuments[item.key]}
+                    </Text>
+                    <Button
+                      variant="subtle"
+                      size="xs"
+                      color="blue"
+                      onClick={() => itemFileRefs.current[item.key]?.click()}
+                    >
+                      Replace
+                    </Button>
+                  </Group>
+                ) : (
+                  <Button
+                    variant="subtle"
+                    size="xs"
+                    color="green"
+                    leftSection={<Upload size={12} />}
+                    onClick={() => itemFileRefs.current[item.key]?.click()}
+                  >
+                    Upload Document
+                  </Button>
+                )}
+                <input
+                  type="file"
+                  ref={(el) => {
+                    itemFileRefs.current[item.key] = el;
+                  }}
+                  style={{ display: 'none' }}
+                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                  onChange={(e) => handleItemDocumentUpload(item.key, e)}
+                />
+              </Box>
               )}
             </Paper>
           );
