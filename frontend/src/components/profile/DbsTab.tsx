@@ -42,6 +42,8 @@ export function DbsTab({ profile }: DbsTabProps) {
   const [renewalDate, setRenewalDate] = useState('');
   const [nextDeclarationDate, setNextDeclarationDate] = useState('');
   const [updateServiceStatus, setUpdateServiceStatus] = useState(false);
+  const [dbsCertificateNumber, setDbsCertificateNumber] = useState('');
+  const [enrolledDate, setEnrolledDate] = useState('');
   const [certificateDocumentId, setCertificateDocumentId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [declarationFile, setDeclarationFile] = useState<File | null>(null);
@@ -54,6 +56,8 @@ export function DbsTab({ profile }: DbsTabProps) {
       setRenewalDate(dbs.renewalDate?.slice(0, 10) ?? '');
       setNextDeclarationDate(dbs.nextDeclarationDate?.slice(0, 10) ?? '');
       setUpdateServiceStatus(dbs.updateServiceStatus);
+      setDbsCertificateNumber(dbs.dbsCertificateNumber || '');
+      setEnrolledDate(dbs.enrolledDate?.slice(0, 10) || '');
       setCertificateDocumentId(dbs.certificateDocumentId);
     }
   }, [dbs]);
@@ -77,6 +81,8 @@ export function DbsTab({ profile }: DbsTabProps) {
       nextDeclarationDate: nextDeclarationDate || null,
       updateServiceStatus,
       certificateDocumentId: certificateDocumentId || undefined,
+      dbsCertificateNumber: dbsCertificateNumber || null,
+      enrolledDate: enrolledDate || null,
     };
     setSaving(true);
     try {
@@ -219,6 +225,43 @@ export function DbsTab({ profile }: DbsTabProps) {
             onChange={(e) => setUpdateServiceStatus(e.currentTarget.checked)}
             disabled={!canEdit}
           />
+          {updateServiceStatus && (
+            <Box mt={12}>
+              <SimpleGrid cols={2} spacing="md">
+                <Box>
+                  <Text size="sm" fw={500} mb={4}>
+                    DBS Certificate Number
+                  </Text>
+                  <TextInput
+                    placeholder="Enter DBS certificate number"
+                    value={dbsCertificateNumber}
+                    onChange={(e) => setDbsCertificateNumber(e.currentTarget.value)}
+                    disabled={!canEdit}
+                  />
+                </Box>
+                <Box>
+                  <Text size="sm" fw={500} mb={4}>
+                    Enrolled Date
+                  </Text>
+                  <input
+                    type="date"
+                    value={enrolledDate}
+                    onChange={(e) => setEnrolledDate(e.target.value)}
+                    disabled={!canEdit}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      border: '1px solid #ced4da',
+                      borderRadius: '4px',
+                      fontSize: '14px',
+                      color: enrolledDate ? '#000' : '#adb5bd',
+                      backgroundColor: !canEdit ? '#f8f9fa' : '#fff',
+                    }}
+                  />
+                </Box>
+              </SimpleGrid>
+            </Box>
+          )}
           {certOptions.length > 0 && (
             <Select
               label="Linked certificate document"

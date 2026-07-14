@@ -51,6 +51,16 @@ export class CreateDbsRecordDto {
   @IsOptional()
   @IsUUID()
   certificateDocumentId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  dbsCertificateNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  enrolledDate?: string;
 }
 
 export class UpdateDbsRecordDto {
@@ -78,6 +88,16 @@ export class UpdateDbsRecordDto {
   @IsOptional()
   @IsUUID()
   certificateDocumentId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  dbsCertificateNumber?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  enrolledDate?: string | null;
 }
 
 export class UpdateRightToWorkDto {

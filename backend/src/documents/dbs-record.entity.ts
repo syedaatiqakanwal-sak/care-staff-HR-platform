@@ -53,6 +53,12 @@ export class DbsRecord {
   @JoinColumn({ name: 'certificateDocumentId' })
   certificateDocument: StaffDocument | null;
 
+  @Column({ type: 'varchar', nullable: true })
+  dbsCertificateNumber: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  enrolledDate: string | null;
+
   @CreateDateColumn({ name: 'createdAt' })
   createdAt: Date;
 
