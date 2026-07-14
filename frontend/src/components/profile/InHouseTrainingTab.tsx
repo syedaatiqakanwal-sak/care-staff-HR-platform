@@ -30,12 +30,76 @@ type InHouseRecord = {
     title: string;
     group: string;
     sortOrder: number;
+    filterGroup: string | null;
+    categoryHeader: string | null;
     enrollmentDate: string | null;
     completionDate: string | null;
     status: string | null;
     documentPath: string | null;
     documentName: string | null;
 };
+
+const FILTER_OPTIONS = [
+    { value: 'all', label: 'All' },
+    { value: 'day1', label: 'Day 1' },
+    { value: 'day7', label: 'Day 7' },
+    { value: 'day8', label: 'Day 8' },
+    { value: 'day9', label: 'Day 9' },
+    { value: 'day13', label: 'Day 13' },
+    { value: 'day14', label: 'Day 14' },
+    { value: 'day20', label: 'Day 20' },
+    { value: 'additional', label: 'Additional Specialist Training' },
+    { value: 'mandatory', label: 'Mandatory' },
+    { value: 'oliver', label: 'Oliver McGowan Training' },
+    { value: 'year1', label: 'After 1 Year' },
+    { value: 'year2', label: 'After 2 Years' },
+    { value: 'year3', label: 'After 3 Years' },
+];
+
+const FILTER_LABELS = Object.fromEntries(
+    FILTER_OPTIONS.map((opt) => [opt.value, opt.label]),
+) as Record<string, string>;
+
+/** Resolve filter group from field or infer from sortOrder / group name (API fallback). */
+const resolveFilterGroup = (rec: InHouseRecord): string | null => {
+    if (rec.filterGroup) return rec.filterGroup;
+    const g = rec.group ?? '';
+    if (g.includes('Year 3') || (rec.sortOrder >= 170 && rec.sortOrder <= 183)) return 'year3';
+    if (g.includes('Year 2') || (rec.sortOrder >= 150 && rec.sortOrder <= 163)) return 'year2';
+    if (g === 'After 1 Year' || g.includes('Year 1') || (rec.sortOrder >= 130 && rec.sortOrder <= 143)) return 'year1';
+    if (rec.sortOrder >= 10 && rec.sortOrder <= 20) return 'day1';
+    if (rec.sortOrder === 30) return 'day7';
+    if (rec.sortOrder === 40) return 'day8';
+    if (rec.sortOrder === 50) return 'day9';
+    if (rec.sortOrder === 60) return 'day13';
+    if (rec.sortOrder === 70) return 'day14';
+    if (rec.sortOrder === 80) return 'day20';
+    if (rec.sortOrder >= 100 && rec.sortOrder <= 105) return 'additional';
+    if (rec.sortOrder >= 110 && rec.sortOrder <= 111) return 'mandatory';
+    if (rec.sortOrder >= 120 && rec.sortOrder <= 121) return 'oliver';
+    return null;
+};
+
+const getSectionHeader = (rec: InHouseRecord, viewingAll: boolean): string => {
+    if (rec.categoryHeader) {
+        const fg = resolveFilterGroup(rec);
+        const periodLabel = fg ? FILTER_LABELS[fg] : null;
+        if (viewingAll && periodLabel) {
+            return `${periodLabel} — ${rec.categoryHeader}`;
+        }
+        return rec.categoryHeader;
+    }
+    return rec.group;
+};
+
+const normalizeRecords = (
+    rows: (InHouseRecord & { filter_group?: string; category_header?: string })[],
+): InHouseRecord[] =>
+    rows.map((r) => ({
+        ...r,
+        filterGroup: r.filterGroup ?? r.filter_group ?? null,
+        categoryHeader: r.categoryHeader ?? r.category_header ?? null,
+    }));
 
 const STATUS_OPTIONS = [
     { value: 'enrolled', label: 'Enrolled' },
@@ -56,6 +120,24 @@ interface InHouseTrainingTabProps {
 
 export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps) => {
     const [records, setRecords] = useState<InHouseRecord[]>([]);
+    const [activeFilters, setActiveFilters] = useState<string[]>(['all']);
+
+    const toggleFilter = (value: string) => {
+        if (value === 'all') {
+            setActiveFilters(['all']);
+            return;
+        }
+        setActiveFilters((prev) => {
+            const withoutAll = prev.filter((f) => f !== 'all');
+            if (withoutAll.includes(value)) {
+                const updated = withoutAll.filter((f) => f !== value);
+                return updated.length === 0 ? ['all'] : updated;
+            } else {
+                return [...withoutAll, value];
+            }
+        });
+    };
+
     const [loading, setLoading] = useState(false);
     const [initializing, setInitializing] = useState(false);
     const [savingId, setSavingId] = useState<string | null>(null);
@@ -71,7 +153,7 @@ export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps
             const res = await axios.get(`/api/v1/staff/${targetId}/inhouse-training`, {
                 headers: authHeader(),
             });
-            setRecords(res.data?.records || []);
+            setRecords(normalizeRecords(res.data?.records || []));
         } catch (error) {
             console.error('Failed to fetch in-house training records', error);
             notifications.show({
@@ -98,7 +180,7 @@ export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps
                 {},
                 { headers: authHeader() },
             );
-            setRecords(res.data?.records || []);
+            setRecords(normalizeRecords(res.data?.records || []));
             notifications.show({
                 title: 'Training plan initialized',
                 message: 'All standard in-house training items have been added.',
@@ -208,18 +290,32 @@ export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps
         }
     };
 
-    // Group records preserving sortOrder
-    const groups: { group: string; items: InHouseRecord[] }[] = [];
-    for (const rec of records) {
-        let bucket = groups.find((g) => g.group === rec.group);
+    const filteredRecords = (activeFilters.includes('all')
+        ? records
+        : records.filter((r) => activeFilters.includes(resolveFilterGroup(r) ?? ''))
+    ).slice().sort((a, b) => a.sortOrder - b.sortOrder);
+
+    // Group by group+categoryHeader (unique per year) so refresher blocks never merge
+    const grouped: { key: string; displayHeader: string; items: InHouseRecord[] }[] = [];
+    const viewingAll = activeFilters.includes('all');
+    for (const rec of filteredRecords) {
+        const bucketKey = rec.categoryHeader
+            ? `${rec.group}::${rec.categoryHeader}`
+            : `standalone::${rec.group}`;
+        const displayHeader = getSectionHeader(rec, viewingAll);
+
+        let bucket = grouped.find((g) => g.key === bucketKey);
         if (!bucket) {
-            bucket = { group: rec.group, items: [] };
-            groups.push(bucket);
+            bucket = { key: bucketKey, displayHeader, items: [] };
+            grouped.push(bucket);
         }
         bucket.items.push(rec);
     }
+    grouped.sort(
+        (a, b) => (a.items[0]?.sortOrder ?? 0) - (b.items[0]?.sortOrder ?? 0),
+    );
 
-    const completedCount = records.filter((r) => r.status === 'completed').length;
+    const filteredCount = activeFilters.includes('all') ? records.length : filteredRecords.length;
 
     return (
         <Box mb="xl" pos="relative">
@@ -261,7 +357,10 @@ export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps
                     </Group>
                     {records.length > 0 && (
                         <Badge size="lg" variant="white" c={BRAND_GREEN}>
-                            {completedCount} / {records.length} Completed
+                            {records.filter((r) => r.status === 'completed').length} / {filteredCount} Completed
+                            {!activeFilters.includes('all')
+                                ? ` (${activeFilters.map((f) => FILTER_LABELS[f]).filter(Boolean).join(', ')})`
+                                : ''}
                         </Badge>
                     )}
                 </Group>
@@ -295,6 +394,24 @@ export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps
                 </Paper>
             ) : (
                 <Paper radius="16px" shadow="xs" bg="white" style={{ overflow: 'hidden' }}>
+                    <Box p="md" pb={0}>
+                        <Box mb={16}>
+                            <Group gap={8} style={{ flexWrap: 'wrap' }}>
+                                {FILTER_OPTIONS.map((opt) => (
+                                    <Button
+                                        key={opt.value}
+                                        size="xs"
+                                        variant={activeFilters.includes(opt.value) ? 'filled' : 'light'}
+                                        color={activeFilters.includes(opt.value) ? 'green' : 'gray'}
+                                        onClick={() => toggleFilter(opt.value)}
+                                        style={{ borderRadius: 20 }}
+                                    >
+                                        {opt.label}
+                                    </Button>
+                                ))}
+                            </Group>
+                        </Box>
+                    </Box>
                     <Table.ScrollContainer minWidth={900}>
                         <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover>
                             <Table.Thead>
@@ -310,8 +427,8 @@ export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps
                                 </Table.Tr>
                             </Table.Thead>
                             <Table.Tbody>
-                                {groups.map((g) => (
-                                    <Fragment key={`group-${g.group}`}>
+                                {grouped.map((g) => (
+                                    <Fragment key={`group-${g.key}`}>
                                         <Table.Tr>
                                             <Table.Td
                                                 colSpan={canEdit ? 6 : 5}
@@ -322,7 +439,7 @@ export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps
                                                     letterSpacing: '0.5px',
                                                 }}
                                             >
-                                                {g.group}
+                                                {g.displayHeader}
                                             </Table.Td>
                                         </Table.Tr>
                                         {g.items.map((record) => (

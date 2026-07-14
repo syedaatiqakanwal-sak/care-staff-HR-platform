@@ -31,8 +31,10 @@ import { useState, useEffect } from 'react'
 import { Linkedin } from 'lucide-react'
 import { Notifications } from '@mantine/notifications'
 import { SidebarProvider, useSidebar } from './contexts/SidebarContext'
+import { limitDateYearInput } from './utils/dateInputLimit'
 import '@mantine/core/styles.css'
 import '@mantine/notifications/styles.css'
+import './index.css'
 
 // Global Safeguard CSS to force interactivity
 const GlobalStyles = () => (
@@ -391,6 +393,7 @@ function App() {
   useEffect(() => {
     document.body.style.pointerEvents = 'auto';
     document.documentElement.style.pointerEvents = 'auto';
+    limitDateYearInput();
   }, []);
 
   return (

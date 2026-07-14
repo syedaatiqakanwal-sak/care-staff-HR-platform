@@ -1,0 +1,13 @@
+/* =============================================
+   Global: Limit year field to 4 digits in
+   all native date inputs
+   ============================================= */
+input[type="date"]::-webkit-datetime-edit-year-field {
+    max-width: 4ch;
+    min-width: 4ch;
+}
+
+/* Prevent year from growing beyond 4 chars */
+input[type="date"] {
+    max-width: 100%;
+}

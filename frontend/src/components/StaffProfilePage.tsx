@@ -2402,6 +2402,16 @@ export const StaffProfilePage = () => {
                     color: #000000 !important;
                     border-color: #139639 !important;
                 }
+                .tab-dbs[data-active] {
+                    background-color: #139639 !important;
+                    color: #000000 !important;
+                    border-color: #139639 !important;
+                }
+                .tab-inhouse-training[data-active] {
+                    background-color: #139639 !important;
+                    color: #000000 !important;
+                    border-color: #139639 !important;
+                }
             `}</style>
             <Container size="xl" p={0} style={{ width: '100%', maxWidth: '100%' }}>
                 {/* Profile Banner */}
