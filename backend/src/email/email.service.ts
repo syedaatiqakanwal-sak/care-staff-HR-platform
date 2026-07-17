@@ -72,7 +72,7 @@ export class EmailService {
                 const imap = new Imap({
                     user: process.env.IMAP_USER || process.env.EMAIL_USER || '',
                     password: process.env.IMAP_PASS || process.env.EMAIL_PASS || '',
-                    host: process.env.IMAP_HOST || 'imap.gmail.com',
+                    host: process.env.IMAP_HOST || 'mail.letscareall.org.uk',
                     port: parseInt(process.env.IMAP_PORT || '993'),
                     tls: true,
                     tlsOptions: { rejectUnauthorized: false },
@@ -170,7 +170,7 @@ export class EmailService {
 
     async sendReferenceEmail(toEmail: string, pdfBuffer: Buffer, referenceType: string) {
         const mailOptions = {
-            from: `"Lets Care All" <${process.env.EMAIL_USER || 'hr@letscareall.co.uk'}>`,
+            from: `"Lets Care All" <${process.env.EMAIL_USER || 'references@letscareall.org.uk'}>`,
             to: toEmail,
             subject: 'Reference Request - Lets Care All',
             html: `
@@ -311,7 +311,7 @@ export class EmailService {
             `;
 
         const mailOptions = {
-            from: `"Lets Care All" <${process.env.EMAIL_USER || 'hr@letscareall.co.uk'}>`,
+            from: `"Lets Care All" <${process.env.EMAIL_USER || 'references@letscareall.org.uk'}>`,
             to: toEmail,
             subject: isPersonal
                 ? 'Character Reference Request'
@@ -338,7 +338,7 @@ export class EmailService {
         reminderNumber: number,
     ) {
         const mailOptions = {
-            from: `"Lets Care All" <${process.env.EMAIL_USER || 'hr@letscareall.co.uk'}>`,
+            from: `"Lets Care All" <${process.env.EMAIL_USER || 'references@letscareall.org.uk'}>`,
             to: toEmail,
             subject: 'Reference Request \u2013 Reminder',
             html: `
@@ -412,7 +412,7 @@ export class EmailService {
                   : 'Review';
 
         const mailOptions = {
-            from: `"Lets Care All" <${process.env.EMAIL_USER || 'hr@letscareall.co.uk'}>`,
+            from: `"Lets Care All" <${process.env.EMAIL_USER || 'references@letscareall.org.uk'}>`,
             to: toEmail,
             subject: `${formLabel} scheduled - Lets Care All`,
             html: `
