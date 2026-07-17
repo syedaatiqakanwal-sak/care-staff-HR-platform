@@ -36,6 +36,8 @@ export class InHouseTrainingService {
                 title: t.title,
                 group: t.group,
                 sortOrder: t.sortOrder,
+                filterGroup: t.filterGroup,
+                categoryHeader: t.categoryHeader,
                 enrollmentDate: null,
                 completionDate: null,
                 status: null,

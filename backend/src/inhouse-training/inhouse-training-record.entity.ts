@@ -28,6 +28,12 @@ export class InHouseTrainingRecord {
     @Column({ name: 'sortOrder', type: 'int', default: 0 })
     sortOrder: number;
 
+    @Column({ name: 'filterGroup', type: 'varchar', nullable: true })
+    filterGroup: string | null;
+
+    @Column({ name: 'categoryHeader', type: 'varchar', nullable: true })
+    categoryHeader: string | null;
+
     @Column({ name: 'enrollmentDate', type: 'date', nullable: true })
     enrollmentDate: string | null;
 

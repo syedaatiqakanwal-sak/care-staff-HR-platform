@@ -569,20 +569,22 @@ export class StaffService {
         const saved = await this.reviewFormRepository.save(reviewForm);
 
         if (profile.user?.email) {
-            try {
-                await this.emailService.sendReviewScheduleEmail(profile.user.email, {
-                    formType: dto.formType,
-                    staffName: dto.staffName,
-                    reviewDate: dto.dateOfReview,
-                    notes: dto.documentationComments || undefined,
+            const toEmail = profile.user.email;
+            const emailPayload = {
+                formType: dto.formType,
+                staffName: dto.staffName,
+                reviewDate: dto.dateOfReview,
+                notes: dto.documentationComments || undefined,
+            };
+            setImmediate(() => {
+                this.emailService.sendReviewScheduleEmail(toEmail, emailPayload).catch((err) => {
+                    this.logger.warn(
+                        `Review schedule email failed (non-blocking) for staffId=${staffId}: ${
+                            err instanceof Error ? err.message : String(err)
+                        }`,
+                    );
                 });
-            } catch (error) {
-                this.logger.warn(
-                    `Review form created but schedule email failed for staffId=${staffId}: ${
-                        error instanceof Error ? error.message : String(error)
-                    }`,
-                );
-            }
+            });
         }
 
         return saved;

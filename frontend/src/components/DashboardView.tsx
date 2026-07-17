@@ -474,11 +474,11 @@ export const DashboardView = () => {
                         minRows={3}
                     />
                     <Group justify="flex-end">
-                        <Button variant="default" onClick={() => setScheduleModalOpen(false)}>
+                        <Button variant="default" onClick={() => setScheduleModalOpen(false)} disabled={submittingSchedule}>
                             Cancel
                         </Button>
-                        <Button color="brandGreen.6" onClick={submitSchedule} loading={submittingSchedule}>
-                            Save
+                        <Button color="brandGreen.6" onClick={submitSchedule} loading={submittingSchedule} disabled={submittingSchedule}>
+                            {submittingSchedule ? 'Saving...' : 'Save'}
                         </Button>
                     </Group>
                 </Stack>
