@@ -49,8 +49,9 @@ export class ReferencesService {
     }
 
     async findAll(staffId: string): Promise<StaffReference[]> {
+        const resolvedStaffId = await this.resolveStaffProfileId(staffId);
         return this.referencesRepository.find({
-            where: { staffId },
+            where: { staffId: resolvedStaffId },
             order: { createdAt: 'DESC' },
         });
     }
@@ -72,6 +73,31 @@ export class ReferencesService {
 
         console.log(`[findReceived] staffId=${staffId} resolved=${resolvedStaffId} found=${results.length}`);
         return results;
+    }
+
+    async createUploadedReference(
+        staffId: string,
+        data: {
+            file: { path: string; originalname: string; filename?: string; size?: number; mimetype?: string };
+            referenceType: string;
+            refereeName: string;
+            refereeEmail: string | null;
+        }
+    ): Promise<StaffReference> {
+        const resolvedStaffId = await this.resolveStaffProfileId(staffId);
+
+        const reference = this.referencesRepository.create({
+            staffId: resolvedStaffId,
+            name: data.refereeName,
+            email: data.refereeEmail || '',
+            referenceType: data.referenceType as any,
+            status: 'submitted' as any,
+            uploadedFilePath: data.file.path,
+            uploadedFileName: data.file.originalname,
+            submittedAt: new Date(),
+        });
+
+        return this.referencesRepository.save(reference);
     }
 
     /** Verify that a staff profile belongs to a given userId (for authorization checks) */

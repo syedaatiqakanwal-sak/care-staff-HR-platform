@@ -1,6 +1,6 @@
 import { Button, Group, Text, Box, Paper, Stack, SimpleGrid, Modal, TextInput, LoadingOverlay, ThemeIcon, Textarea, Badge, Avatar, ActionIcon, Title, ScrollArea, Alert, Table } from '@mantine/core';
-import { Plus, Briefcase, User, Mail, Phone, Calendar, CheckCircle, XCircle, Clock, Trash, FileCheck } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { Plus, Briefcase, User, Mail, Phone, Calendar, CheckCircle, XCircle, Clock, Trash, FileCheck, Upload } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
 import { notifications } from '@mantine/notifications';
 import { useDisclosure } from '@mantine/hooks';
 import axios from 'axios';
@@ -42,6 +42,19 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
     });
     const [sendingReference, setSendingReference] = useState(false);
 
+    const [uploadModalOpen, setUploadModalOpen] = useState(false);
+    const [uploadRefType, setUploadRefType] = useState<'professional' | 'personal'>('professional');
+    const [uploadRefereeName, setUploadRefereeName] = useState('');
+    const [uploadRefereeEmail, setUploadRefereeEmail] = useState('');
+    const [uploadFile, setUploadFile] = useState<File | null>(null);
+    const [uploading, setUploading] = useState(false);
+    const [uploadedReferences, setUploadedReferences] = useState<any[]>([]);
+    const uploadFileRef = useRef<HTMLInputElement>(null);
+    const [viewerModalOpen, setViewerModalOpen] = useState(false);
+    const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+    const [viewerFileName, setViewerFileName] = useState<string>('');
+    const [viewerLoading, setViewerLoading] = useState(false);
+
     // Fetch saved references
     const fetchSavedReferences = async () => {
         try {
@@ -57,7 +70,19 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
             const res = await axios.get(`/api/v1/staff/${targetId}/references`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            setSavedReferences(res.data || []);
+            const allRefs = res.data || [];
+            // Separate uploaded references (have uploadedFilePath)
+            const uploaded = allRefs.filter(
+                (r: any) => r.uploadedFilePath !== null &&
+                            r.uploadedFilePath !== undefined
+            );
+            setUploadedReferences(uploaded);
+            // Keep savedReferences as non-uploaded ones only
+            setSavedReferences(
+                allRefs.filter(
+                    (r: any) => !r.uploadedFilePath
+                )
+            );
 
             setLoadingReceived(true);
             try {
@@ -136,6 +161,100 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
         setReceivedModalOpen(true);
     };
 
+    const handleReferenceFileUpload = async () => {
+        if (!uploadFile) {
+            notifications.show({
+                title: 'Error',
+                message: 'Please select a file to upload',
+                color: 'red',
+            });
+            return;
+        }
+        if (!uploadRefereeName.trim()) {
+            notifications.show({
+                title: 'Error',
+                message: 'Please enter referee name',
+                color: 'red',
+            });
+            return;
+        }
+
+        setUploading(true);
+        const formData = new FormData();
+        formData.append('file', uploadFile);
+        formData.append('referenceType', uploadRefType);
+        formData.append('refereeName', uploadRefereeName);
+        if (uploadRefereeEmail) formData.append('refereeEmail', uploadRefereeEmail);
+
+        try {
+            const token = localStorage.getItem('token');
+            const staffId = profile?.id || profile?.user?.id || id;
+            const response = await axios.post(
+                `/api/v1/staff/${staffId}/references/upload`,
+                formData,
+                {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        'Content-Type': 'multipart/form-data',
+                    },
+                }
+            );
+            setUploadedReferences(prev => [...prev, response.data]);
+            setUploadModalOpen(false);
+            setUploadFile(null);
+            setUploadRefereeName('');
+            setUploadRefereeEmail('');
+            setUploadRefType('professional');
+            notifications.show({
+                title: 'Success',
+                message: 'Reference uploaded successfully',
+                color: 'green',
+            });
+            fetchSavedReferences();
+        } catch {
+            notifications.show({
+                title: 'Error',
+                message: 'Failed to upload reference. Please try again.',
+                color: 'red',
+            });
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const handleViewUploadedRef = async (ref: any) => {
+        setViewerLoading(true);
+        setViewerModalOpen(true);
+        setViewerFileName(ref.uploadedFileName || 'Document');
+
+        try {
+            const token = localStorage.getItem('token');
+            const staffId = profile?.id || profile?.user?.id || id;
+            const response = await axios.get(
+                `/api/v1/staff/${staffId}/references/${ref.id}/download-uploaded`,
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                    responseType: 'blob',
+                }
+            );
+
+            const rawType = response.headers['content-type'];
+            const contentType = typeof rawType === 'string' ? rawType : 'application/pdf';
+            const blob = new Blob([response.data], { type: contentType });
+            const url = window.URL.createObjectURL(blob);
+            setViewerUrl(url);
+        } catch (err) {
+            setViewerModalOpen(false);
+            notifications.show({
+                title: 'Error',
+                message: 'Failed to load document. Please try again.',
+                color: 'red',
+            });
+        } finally {
+            setViewerLoading(false);
+        }
+    };
+
     return (
         <Stack gap="lg" style={{ position: 'relative', minHeight: 200 }}>
             {/* Saved References Section */}
@@ -162,17 +281,30 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                             </Badge>
                         )}
                         {isEditing && (
-                            <Button 
-                                onClick={() => setTypeSelectionModalOpen(true)} 
-                                leftSection={<Plus size={18} />} 
-                                size="md"
-                                variant="filled"
-                                color="brandBlue"
-                                radius="md"
-                                w={{ base: '100%', xs: 'auto' }}
-                            >
-                                Add Reference
-                            </Button>
+                            <>
+                                <Button
+                                    variant="light"
+                                    color="green"
+                                    leftSection={<Upload size={16} />}
+                                    onClick={() => setUploadModalOpen(true)}
+                                    size="md"
+                                    radius="md"
+                                    w={{ base: '100%', xs: 'auto' }}
+                                >
+                                    Upload Reference
+                                </Button>
+                                <Button 
+                                    onClick={() => setTypeSelectionModalOpen(true)} 
+                                    leftSection={<Plus size={18} />} 
+                                    size="md"
+                                    variant="filled"
+                                    color="brandBlue"
+                                    radius="md"
+                                    w={{ base: '100%', xs: 'auto' }}
+                                >
+                                    Add Reference
+                                </Button>
+                            </>
                         )}
                     </Group>
                 </Group>
@@ -486,6 +618,58 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                     })
                 )}
             </Box>
+
+            {/* Uploaded References */}
+            {uploadedReferences.length > 0 && (
+                <Box mt={32}>
+                    <Title order={4} mb={4}>Uploaded References</Title>
+                    <Text size="sm" c="dimmed" mb={16}>
+                        Manually uploaded reference documents
+                    </Text>
+                    {uploadedReferences.map((ref) => (
+                        <Paper
+                            key={ref.id}
+                            withBorder
+                            p="md"
+                            mb={12}
+                            radius="md"
+                            style={{ borderLeft: '4px solid #2196f3' }}
+                        >
+                            <Group justify="space-between">
+                                <Box>
+                                    <Text fw={600}>
+                                        {ref.name || ref.refereeName || 'Reference'}
+                                    </Text>
+                                    <Text size="sm" c="dimmed">
+                                        {ref.email || ref.refereeEmail || ''}
+                                    </Text>
+                                    <Badge
+                                        color={ref.referenceType === 'professional' ? 'green' : 'blue'}
+                                        size="sm"
+                                        mt={4}
+                                    >
+                                        {ref.referenceType === 'professional'
+                                            ? 'PROFESSIONAL' : 'PERSONAL'}
+                                    </Badge>
+                                    {ref.uploadedFileName && (
+                                        <Text size="xs" c="dimmed" mt={4}>
+                                            📄 {ref.uploadedFileName}
+                                        </Text>
+                                    )}
+                                </Box>
+                                <Button
+                                    variant="light"
+                                    size="xs"
+                                    color="blue"
+                                    onClick={() => handleViewUploadedRef(ref)}
+                                >
+                                    View Document
+                                </Button>
+                            </Group>
+                        </Paper>
+                    ))}
+                </Box>
+            )}
 
             {/* Reference Type Selection Modal */}
             <Modal
@@ -848,6 +1032,222 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                             )}
                         </Stack>
                     </ScrollArea>
+                )}
+            </Modal>
+
+            {/* Upload Reference Modal */}
+            <Modal
+                opened={uploadModalOpen}
+                onClose={() => {
+                    setUploadModalOpen(false);
+                    setUploadFile(null);
+                    setUploadRefereeName('');
+                    setUploadRefereeEmail('');
+                    setUploadRefType('professional');
+                }}
+                title={<Title order={3}>Upload Reference</Title>}
+                size="md"
+                centered
+            >
+                <Stack gap="md">
+                    <Box>
+                        <Text fw={500} mb={8}>Reference Type</Text>
+                        <Group gap={12}>
+                            <Button
+                                variant={uploadRefType === 'professional' ? 'filled' : 'outline'}
+                                color="green"
+                                onClick={() => setUploadRefType('professional')}
+                                size="sm"
+                            >
+                                Professional
+                            </Button>
+                            <Button
+                                variant={uploadRefType === 'personal' ? 'filled' : 'outline'}
+                                color="blue"
+                                onClick={() => setUploadRefType('personal')}
+                                size="sm"
+                            >
+                                Personal
+                            </Button>
+                        </Group>
+                    </Box>
+
+                    <TextInput
+                        label="Referee Name"
+                        placeholder="Enter referee name"
+                        value={uploadRefereeName}
+                        onChange={(e) => setUploadRefereeName(e.target.value)}
+                        required
+                    />
+
+                    <TextInput
+                        label="Referee Email (optional)"
+                        placeholder="Enter referee email"
+                        value={uploadRefereeEmail}
+                        onChange={(e) => setUploadRefereeEmail(e.target.value)}
+                    />
+
+                    <Box>
+                        <Text fw={500} mb={8}>Reference Document</Text>
+                        {uploadFile ? (
+                            <Group gap={8}>
+                                <Text size="sm" c="dimmed">📄 {uploadFile.name}</Text>
+                                <Button
+                                    variant="subtle"
+                                    size="xs"
+                                    color="red"
+                                    onClick={() => setUploadFile(null)}
+                                >
+                                    Remove
+                                </Button>
+                            </Group>
+                        ) : (
+                            <Button
+                                variant="light"
+                                color="green"
+                                leftSection={<Upload size={14} />}
+                                onClick={() => uploadFileRef.current?.click()}
+                            >
+                                Select File
+                            </Button>
+                        )}
+                        <input
+                            type="file"
+                            ref={uploadFileRef}
+                            style={{ display: 'none' }}
+                            accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                            onChange={(e) => {
+                                setUploadFile(e.target.files?.[0] || null);
+                            }}
+                        />
+                        <Text size="xs" c="dimmed" mt={4}>
+                            Accepted: PDF, JPG, PNG, DOC, DOCX (max 10MB)
+                        </Text>
+                    </Box>
+
+                    <Group justify="flex-end" mt={8}>
+                        <Button
+                            variant="subtle"
+                            color="gray"
+                            onClick={() => setUploadModalOpen(false)}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            color="green"
+                            onClick={handleReferenceFileUpload}
+                            loading={uploading}
+                            disabled={!uploadFile || !uploadRefereeName.trim()}
+                        >
+                            Upload Reference
+                        </Button>
+                    </Group>
+                </Stack>
+            </Modal>
+
+            {/* Document Viewer Modal */}
+            <Modal
+                opened={viewerModalOpen}
+                onClose={() => {
+                    setViewerModalOpen(false);
+                    if (viewerUrl) {
+                        window.URL.revokeObjectURL(viewerUrl);
+                        setViewerUrl(null);
+                    }
+                }}
+                title={
+                    <Group gap={8}>
+                        <Text fw={600}>{viewerFileName}</Text>
+                    </Group>
+                }
+                size="xl"
+                centered
+                styles={{
+                    body: { padding: 0, height: '75vh' },
+                }}
+            >
+                {viewerLoading ? (
+                    <Box
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            height: '75vh'
+                        }}
+                    >
+                        <Text c="dimmed">Loading document...</Text>
+                    </Box>
+                ) : viewerUrl ? (
+                    <Box style={{ height: '75vh', width: '100%' }}>
+                        {viewerFileName.toLowerCase().endsWith('.pdf') ? (
+                            <iframe
+                                src={viewerUrl}
+                                style={{
+                                    width: '100%',
+                                    height: '100%',
+                                    border: 'none'
+                                }}
+                                title={viewerFileName}
+                            />
+                        ) : viewerFileName.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                            <Box
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    height: '100%',
+                                    padding: '16px'
+                                }}
+                            >
+                                <img
+                                    src={viewerUrl}
+                                    alt={viewerFileName}
+                                    style={{
+                                        maxWidth: '100%',
+                                        maxHeight: '100%',
+                                        objectFit: 'contain'
+                                    }}
+                                />
+                            </Box>
+                        ) : (
+                            <Box
+                                style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    height: '100%',
+                                    gap: '16px'
+                                }}
+                            >
+                                <Text c="dimmed" ta="center">
+                                    This file type cannot be previewed directly.
+                                </Text>
+                                <Button
+                                    color="green"
+                                    onClick={() => {
+                                        const a = document.createElement('a');
+                                        a.href = viewerUrl!;
+                                        a.download = viewerFileName;
+                                        a.click();
+                                    }}
+                                >
+                                    Download {viewerFileName}
+                                </Button>
+                            </Box>
+                        )}
+                    </Box>
+                ) : (
+                    <Box
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            height: '75vh'
+                        }}
+                    >
+                        <Text c="dimmed">No document available</Text>
+                    </Box>
                 )}
             </Modal>
 

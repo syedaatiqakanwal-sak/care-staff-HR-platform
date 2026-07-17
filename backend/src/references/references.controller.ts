@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req, ForbiddenException, HttpException, HttpStatus, Ip, Res, UnauthorizedException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req, ForbiddenException, HttpException, HttpStatus, Ip, Res, UnauthorizedException, UseInterceptors, UploadedFile, NotFoundException } from '@nestjs/common';
 import { ReferencesService } from './references.service';
 import { AuthGuard } from '@nestjs/passport';
 import { Roles } from '../auth/roles.decorator';
@@ -7,6 +7,10 @@ import { MANAGEMENT_ROLES, canViewOtherStaffProfiles } from '../users/role.utils
 import { RolesGuard } from '../auth/roles.guard';
 import { Public } from '../auth/public.decorator';
 import type { Response } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname, resolve as resolvePath } from 'path';
+import * as fs from 'fs';
 
 @Controller('references')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -396,6 +400,92 @@ export class StaffReferencesController {
         });
     }
 
+    @Post('upload')
+    @UseInterceptors(
+        FileInterceptor('file', {
+            storage: diskStorage({
+                destination: (_req, _file, cb) => {
+                    const uploadPath = './uploads/references';
+                    if (!fs.existsSync(uploadPath)) {
+                        fs.mkdirSync(uploadPath, { recursive: true });
+                    }
+                    cb(null, uploadPath);
+                },
+                filename: (_req, file, cb) => {
+                    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+                    cb(null, `ref-${uniqueSuffix}${extname(file.originalname)}`);
+                },
+            }),
+            limits: { fileSize: 10 * 1024 * 1024 },
+            fileFilter: (_req, file, cb) => {
+                const allowed = /pdf|jpg|jpeg|png|doc|docx/;
+                const ext = allowed.test(extname(file.originalname).toLowerCase());
+                if (ext) {
+                    cb(null, true);
+                } else {
+                    cb(new Error('Only PDF, images and Word documents allowed'), false);
+                }
+            },
+        })
+    )
+    async uploadReference(
+        @Param('staffId') staffId: string,
+        @UploadedFile() file: { path: string; originalname: string; filename?: string; size?: number; mimetype?: string },
+        @Body() body: { referenceType: string; refereeName: string; refereeEmail?: string },
+        @Req() req,
+    ) {
+        const user = req.user;
+        if (!canViewOtherStaffProfiles(user.role)) {
+            const isOwner = await this.referencesService.verifyStaffOwnership(
+                staffId, user.userId
+            );
+            if (!isOwner) {
+                throw new ForbiddenException('You can only manage your own references');
+            }
+        }
+        if (!file) {
+            throw new HttpException('No file uploaded', HttpStatus.BAD_REQUEST);
+        }
+        return this.referencesService.createUploadedReference(staffId, {
+            file,
+            referenceType: body.referenceType || 'professional',
+            refereeName: body.refereeName || 'Uploaded Reference',
+            refereeEmail: body.refereeEmail || null,
+        });
+    }
+
+    @Get(':referenceId/download-uploaded')
+    async downloadUploadedReference(
+        @Param('staffId') staffId: string,
+        @Param('referenceId') referenceId: string,
+        @Res() res: Response,
+        @Req() req,
+    ) {
+        const user = req.user;
+        const resolvedStaffId = await this.referencesService.resolveStaffProfileId(staffId);
+        if (!canViewOtherStaffProfiles(user.role)) {
+            const isOwner = await this.referencesService.verifyStaffOwnership(
+                resolvedStaffId, user.userId
+            );
+            if (!isOwner) {
+                throw new ForbiddenException('You can only view your own references');
+            }
+        }
+
+        const reference = await this.referencesService.findOne(referenceId);
+
+        if (!reference?.uploadedFilePath) {
+            throw new NotFoundException('No uploaded file found for this reference');
+        }
+
+        const absolutePath = resolvePath(process.cwd(), reference.uploadedFilePath);
+        if (!fs.existsSync(absolutePath)) {
+            throw new NotFoundException('File not found on server');
+        }
+
+        return res.sendFile(absolutePath);
+    }
+
     @Get('received')
     async findReceived(@Param('staffId') staffId: string, @Req() req) {
         const user = req.user;
@@ -412,13 +502,14 @@ export class StaffReferencesController {
     @Get()
     async findAll(@Param('staffId') staffId: string, @Req() req) {
         const user = req.user;
+        const resolvedStaffId = await this.referencesService.resolveStaffProfileId(staffId);
         if (!canViewOtherStaffProfiles(user.role)) {
-            const isOwner = await this.referencesService.verifyStaffOwnership(staffId, user.userId);
+            const isOwner = await this.referencesService.verifyStaffOwnership(resolvedStaffId, user.userId);
             if (!isOwner) {
                 throw new ForbiddenException('You can only view your own references');
             }
         }
 
-        return this.referencesService.findAll(staffId);
+        return this.referencesService.findAll(resolvedStaffId);
     }
 }

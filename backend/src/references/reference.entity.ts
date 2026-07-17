@@ -99,4 +99,10 @@ export class StaffReference {
 
     @UpdateDateColumn()
     updatedAt: Date;
+
+    @Column({ type: 'varchar', nullable: true })
+    uploadedFilePath: string | null;
+
+    @Column({ type: 'varchar', nullable: true })
+    uploadedFileName: string | null;
 }
