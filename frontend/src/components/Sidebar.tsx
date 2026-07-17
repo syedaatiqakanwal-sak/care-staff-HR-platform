@@ -24,6 +24,8 @@ import {
     ScrollText,
     LayoutDashboard,
     BarChart3,
+    Shield,
+    Globe,
     ChevronLeft,
     ChevronRight,
     type LucideIcon,
@@ -78,6 +80,8 @@ const NAV_SECTIONS: NavSection[] = [
         title: 'HR',
         items: [
             { link: '/dashboard/references/analytics', label: 'Reference', icon: ClipboardCheck },
+            { link: '/dashboard/dbs/analytics', label: 'DBS', icon: Shield },
+            { link: '/dashboard/rtw/analytics', label: 'Right to Work', icon: Globe },
             { link: '/dashboard/reports', label: 'Reports', icon: FileBarChart },
             { link: '/dashboard/reports/analytics', label: 'Analytics', icon: BarChart3 },
         ],
@@ -131,6 +135,8 @@ function shouldShowNavItem(item: NavItem, dashboardUser: boolean, strictAdmin: b
             item.label === 'Staff' ||
             item.label === 'Add Staff' ||
             item.label === 'Reference' ||
+            item.label === 'DBS' ||
+            item.label === 'Right to Work' ||
             item.label === 'Reports' ||
             item.label === 'Analytics') &&
         !dashboardUser

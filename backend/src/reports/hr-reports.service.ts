@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import PDFDocument from 'pdfkit';
+import { StaffProfile } from '../staff/staff-profile.entity';
 
 function bufferFromDoc(doc: InstanceType<typeof PDFDocument>): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -642,5 +643,72 @@ export class HrReportsService {
         ['Policies', statusLabel(this.toBool(row.policies_ok))],
       ],
     );
+  }
+
+  async getRtwAnalytics() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const in30Days = new Date(today);
+    in30Days.setDate(today.getDate() + 30);
+    const in90Days = new Date(today);
+    in90Days.setDate(today.getDate() + 90);
+
+    const allStaff = await this.dataSource.getRepository(StaffProfile).find();
+
+    const total = allStaff.length;
+    const ukNationals = allStaff.filter((s) => s.isUkNational === true).length;
+    const eeaNationals = allStaff.filter((s) => s.isEeaNational === true).length;
+    const rtwCompleted = allStaff.filter((s) => s.rightToWorkCheckCompleted === true).length;
+    const rtwNotCompleted = allStaff.filter((s) => !s.rightToWorkCheckCompleted).length;
+    const shareCodeExpiring30 = allStaff.filter((s) => {
+      if (!s.visaExpiryDate) return false;
+      const exp = new Date(s.visaExpiryDate);
+      return exp >= today && exp <= in30Days;
+    }).length;
+    const shareCodeExpiring90 = allStaff.filter((s) => {
+      if (!s.visaExpiryDate) return false;
+      const exp = new Date(s.visaExpiryDate);
+      return exp >= today && exp <= in90Days;
+    }).length;
+    const shareCodeExpired = allStaff.filter((s) => {
+      if (!s.visaExpiryDate) return false;
+      return new Date(s.visaExpiryDate) < today;
+    }).length;
+
+    return {
+      total,
+      ukNationals,
+      eeaNationals,
+      rtwCompleted,
+      rtwNotCompleted,
+      shareCodeExpiring30,
+      shareCodeExpiring90,
+      shareCodeExpired,
+    };
+  }
+
+  async getAllRtwForAnalytics() {
+    const allStaff = await this.dataSource.query(
+      `
+      SELECT
+        sp.id AS id,
+        CONCAT(COALESCE(sp."firstName", ''), ' ', COALESCE(sp."lastName", '')) AS "staffName",
+        sp."isUkNational" AS "isUkNational",
+        sp."isEeaNational" AS "isEeaNational",
+        sp."visaType" AS "visaType",
+        sp."visaOrBrpNumber" AS "visaOrBrpNumber",
+        sp."visaExpiryDate" AS "visaExpiryDate",
+        sp."shareCode" AS "shareCode",
+        sp."share_code_generated_date" AS "shareCodeGeneratedDate",
+        sp."rightToWorkStatus" AS "rightToWorkStatus",
+        sp."right_to_work_check_completed" AS "rightToWorkCheckCompleted",
+        sp."right_to_work_check_date" AS "rightToWorkCheckDate",
+        sp."right_to_work_check_expiry_date" AS "rightToWorkCheckExpiryDate"
+      FROM staff_profiles sp
+      ORDER BY sp."lastName" ASC NULLS LAST
+      `,
+    );
+
+    return allStaff;
   }
 }

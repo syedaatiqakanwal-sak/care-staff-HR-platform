@@ -22,6 +22,16 @@ export class HrReportsController {
     res.send(buffer);
   }
 
+  @Get('rtw-analytics')
+  async getRtwAnalytics() {
+    return this.hrReportsService.getRtwAnalytics();
+  }
+
+  @Get('rtw-analytics/all')
+  async getAllRtwRecords() {
+    return this.hrReportsService.getAllRtwForAnalytics();
+  }
+
   @Get('dbs-renewal/preview')
   async dbsRenewalPreview() {
     return this.hrReportsService.previewDbsRenewal();

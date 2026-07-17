@@ -125,6 +125,18 @@ export class DocumentsController {
     private readonly access: DocumentsAccessService,
   ) {}
 
+  @Get('dbs/analytics')
+  @Roles(...MANAGEMENT_ROLES)
+  async getDbsAnalytics() {
+    return this.documentsService.getDbsAnalytics();
+  }
+
+  @Get('dbs/analytics/all')
+  @Roles(...MANAGEMENT_ROLES)
+  async getAllDbsRecords() {
+    return this.documentsService.getAllDbsForAnalytics();
+  }
+
   @Get('expiring')
   @Roles(...DASHBOARD_ROLES)
   async expiring(

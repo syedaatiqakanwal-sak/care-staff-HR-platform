@@ -27,6 +27,8 @@ import { AuditLogPage } from './components/AuditLogPage'
 import { ReferenceSubmissionPage } from './components/ReferenceSubmissionPage'
 import { ReferenceAnalyticsPage } from './components/ReferenceAnalyticsPage'
 import { HrAnalyticsPage } from './components/HrAnalyticsPage'
+import DbsAnalyticsPage from './components/DbsAnalyticsPage'
+import RtwAnalyticsPage from './components/RtwAnalyticsPage'
 import { useState, useEffect } from 'react'
 import { Linkedin } from 'lucide-react'
 import { Notifications } from '@mantine/notifications'
@@ -482,6 +484,22 @@ function App() {
               <AdminRoute>
                 <AppLayout>
                   <ReferenceAnalyticsPage />
+                </AppLayout>
+              </AdminRoute>
+            } />
+
+            <Route path="/dashboard/dbs/analytics" element={
+              <AdminRoute>
+                <AppLayout>
+                  <DbsAnalyticsPage />
+                </AppLayout>
+              </AdminRoute>
+            } />
+
+            <Route path="/dashboard/rtw/analytics" element={
+              <AdminRoute>
+                <AppLayout>
+                  <RtwAnalyticsPage />
                 </AppLayout>
               </AdminRoute>
             } />

@@ -627,4 +627,71 @@ export class DocumentsService {
       errors: errors + dbsDeclaration.errors,
     };
   }
+
+  async getDbsAnalytics() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const in30Days = new Date(today);
+    in30Days.setDate(today.getDate() + 30);
+    const in90Days = new Date(today);
+    in90Days.setDate(today.getDate() + 90);
+
+    const allDbs = await this.dbsRepo.find({
+      relations: ['staff'],
+    });
+
+    const total = allDbs.length;
+    const updateServiceEnrolled = allDbs.filter(
+      (d) => d.updateServiceStatus === true,
+    ).length;
+    const expiringIn30Days = allDbs.filter((d) => {
+      if (!d.renewalDate) return false;
+      const renewal = new Date(d.renewalDate);
+      return renewal >= today && renewal <= in30Days;
+    }).length;
+    const expiringIn90Days = allDbs.filter((d) => {
+      if (!d.renewalDate) return false;
+      const renewal = new Date(d.renewalDate);
+      return renewal >= today && renewal <= in90Days;
+    }).length;
+    const expired = allDbs.filter((d) => {
+      if (!d.renewalDate) return false;
+      return new Date(d.renewalDate) < today;
+    }).length;
+    const noRenewalDate = allDbs.filter((d) => !d.renewalDate).length;
+
+    return {
+      total,
+      updateServiceEnrolled,
+      expiringIn30Days,
+      expiringIn90Days,
+      expired,
+      noRenewalDate,
+    };
+  }
+
+  async getAllDbsForAnalytics() {
+    const records = await this.dbsRepo
+      .createQueryBuilder('dbs')
+      .leftJoinAndSelect('dbs.staff', 'staff')
+      .leftJoinAndSelect('staff.user', 'user')
+      .orderBy('dbs.renewalDate', 'ASC')
+      .getMany();
+
+    return records.map((d) => ({
+      id: d.id,
+      staffId: d.staffId,
+      staffName: d.staff
+        ? `${d.staff.firstName || ''} ${d.staff.lastName || ''}`.trim()
+        : 'Unknown',
+      dbsNumber: d.dbsNumber,
+      dbsCertificateNumber: d.dbsCertificateNumber,
+      issueDate: d.issueDate,
+      renewalDate: d.renewalDate,
+      lastDeclarationDate: d.lastDeclarationDate,
+      nextDeclarationDate: d.nextDeclarationDate,
+      updateServiceStatus: d.updateServiceStatus,
+      enrolledDate: d.enrolledDate,
+    }));
+  }
 }
