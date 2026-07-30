@@ -488,6 +488,8 @@ export class DocumentsService {
       certificateDocumentId: dto.certificateDocumentId || null,
       dbsCertificateNumber: dto.dbsCertificateNumber || null,
       enrolledDate: dto.enrolledDate || null,
+      dateForNextChecking: dto.dateForNextChecking || null,
+      nextCheckDueDate: dto.nextCheckDueDate || null,
     });
     const saved = await this.dbsRepo.save(record);
     return {
@@ -522,6 +524,12 @@ export class DocumentsService {
         ? { dbsCertificateNumber: dto.dbsCertificateNumber }
         : {}),
       ...(dto.enrolledDate !== undefined ? { enrolledDate: dto.enrolledDate } : {}),
+      ...(dto.dateForNextChecking !== undefined
+        ? { dateForNextChecking: dto.dateForNextChecking }
+        : {}),
+      ...(dto.nextCheckDueDate !== undefined
+        ? { nextCheckDueDate: dto.nextCheckDueDate }
+        : {}),
     });
     const saved = await this.dbsRepo.save(record);
     return {

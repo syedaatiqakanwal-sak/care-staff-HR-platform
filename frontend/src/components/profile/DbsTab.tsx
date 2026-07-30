@@ -44,6 +44,8 @@ export function DbsTab({ profile }: DbsTabProps) {
   const [updateServiceStatus, setUpdateServiceStatus] = useState(false);
   const [dbsCertificateNumber, setDbsCertificateNumber] = useState('');
   const [enrolledDate, setEnrolledDate] = useState('');
+  const [dateForNextChecking, setDateForNextChecking] = useState('');
+  const [nextCheckDueDate, setNextCheckDueDate] = useState('');
   const [certificateDocumentId, setCertificateDocumentId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [declarationFile, setDeclarationFile] = useState<File | null>(null);
@@ -58,6 +60,8 @@ export function DbsTab({ profile }: DbsTabProps) {
       setUpdateServiceStatus(dbs.updateServiceStatus);
       setDbsCertificateNumber(dbs.dbsCertificateNumber || '');
       setEnrolledDate(dbs.enrolledDate?.slice(0, 10) || '');
+      setDateForNextChecking(dbs.dateForNextChecking?.slice(0, 10) || '');
+      setNextCheckDueDate(dbs.nextCheckDueDate?.slice(0, 10) || '');
       setCertificateDocumentId(dbs.certificateDocumentId);
     }
   }, [dbs]);
@@ -83,6 +87,8 @@ export function DbsTab({ profile }: DbsTabProps) {
       certificateDocumentId: certificateDocumentId || undefined,
       dbsCertificateNumber: dbsCertificateNumber || null,
       enrolledDate: enrolledDate || null,
+      dateForNextChecking: dateForNextChecking || null,
+      nextCheckDueDate: nextCheckDueDate || null,
     };
     setSaving(true);
     try {
@@ -255,6 +261,46 @@ export function DbsTab({ profile }: DbsTabProps) {
                       borderRadius: '4px',
                       fontSize: '14px',
                       color: enrolledDate ? '#000' : '#adb5bd',
+                      backgroundColor: !canEdit ? '#f8f9fa' : '#fff',
+                    }}
+                  />
+                </Box>
+                <Box>
+                  <Text size="sm" fw={500} mb={4}>
+                    Date for Next Checking
+                  </Text>
+                  <input
+                    type="date"
+                    value={dateForNextChecking}
+                    onChange={(e) => setDateForNextChecking(e.target.value)}
+                    disabled={!canEdit}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      border: '1px solid #ced4da',
+                      borderRadius: '4px',
+                      fontSize: '14px',
+                      color: dateForNextChecking ? '#000' : '#adb5bd',
+                      backgroundColor: !canEdit ? '#f8f9fa' : '#fff',
+                    }}
+                  />
+                </Box>
+                <Box>
+                  <Text size="sm" fw={500} mb={4}>
+                    Next Check Due Date
+                  </Text>
+                  <input
+                    type="date"
+                    value={nextCheckDueDate}
+                    onChange={(e) => setNextCheckDueDate(e.target.value)}
+                    disabled={!canEdit}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      border: '1px solid #ced4da',
+                      borderRadius: '4px',
+                      fontSize: '14px',
+                      color: nextCheckDueDate ? '#000' : '#adb5bd',
                       backgroundColor: !canEdit ? '#f8f9fa' : '#fff',
                     }}
                   />

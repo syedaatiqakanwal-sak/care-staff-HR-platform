@@ -59,6 +59,12 @@ export class DbsRecord {
   @Column({ type: 'varchar', nullable: true })
   enrolledDate: string | null;
 
+  @Column({ type: 'varchar', nullable: true })
+  dateForNextChecking: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  nextCheckDueDate: string | null;
+
   @CreateDateColumn({ name: 'createdAt' })
   createdAt: Date;
 

@@ -61,6 +61,16 @@ export class CreateDbsRecordDto {
   @IsString()
   @MaxLength(32)
   enrolledDate?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  dateForNextChecking?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  nextCheckDueDate?: string;
 }
 
 export class UpdateDbsRecordDto {
@@ -98,6 +108,16 @@ export class UpdateDbsRecordDto {
   @IsString()
   @MaxLength(32)
   enrolledDate?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  dateForNextChecking?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  nextCheckDueDate?: string | null;
 }
 
 export class UpdateRightToWorkDto {

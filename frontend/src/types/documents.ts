@@ -40,6 +40,8 @@ export interface DbsRecordDto {
   certificateDocumentId: string | null;
   dbsCertificateNumber?: string | null;
   enrolledDate?: string | null;
+  dateForNextChecking?: string | null;
+  nextCheckDueDate?: string | null;
   renewalStatus?: DocumentExpiryStatus;
   daysUntilRenewal?: number | null;
 }
