@@ -348,6 +348,7 @@ export class DocumentsService {
       SELECT
         d.id AS "dbsRecordId",
         d."staffId" AS "staffProfileId",
+        u.id AS "userId",
         d."issueDate" AS "issueDate",
         d."lastDeclarationDate" AS "lastDeclarationDate",
         d."nextDeclarationDate" AS "nextDeclarationDate",
@@ -413,6 +414,7 @@ export class DocumentsService {
             dedupeKey,
             dbsRecordId: row.dbsRecordId,
             staffProfileId: row.staffProfileId,
+            userId: row.userId,
             staffName,
             lcacsNumber: lcacs,
             dueDate: row.dueDate,
@@ -430,6 +432,7 @@ export class DocumentsService {
               dedupeKey,
               dbsRecordId: row.dbsRecordId,
               staffProfileId: row.staffProfileId,
+              userId: row.userId,
               staffName,
               lcacsNumber: lcacs,
               dueDate: row.dueDate,

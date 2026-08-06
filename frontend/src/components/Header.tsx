@@ -11,11 +11,30 @@ const DBS_NOTIFICATION_SHOWN_KEY = 'dbs_notification_shown';
 const isDbsDeclarationNotification = (n: { title?: string; metadata?: { kind?: string } }) =>
     n.metadata?.kind === 'dbs_declaration_due' || n.title === 'DBS declaration due';
 
+const isAddressGapNotification = (n: { title?: string; metadata?: { kind?: string } }) =>
+    n.metadata?.kind === 'address_history_gap' || n.title === 'Address history gap detected';
+
+const staffProfileNavUserId = (metadata?: { kind?: string; userId?: string }) => {
+    if (!metadata?.userId) return null;
+    if (metadata.kind === 'dbs_declaration_due' || metadata.kind === 'address_history_gap') {
+        return metadata.userId;
+    }
+    return null;
+};
+
 export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onSearch?: (val: string) => void }) => {
     const navigate = useNavigate();
     const [notifications, setNotifications] = useState<any[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const knownIdsRef = useRef<Set<string>>(new Set());
+
+    const handleSearchChange = (val: string) => {
+        onSearch?.(val);
+        // Ensure staff directory is visible when searching from other pages
+        if (val.trim() && !window.location.pathname.startsWith('/dashboard/staff')) {
+            navigate('/dashboard/staff');
+        }
+    };
 
     const fetchNotifications = async () => {
         try {
@@ -135,12 +154,12 @@ export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onS
             setUnreadCount(prev => Math.max(0, prev - 1));
 
             // Interaction logic
+            const profileUserId = staffProfileNavUserId(metadata);
+            if (profileUserId) {
+                navigate(`/dashboard/staff/${profileUserId}`);
+                return;
+            }
             if (metadata?.certificateId) {
-                // Navigate to certificates or trigger download?
-                // For now, let's navigate to dashboard/certificates (if that route existed) or just alert
-                // Actually the user just wants to know "download it".
-                // I'll assume navigating to the My Certificates page is best if it exists, or just root.
-                // Assuming /dashboard loads My Certificates by default for staff.
                 navigate('/dashboard');
             }
         } catch (error) {
@@ -180,7 +199,7 @@ export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onS
                 radius="xl"
                 leftSection={<Search size={14} color="white" />}
                 value={searchQuery}
-                onChange={(e) => onSearch?.(e.currentTarget.value)}
+                onChange={(e) => handleSearchChange(e.currentTarget.value)}
                 style={{ flex: 1, maxWidth: 700, margin: '0 auto' }}
                 styles={{
                     input: {
@@ -213,7 +232,10 @@ export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onS
                                 <Menu.Item
                                     key={notif.id}
                                     leftSection={
-                                        notif.metadata?.certificateId ? <ShieldCheck size={16} color="#139639" /> : <Mail size={16} />
+                                        notif.metadata?.certificateId ? <ShieldCheck size={16} color="#139639" />
+                                            : isDbsDeclarationNotification(notif) || isAddressGapNotification(notif)
+                                                ? <ShieldCheck size={16} color="#139639" />
+                                                : <Mail size={16} />
                                     }
                                     style={{ backgroundColor: notif.isRead ? 'transparent' : 'rgba(19, 150, 57, 0.1)' }}
                                     onClick={() => handleMarkRead(notif.id, notif.metadata)}

@@ -404,6 +404,10 @@ export class StaffService {
 
         const staffName = `${profile.firstName || ''} ${profile.lastName || ''}`.replace(/\s+/g, ' ').trim();
         const lcacs = profile.lcaNumber || profile.ilccsNumber || 'N/A';
+        const staffUserId =
+            (profile as any).user?.id ||
+            (profile as any).userId ||
+            null;
         const title = 'Address history gap detected';
         const message = `Gap detected in address history for ${staffName} (Staff Number: ${lcacs}). ${gapSummary}.`;
 
@@ -412,6 +416,7 @@ export class StaffService {
                 kind: 'address_history_gap',
                 dedupeKey,
                 staffProfileId: profile.id,
+                userId: staffUserId,
                 staffName,
                 lcacsNumber: lcacs,
                 gapSummary,
@@ -453,7 +458,10 @@ export class StaffService {
     }
 
     async getAddresses(userId: string) {
-        const profile = await this.staffRepository.findOne({ where: { user: { id: userId } } });
+        const profile = await this.staffRepository.findOne({
+            where: { user: { id: userId } },
+            relations: ['user'],
+        });
         if (!profile) {
             return { addresses: [], hasGap: false, gapSummary: null };
         }
@@ -467,7 +475,10 @@ export class StaffService {
     }
 
     async addAddress(userId: string, data: CreateAddressDto) {
-        const profile = await this.staffRepository.findOne({ where: { user: { id: userId } } });
+        const profile = await this.staffRepository.findOne({
+            where: { user: { id: userId } },
+            relations: ['user'],
+        });
         if (!profile) throw new NotFoundException('Staff Profile not found');
 
         const line1 =
