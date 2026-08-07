@@ -274,7 +274,8 @@ export function PayrollTab({ profile }: PayrollTabProps) {
                 </Button>
               )}
             </FileButton>
-            <Button loading={uploading} color="brandGreen.6" onClick={uploadDoc}>
+            <Button loading={uploading} variant="filled" color="brandGreen" onClick={uploadDoc}
+              styles={{ root: { backgroundColor: '#139639', color: '#fff' }, label: { color: '#fff' } }}>
               Upload
             </Button>
           </Group>

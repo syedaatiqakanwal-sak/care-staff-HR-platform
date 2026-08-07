@@ -433,15 +433,15 @@ export function HrAnalyticsPage() {
 
   const statCards: StatCardConfig[] = [
     { label: 'Total Staff', value: hrStats?.totalUsers ?? 0, accent: BRAND_GREEN, icon: Users, tone: 'positive', trend: 'neutral' },
-    { label: 'Active Staff', value: hrStats?.totalActive ?? 0, accent: BRAND_GREEN, icon: UserCheck, tone: 'positive', trend: 'up' },
+    { label: 'Active Staff', value: hrStats?.totalActive ?? 0, accent: BRAND_GREEN, icon: UserCheck, tone: 'positive', trend: 'neutral' },
     { label: 'On Shadow', value: hrStats?.staffOnShadow ?? 0, accent: '#267FBA', icon: UserCog, tone: 'neutral', trend: 'neutral' },
-    { label: 'New Starters (90d)', value: hrStats?.newStarters ?? 0, accent: '#267FBA', icon: UserPlus, tone: 'positive', trend: 'up' },
-    { label: 'Overall Compliance %', value: `${overallPct}%`, accent: overallColor === 'green' ? BRAND_GREEN : overallColor === 'yellow' ? '#F59F00' : '#E03131', icon: Shield, tone: overallColor === 'green' ? 'positive' : overallColor === 'yellow' ? 'warning' : 'critical', trend: overallPct >= 50 ? 'up' : 'down' },
-    { label: 'DBS Declaration Due', value: hrStats?.dbsDeclarationDue ?? 0, accent: '#F59F00', icon: ShieldAlert, tone: 'warning', trend: 'down' },
-    { label: 'Visa Expiring', value: hrStats?.visaExpiringSoon ?? 0, accent: '#F59F00', icon: Plane, tone: 'warning', trend: 'down' },
-    { label: 'Training Due', value: hrStats?.trainingDue ?? 0, accent: '#E03131', icon: GraduationCap, tone: 'critical', trend: 'down' },
-    { label: 'Supervisions Due', value: hrStats?.supervisionsDue ?? 0, accent: '#F59F00', icon: ClipboardList, tone: 'warning', trend: 'down' },
-    { label: 'Appraisals Due', value: hrStats?.appraisalsDue ?? 0, accent: '#F59F00', icon: Star, tone: 'warning', trend: 'down' },
+    { label: 'New Starters (90d)', value: hrStats?.newStarters ?? 0, accent: '#267FBA', icon: UserPlus, tone: 'positive', trend: 'neutral' },
+    { label: 'Overall Compliance %', value: `${overallPct}%`, accent: overallColor === 'green' ? BRAND_GREEN : overallColor === 'yellow' ? '#F59F00' : '#E03131', icon: Shield, tone: overallColor === 'green' ? 'positive' : overallColor === 'yellow' ? 'warning' : 'critical', trend: 'neutral' },
+    { label: 'DBS Declaration Due', value: hrStats?.dbsDeclarationDue ?? 0, accent: '#F59F00', icon: ShieldAlert, tone: 'warning', trend: 'neutral' },
+    { label: 'Visa Expiring', value: hrStats?.visaExpiringSoon ?? 0, accent: '#F59F00', icon: Plane, tone: 'warning', trend: 'neutral' },
+    { label: 'Training Due', value: hrStats?.trainingDue ?? 0, accent: '#E03131', icon: GraduationCap, tone: 'critical', trend: 'neutral' },
+    { label: 'Supervisions Due', value: hrStats?.supervisionsDue ?? 0, accent: '#F59F00', icon: ClipboardList, tone: 'warning', trend: 'neutral' },
+    { label: 'Appraisals Due', value: hrStats?.appraisalsDue ?? 0, accent: '#F59F00', icon: Star, tone: 'warning', trend: 'neutral' },
   ];
 
   const exportCsv = () => {

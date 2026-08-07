@@ -460,6 +460,7 @@ export const StaffProfilePage = () => {
     }, [searchParams]);
 
     const [certificates, setCertificates] = useState<any[]>([]);
+    const [certStatusFilter, setCertStatusFilter] = useState<'all' | 'verified' | 'pending'>('all');
     const [trainingRecords, setTrainingRecords] = useState<any[]>([]);
 
 
@@ -2038,11 +2039,12 @@ export const StaffProfilePage = () => {
         }
     };
 
-    const handleSaveProfile = async (): Promise<boolean> => {
+    const handleSaveProfile = async (overrideProfile?: any): Promise<boolean> => {
         setSaveLoading(true);
+        const source = overrideProfile || profile;
         try {
             const token = localStorage.getItem('token');
-            const targetUserId = profile.user?.id || profile.id;
+            const targetUserId = source.user?.id || source.id;
             let endpoint = '/api/v1/staff/me';
 
             if (hasDashboardAccess() && targetUserId) {
@@ -2050,45 +2052,45 @@ export const StaffProfilePage = () => {
             }
 
             const permittedPayload: any = {
-                firstName: profile.firstName,
-                lastName: profile.lastName,
-                middleName: profile.middleName,
-                title: profile.title,
-                phoneNumber: profile.phoneNumber,
-                email: profile.email,
-                department: profile.department,
-                employmentStatus: profile.employmentStatus,
-                ilccsNumber: profile.ilccsNumber,
-                lcaNumber: profile.lcaNumber,
-                startDate: profile.startDate || null,
-                inductionDate: profile.inductionDate || null,
-                rapidInductionDate: profile.rapidInductionDate || null,
-                dateOfBirth: profile.dateOfBirth || null,
-                niNumber: profile.niNumber || null,
-                gender: profile.gender?.trim() || null,
-                nextOfKinName: profile.nextOfKinName?.trim() || null,
-                nextOfKinNumber: profile.nextOfKinNumber?.trim() || null,
-                passportNumber: profile.passportNumber?.trim() || null,
-                passportExpiry: profile.passportExpiry || null,
-                isUkNational: profile.isUkNational ?? null,
-                isEeaNational: profile.isEeaNational ?? null,
-                visaType: profile.visaType?.trim() || null,
-                visaOrBrpNumber: profile.visaOrBrpNumber?.trim() || null,
-                townOfBirth: profile.townOfBirth?.trim() || null,
-                countyOfBirth: profile.countyOfBirth?.trim() || null,
-                countryOfBirth: profile.countryOfBirth?.trim() || null,
-                nationalityAtBirth: profile.nationalityAtBirth?.trim() || null,
-                currentNationality: profile.currentNationality?.trim() || null,
-                visaExpiryDate: profile.visaExpiryDate || null,
-                shareCode: profile.shareCode?.trim() || null,
-                rightToWorkStatus: profile.rightToWorkStatus?.trim() || null,
-                shareCodeGeneratedDate: profile.shareCodeGeneratedDate || null,
-                rightToWorkCheckCompleted: profile.rightToWorkCheckCompleted ?? false,
-                rightToWorkCheckDate: profile.rightToWorkCheckCompleted
-                    ? profile.rightToWorkCheckDate || null
+                firstName: source.firstName,
+                lastName: source.lastName,
+                middleName: source.middleName,
+                title: source.title,
+                phoneNumber: source.phoneNumber,
+                email: source.email,
+                department: source.department,
+                employmentStatus: source.employmentStatus,
+                ilccsNumber: source.ilccsNumber,
+                lcaNumber: source.lcaNumber,
+                startDate: source.startDate || null,
+                inductionDate: source.inductionDate || null,
+                rapidInductionDate: source.rapidInductionDate || null,
+                dateOfBirth: source.dateOfBirth || null,
+                niNumber: source.niNumber || null,
+                gender: source.gender?.trim() || null,
+                nextOfKinName: source.nextOfKinName?.trim() || null,
+                nextOfKinNumber: source.nextOfKinNumber?.trim() || null,
+                passportNumber: source.passportNumber?.trim() || null,
+                passportExpiry: source.passportExpiry || null,
+                isUkNational: source.isUkNational ?? null,
+                isEeaNational: source.isEeaNational ?? null,
+                visaType: source.visaType?.trim() || null,
+                visaOrBrpNumber: source.visaOrBrpNumber?.trim() || null,
+                townOfBirth: source.townOfBirth?.trim() || null,
+                countyOfBirth: source.countyOfBirth?.trim() || null,
+                countryOfBirth: source.countryOfBirth?.trim() || null,
+                nationalityAtBirth: source.nationalityAtBirth?.trim() || null,
+                currentNationality: source.currentNationality?.trim() || null,
+                visaExpiryDate: source.visaExpiryDate || null,
+                shareCode: source.shareCode?.trim() || null,
+                rightToWorkStatus: source.rightToWorkStatus?.trim() || null,
+                shareCodeGeneratedDate: source.shareCodeGeneratedDate || null,
+                rightToWorkCheckCompleted: source.rightToWorkCheckCompleted ?? false,
+                rightToWorkCheckDate: source.rightToWorkCheckCompleted
+                    ? source.rightToWorkCheckDate || null
                     : null,
-                rightToWorkCheckExpiryDate: profile.rightToWorkCheckCompleted
-                    ? profile.rightToWorkCheckExpiryDate || null
+                rightToWorkCheckExpiryDate: source.rightToWorkCheckCompleted
+                    ? source.rightToWorkCheckExpiryDate || null
                     : null,
             };
 
@@ -2320,7 +2322,16 @@ export const StaffProfilePage = () => {
         throw new Error('Could not create certificate stream URL');
     };
 
-    const handleCertificateAction = async (certificateId: string, courseName: string, action: 'view' | 'download') => {
+    const handleCertificateAction = async (certificateId: string | undefined, courseName: string, action: 'view' | 'download') => {
+        if (!certificateId || certificateId === 'undefined') {
+            notifications.show({
+                title: 'Certificate unavailable',
+                message: 'Certificate is not available.',
+                color: 'orange',
+            });
+            return;
+        }
+
         if (action === 'download' && !isAdmin) {
             notifications.show({
                 title: 'Action Restricted',
@@ -2357,8 +2368,13 @@ export const StaffProfilePage = () => {
         } catch (error: any) {
             console.error('Certificate action failed:', error);
             let message = 'Could not process certificate request.';
-            if (error.response?.status === 403) message = 'Certificate access denied. Please confirm certificate status is Completed and belongs to this account.';
-            if (error.response?.status === 401) message = 'Certificate view token expired. Please click View again.';
+            if (error.response?.status === 404 || error.response?.status === 500) {
+                message = 'Certificate is not available.';
+            } else if (error.response?.status === 403) {
+                message = 'Certificate access denied. Please confirm certificate status is Completed and belongs to this account.';
+            } else if (error.response?.status === 401) {
+                message = 'Certificate view token expired. Please click View again.';
+            }
 
             notifications.show({
                 title: 'Error',
@@ -2397,20 +2413,24 @@ export const StaffProfilePage = () => {
                 .tab-certificates[data-active] { background-color: #267FBA !important; color: white !important; box-shadow: 0 4px 12px rgba(38, 127, 186, 0.3) !important; }
                 .tab-work-performance[data-active] { background-color: #C62828 !important; color: white !important; box-shadow: 0 4px 12px rgba(198, 40, 40, 0.3) !important; }
                 .tab-monthly-report[data-active] { background-color: #00897B !important; color: white !important; box-shadow: 0 4px 12px rgba(0, 137, 123, 0.3) !important; }
-                .tab-recruitment[data-active] {
+                .tab-recruitment[data-active],
+                .tab-dbs[data-active],
+                .tab-inhouse-training[data-active],
+                .tab-hr-notes[data-active],
+                .tab-leave-attendance[data-active],
+                .tab-payroll[data-active] {
                     background-color: #139639 !important;
-                    color: #000000 !important;
+                    color: #ffffff !important;
                     border-color: #139639 !important;
+                    box-shadow: 0 4px 12px rgba(19, 150, 57, 0.3) !important;
                 }
-                .tab-dbs[data-active] {
-                    background-color: #139639 !important;
-                    color: #000000 !important;
-                    border-color: #139639 !important;
-                }
-                .tab-inhouse-training[data-active] {
-                    background-color: #139639 !important;
-                    color: #000000 !important;
-                    border-color: #139639 !important;
+                .tab-recruitment[data-active] *,
+                .tab-dbs[data-active] *,
+                .tab-inhouse-training[data-active] *,
+                .tab-hr-notes[data-active] *,
+                .tab-leave-attendance[data-active] *,
+                .tab-payroll[data-active] * {
+                    color: #ffffff !important;
                 }
             `}</style>
             <Container size="xl" p={0} style={{ width: '100%', maxWidth: '100%' }}>
@@ -2629,7 +2649,7 @@ export const StaffProfilePage = () => {
                     </Group>
                 </Paper>
 
-                <Tabs value={activeTab} onChange={setActiveTab} variant="pills" radius="xl" styles={{
+                <Tabs value={activeTab} onChange={setActiveTab} variant="pills" radius="xl" keepMounted={false} styles={{
                     tab: {
                         transition: 'all 0.2s ease',
                         fontWeight: 700,
@@ -3202,20 +3222,54 @@ export const StaffProfilePage = () => {
 
                     <Tabs.Panel value="certificates">
                         <Paper p="xl" radius="24px" shadow="xs" bg="white">
-                            <Group justify="space-between" mb="xl">
+                            <Group justify="space-between" mb="xl" wrap="wrap">
                                 <Box>
                                     <Title order={4} size={20} fw={800} c="dark.4">My Credentials</Title>
                                     <Text size="sm" c="dimmed">Your verified academic and professional certificates.</Text>
                                 </Box>
-                                <Badge size="lg" variant="gradient" gradient={{ from: 'brandBlue.6', to: 'cyan', deg: 90 }}>
-                                    {certificates.filter(c => c.status === 'Completed').length} Verified
-                                </Badge>
+                                <Group gap="sm" wrap="wrap">
+                                    <Button.Group>
+                                        <Button
+                                            size="xs"
+                                            variant={certStatusFilter === 'all' ? 'filled' : 'light'}
+                                            color="brandBlue"
+                                            onClick={() => setCertStatusFilter('all')}
+                                        >
+                                            All
+                                        </Button>
+                                        <Button
+                                            size="xs"
+                                            variant={certStatusFilter === 'verified' ? 'filled' : 'light'}
+                                            color="green"
+                                            onClick={() => setCertStatusFilter('verified')}
+                                        >
+                                            Verified ({certificates.filter(c => c.status === 'Completed').length})
+                                        </Button>
+                                        <Button
+                                            size="xs"
+                                            variant={certStatusFilter === 'pending' ? 'filled' : 'light'}
+                                            color="orange"
+                                            onClick={() => setCertStatusFilter('pending')}
+                                        >
+                                            Pending ({certificates.filter(c => c.status !== 'Completed').length})
+                                        </Button>
+                                    </Button.Group>
+                                    <Badge size="lg" variant="gradient" gradient={{ from: 'brandBlue.6', to: 'cyan', deg: 90 }}>
+                                        {certificates.filter(c => c.status === 'Completed').length} Verified
+                                    </Badge>
+                                </Group>
                             </Group>
 
-                            {/* STAFF VIEW: Flat list of ALL COMPLETED certs. */}
+                            {/* STAFF VIEW: Flat list of certs (filterable). */}
                             {!isAdmin && (
                                 <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
-                                    {certificates.filter(c => c.status === 'Completed').map((cert, index) => {
+                                    {certificates
+                                        .filter((c) => {
+                                            if (certStatusFilter === 'verified') return c.status === 'Completed';
+                                            if (certStatusFilter === 'pending') return c.status !== 'Completed';
+                                            return true;
+                                        })
+                                        .map((cert, index) => {
                                         const cardGradients = [
                                             'linear-gradient(145deg, #139639 0%, #0e7a2d 100%)', // Blue
                                             'linear-gradient(145deg, #267FBA 0%, #267FBA 100%)'  // Green
@@ -3314,8 +3368,12 @@ export const StaffProfilePage = () => {
                                             </Paper>
                                         );
                                     })}
-                                    {certificates.filter(c => c.status === 'Completed').length === 0 && (
-                                        <Text c="dimmed" ta="center" fs="italic" style={{ gridColumn: '1 / -1' }}>No completed certificates found.</Text>
+                                    {certificates.filter((c) => {
+                                        if (certStatusFilter === 'verified') return c.status === 'Completed';
+                                        if (certStatusFilter === 'pending') return c.status !== 'Completed';
+                                        return true;
+                                    }).length === 0 && (
+                                        <Text c="dimmed" ta="center" fs="italic" style={{ gridColumn: '1 / -1' }}>No certificates found.</Text>
                                     )}
                                 </SimpleGrid>
                             )}
@@ -3329,7 +3387,13 @@ export const StaffProfilePage = () => {
                                         const monthCourses = allCourses.filter(c =>
                                             (c.categories.includes('mandatory') || c.categories.includes('additional')) &&
                                             c.month === month
-                                        );
+                                        ).filter((courseItem: any) => {
+                                            const certificate = certificates.find(c => c.courseName === courseItem.title);
+                                            const isCompleted = certificate?.status === 'Completed';
+                                            if (certStatusFilter === 'verified') return isCompleted;
+                                            if (certStatusFilter === 'pending') return !isCompleted;
+                                            return true;
+                                        });
 
                                         if (monthCourses.length === 0) return null;
 
@@ -3366,7 +3430,13 @@ export const StaffProfilePage = () => {
 
                                     {/* 2. SPECIALIST SECTION */}
                                     {(() => {
-                                        const specialistCourses = allCourses.filter(c => c.categories.includes('specialist'));
+                                        const specialistCourses = allCourses.filter(c => c.categories.includes('specialist')).filter((courseItem: any) => {
+                                            const certificate = certificates.find(c => c.courseName === courseItem.title);
+                                            const isCompleted = certificate?.status === 'Completed';
+                                            if (certStatusFilter === 'verified') return isCompleted;
+                                            if (certStatusFilter === 'pending') return !isCompleted;
+                                            return true;
+                                        });
                                         if (specialistCourses.length === 0) return null;
                                         return (
                                             <Box>
@@ -4472,25 +4542,25 @@ export const StaffProfilePage = () => {
                                     {/* ── 1st Year 6th Month Questions ── */}
                                     {reviewFormSubType === '1st Year 6th Month' && (
                                         <>
-                                            <Textarea label="Agreed Actions from the Last Review or the topics for this supervisor" autosize minRows={3} mb="md"
+                                            <Textarea label="Agreed Actions from the Last Review or the topics for this supervisor" minRows={3} mb="md"
                                                 value={reviewFormData.agreedActionsLastReview} readOnly={isViewMode && !isAdmin}
                                                 onChange={e => setReviewFormData(p => ({ ...p, agreedActionsLastReview: e.target.value }))} />
-                                            <Textarea label="How did you find your role as a care staff, and what have you learned?" autosize minRows={3} mb="md"
+                                            <Textarea label="How did you find your role as a care staff, and what have you learned?" minRows={3} mb="md"
                                                 value={reviewFormData.roleExperience} readOnly={isViewMode && !isAdmin}
                                                 onChange={e => setReviewFormData(p => ({ ...p, roleExperience: e.target.value }))} />
-                                            <Textarea label="What are the new skills I have used as a care staff?" autosize minRows={3} mb="md"
+                                            <Textarea label="What are the new skills I have used as a care staff?" minRows={3} mb="md"
                                                 value={reviewFormData.newSkillsUsed} readOnly={isViewMode && !isAdmin}
                                                 onChange={e => setReviewFormData(p => ({ ...p, newSkillsUsed: e.target.value }))} />
-                                            <Textarea label="What challenges have I faced since my last review, and how have I managed and overcome them?" autosize minRows={3} mb="md"
+                                            <Textarea label="What challenges have I faced since my last review, and how have I managed and overcome them?" minRows={3} mb="md"
                                                 value={reviewFormData.challengesFaced} readOnly={isViewMode && !isAdmin}
                                                 onChange={e => setReviewFormData(p => ({ ...p, challengesFaced: e.target.value }))} />
-                                            <Textarea label="How do I continue to implement the knowledge which I gained from training for an organisation in my everyday work?" autosize minRows={3} mb="md"
+                                            <Textarea label="How do I continue to implement the knowledge which I gained from training for an organisation in my everyday work?" minRows={3} mb="md"
                                                 value={reviewFormData.trainingImplementation} readOnly={isViewMode && !isAdmin}
                                                 onChange={e => setReviewFormData(p => ({ ...p, trainingImplementation: e.target.value }))} />
-                                            <Textarea label="What I like to learn for my personal development, and how I can put this learning into practice?" autosize minRows={3} mb="md"
+                                            <Textarea label="What I like to learn for my personal development, and how I can put this learning into practice?" minRows={3} mb="md"
                                                 value={reviewFormData.personalDevelopment} readOnly={isViewMode && !isAdmin}
                                                 onChange={e => setReviewFormData(p => ({ ...p, personalDevelopment: e.target.value }))} />
-                                            <Textarea label="What do I want to achieve before my next supervision?" autosize minRows={3} mb="md"
+                                            <Textarea label="What do I want to achieve before my next supervision?" minRows={3} mb="md"
                                                 value={reviewFormData.goalsBeforeNextSupervision} readOnly={isViewMode && !isAdmin}
                                                 onChange={e => setReviewFormData(p => ({ ...p, goalsBeforeNextSupervision: e.target.value }))} />
                                         </>
@@ -4499,25 +4569,25 @@ export const StaffProfilePage = () => {
                                     {/* ── 2nd Year 6th Month Questions ── */}
                                     {reviewFormSubType === '2nd Year 6th Month' && (
                                         <>
-                                            <Textarea label="Actions from the previous meeting" autosize minRows={3} mb="md"
+                                            <Textarea label="Actions from the previous meeting" minRows={3} mb="md"
                                                 value={reviewFormData.agreedActionsLastReview} readOnly={isViewMode && !isAdmin}
                                                 onChange={e => setReviewFormData(p => ({ ...p, agreedActionsLastReview: e.target.value }))} />
-                                            <Textarea label="What has been my biggest achievement since my last supervision?" autosize minRows={3} mb="md"
+                                            <Textarea label="What has been my biggest achievement since my last supervision?" minRows={3} mb="md"
                                                 value={reviewFormData.biggestAchievement} readOnly={isViewMode && !isAdmin}
                                                 onChange={e => setReviewFormData(p => ({ ...p, biggestAchievement: e.target.value }))} />
-                                            <Textarea label="How do I continue to display the values of the organisation in my everyday work?" autosize minRows={3} mb="md"
+                                            <Textarea label="How do I continue to display the values of the organisation in my everyday work?" minRows={3} mb="md"
                                                 value={reviewFormData.organisationValues} readOnly={isViewMode && !isAdmin}
                                                 onChange={e => setReviewFormData(p => ({ ...p, organisationValues: e.target.value }))} />
-                                            <Textarea label="What challenges have I faced since my last supervision and how have I managed and overcome them?" autosize minRows={3} mb="md"
+                                            <Textarea label="What challenges have I faced since my last supervision and how have I managed and overcome them?" minRows={3} mb="md"
                                                 value={reviewFormData.challengesFaced} readOnly={isViewMode && !isAdmin}
                                                 onChange={e => setReviewFormData(p => ({ ...p, challengesFaced: e.target.value }))} />
-                                            <Textarea label="Are there any challenges that remain? If so, what is needed to help me overcome them?" autosize minRows={3} mb="md"
+                                            <Textarea label="Are there any challenges that remain? If so, what is needed to help me overcome them?" minRows={3} mb="md"
                                                 value={reviewFormData.remainingChallenges} readOnly={isViewMode && !isAdmin}
                                                 onChange={e => setReviewFormData(p => ({ ...p, remainingChallenges: e.target.value }))} />
-                                            <Textarea label="What learning and development have I done since my last supervision and how have I put this learning into practice?" autosize minRows={3} mb="md"
+                                            <Textarea label="What learning and development have I done since my last supervision and how have I put this learning into practice?" minRows={3} mb="md"
                                                 value={reviewFormData.learningAndDevelopment} readOnly={isViewMode && !isAdmin}
                                                 onChange={e => setReviewFormData(p => ({ ...p, learningAndDevelopment: e.target.value }))} />
-                                            <Textarea label="What do I want to achieve before my next supervision?" autosize minRows={3} mb="md"
+                                            <Textarea label="What do I want to achieve before my next supervision?" minRows={3} mb="md"
                                                 value={reviewFormData.goalsBeforeNextSupervision} readOnly={isViewMode && !isAdmin}
                                                 onChange={e => setReviewFormData(p => ({ ...p, goalsBeforeNextSupervision: e.target.value }))} />
                                         </>
@@ -4525,13 +4595,13 @@ export const StaffProfilePage = () => {
 
                                     {/* ── Common fields for both ── */}
                                     <Box style={{ borderTop: '2px solid #267FBA' }} pt="lg" mt="lg">
-                                        <Textarea label="Feedback from supervisor" autosize minRows={3} mb="md"
+                                        <Textarea label="Feedback from supervisor" minRows={3} mb="md"
                                             value={reviewFormData.supervisorFeedback} readOnly={isViewMode && !isAdmin}
                                             onChange={e => setReviewFormData(p => ({ ...p, supervisorFeedback: e.target.value }))} />
-                                        <Textarea label="Other areas of discussion" autosize minRows={3} mb="md"
+                                        <Textarea label="Other areas of discussion" minRows={3} mb="md"
                                             value={reviewFormData.otherDiscussionAreas} readOnly={isViewMode && !isAdmin}
                                             onChange={e => setReviewFormData(p => ({ ...p, otherDiscussionAreas: e.target.value }))} />
-                                        <Textarea label="Agreed actions" autosize minRows={3} mb="md"
+                                        <Textarea label="Agreed actions" minRows={3} mb="md"
                                             value={reviewFormData.agreedActions} readOnly={isViewMode && !isAdmin}
                                             onChange={e => setReviewFormData(p => ({ ...p, agreedActions: e.target.value }))} />
                                     </Box>
@@ -4785,11 +4855,11 @@ export const StaffProfilePage = () => {
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, appraisalDate: e.target.value }))} />
 
                                 {/* ── Key responsibilities ── */}
-                                <Textarea label="Describe your understanding of your key responsibilities and duties:" autosize minRows={3} mb="md"
+                                <Textarea label="Describe your understanding of your key responsibilities and duties:" minRows={3} mb="md"
                                     value={firstYearAppraisalData.keyResponsibilities} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, keyResponsibilities: e.target.value }))} />
 
-                                <Textarea label="Which parts of the job do you feel you do well?" autosize minRows={3} mb="md"
+                                <Textarea label="Which parts of the job do you feel you do well?" minRows={3} mb="md"
                                     value={firstYearAppraisalData.partsDoneWell} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, partsDoneWell: e.target.value }))} />
 
@@ -4799,15 +4869,13 @@ export const StaffProfilePage = () => {
                                 </Text>
                                 {(firstYearAppraisalData.objectives || []).map((obj, idx) => (
                                     <SimpleGrid cols={3} key={idx} mb="xs">
-                                        <Textarea placeholder="Objective" value={obj.objective} readOnly={isViewMode && !isAdmin}
-                                            autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
+                                        <Textarea placeholder="Objective" value={obj.objective} readOnly={isViewMode && !isAdmin} minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                             onChange={e => {
                                                 const updated = [...firstYearAppraisalData.objectives];
                                                 updated[idx] = { ...updated[idx], objective: e.target.value };
                                                 setFirstYearAppraisalData(p => ({ ...p, objectives: updated }));
                                             }} />
-                                        <Textarea placeholder="Measure/Standard" value={obj.measure} readOnly={isViewMode && !isAdmin}
-                                            autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
+                                        <Textarea placeholder="Measure/Standard" value={obj.measure} readOnly={isViewMode && !isAdmin} minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                             onChange={e => {
                                                 const updated = [...firstYearAppraisalData.objectives];
                                                 updated[idx] = { ...updated[idx], measure: e.target.value };
@@ -4855,8 +4923,7 @@ export const StaffProfilePage = () => {
                                                 }))} />
                                             <Textarea w={200} size="xs" placeholder="Notes"
                                                 value={firstYearAppraisalData.capabilityScores?.[area]?.notes || ''}
-                                                readOnly={isViewMode && !isAdmin}
-                                                autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
+                                                readOnly={isViewMode && !isAdmin} minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                                 onChange={e => setFirstYearAppraisalData(p => ({
                                                     ...p,
                                                     capabilityScores: { ...p.capabilityScores, [area]: { ...p.capabilityScores?.[area], notes: e.target.value } }
@@ -4867,8 +4934,7 @@ export const StaffProfilePage = () => {
 
                                 {/* ── New role capabilities ── */}
                                 <Textarea label="New role requirements (specify)" mb="xs"
-                                    value={firstYearAppraisalData.newRoleRequirements} readOnly={isViewMode && !isAdmin}
-                                    autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
+                                    value={firstYearAppraisalData.newRoleRequirements} readOnly={isViewMode && !isAdmin} minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, newRoleRequirements: e.target.value }))} />
                                 <Paper withBorder p="sm" mb="md" radius="md">
                                     <Text fw={600} size="xs" mb="xs" c="#267FBA">New role requirements capabilities</Text>
@@ -4888,8 +4954,7 @@ export const StaffProfilePage = () => {
                                                 }))} />
                                             <Textarea w={200} size="xs" placeholder="Notes"
                                                 value={firstYearAppraisalData.newRoleCapabilities?.[area]?.notes || ''}
-                                                readOnly={isViewMode && !isAdmin}
-                                                autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
+                                                readOnly={isViewMode && !isAdmin} minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                                 onChange={e => setFirstYearAppraisalData(p => ({
                                                     ...p,
                                                     newRoleCapabilities: { ...p.newRoleCapabilities, [area]: { ...p.newRoleCapabilities?.[area], notes: e.target.value } }
@@ -4899,34 +4964,34 @@ export const StaffProfilePage = () => {
                                 </Paper>
 
                                 {/* ── Difficulties / support / training ── */}
-                                <Textarea label="Which parts of your job do you have difficulties with?" autosize minRows={3} mb="md"
+                                <Textarea label="Which parts of your job do you have difficulties with?" minRows={3} mb="md"
                                     value={firstYearAppraisalData.difficulties} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, difficulties: e.target.value }))} />
-                                <Textarea label="Do you consider you have been adequately supported by your line manager?" autosize minRows={3} mb="md"
+                                <Textarea label="Do you consider you have been adequately supported by your line manager?" minRows={3} mb="md"
                                     value={firstYearAppraisalData.supportFromManager} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, supportFromManager: e.target.value }))} />
-                                <Textarea label="What further training/support do you feel you need?" autosize minRows={3} mb="md"
+                                <Textarea label="What further training/support do you feel you need?" minRows={3} mb="md"
                                     value={firstYearAppraisalData.trainingNeeded} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, trainingNeeded: e.target.value }))} />
-                                <Textarea label="What further support do you feel you need?" autosize minRows={2} mb="md"
+                                <Textarea label="What further support do you feel you need?" minRows={2} mb="md"
                                     value={firstYearAppraisalData.supportNeeded} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, supportNeeded: e.target.value }))} />
-                                <Textarea label="Compliance Responsibilities: Is there any change in your DBS status?" autosize minRows={3} mb="md"
+                                <Textarea label="Compliance Responsibilities: Is there any change in your DBS status?" minRows={3} mb="md"
                                     value={firstYearAppraisalData.complianceResponsibilities} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, complianceResponsibilities: e.target.value }))} />
-                                <Textarea label="How do you feel you are regarded by managers?" autosize minRows={3} mb="md"
+                                <Textarea label="How do you feel you are regarded by managers?" minRows={3} mb="md"
                                     value={firstYearAppraisalData.relationshipWithManagers} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, relationshipWithManagers: e.target.value }))} />
-                                <Textarea label="How do you feel about your relationship with co-workers?" autosize minRows={3} mb="md"
+                                <Textarea label="How do you feel about your relationship with co-workers?" minRows={3} mb="md"
                                     value={firstYearAppraisalData.relationshipWithCoworkers} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, relationshipWithCoworkers: e.target.value }))} />
-                                <Textarea label="What work position would you like to occupy in 2 years?" autosize minRows={2} mb="md"
+                                <Textarea label="What work position would you like to occupy in 2 years?" minRows={2} mb="md"
                                     value={firstYearAppraisalData.careerGoals2Years} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, careerGoals2Years: e.target.value }))} />
-                                <Textarea label="What work position would you like to occupy in 5 years?" autosize minRows={2} mb="md"
+                                <Textarea label="What work position would you like to occupy in 5 years?" minRows={2} mb="md"
                                     value={firstYearAppraisalData.careerGoals5Years} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, careerGoals5Years: e.target.value }))} />
-                                <Textarea label="Any other points you would like to raise?" autosize minRows={2} mb="md"
+                                <Textarea label="Any other points you would like to raise?" minRows={2} mb="md"
                                     value={firstYearAppraisalData.otherPoints} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, otherPoints: e.target.value }))} />
 
@@ -4941,7 +5006,6 @@ export const StaffProfilePage = () => {
                                         onChange={(e) => setFirstYearAppraisalData(prev => ({
                                             ...prev, reviewerComments1: e.target.value
                                         }))}
-                                        autosize
                                         minRows={3}
                                         radius="md"
                                     />
@@ -4986,13 +5050,13 @@ export const StaffProfilePage = () => {
                                         onChange={e => setFirstYearAppraisalData(p => ({ ...p, appraiserDate: e.target.value }))} />
                                 </SimpleGrid>
 
-                                <Textarea label="Current Business Needs" autosize minRows={3} mb="md"
+                                <Textarea label="Current Business Needs" minRows={3} mb="md"
                                     value={firstYearAppraisalData.currentBusinessNeeds} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, currentBusinessNeeds: e.target.value }))} />
-                                <Textarea label="Record of gathered information relevant to the appraisal" autosize minRows={3} mb="md"
+                                <Textarea label="Record of gathered information relevant to the appraisal" minRows={3} mb="md"
                                     value={firstYearAppraisalData.gatheredInformation} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, gatheredInformation: e.target.value }))} />
-                                <Textarea label="Current Performance — key strengths" autosize minRows={3} mb="md"
+                                <Textarea label="Current Performance — key strengths" minRows={3} mb="md"
                                     value={firstYearAppraisalData.currentPerformanceStrengths} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, currentPerformanceStrengths: e.target.value }))} />
 
@@ -5002,15 +5066,13 @@ export const StaffProfilePage = () => {
                                 </Text>
                                 {(firstYearAppraisalData.appraiserObjectives || []).map((obj, idx) => (
                                     <SimpleGrid cols={4} key={idx} mb="xs">
-                                        <Textarea placeholder="Objective" value={obj.objective} readOnly={isViewMode && !isAdmin}
-                                            autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
+                                        <Textarea placeholder="Objective" value={obj.objective} readOnly={isViewMode && !isAdmin} minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                             onChange={e => {
                                                 const updated = [...firstYearAppraisalData.appraiserObjectives];
                                                 updated[idx] = { ...updated[idx], objective: e.target.value };
                                                 setFirstYearAppraisalData(p => ({ ...p, appraiserObjectives: updated }));
                                             }} />
-                                        <Textarea placeholder="Measure" value={obj.measure} readOnly={isViewMode && !isAdmin}
-                                            autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
+                                        <Textarea placeholder="Measure" value={obj.measure} readOnly={isViewMode && !isAdmin} minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                             onChange={e => {
                                                 const updated = [...firstYearAppraisalData.appraiserObjectives];
                                                 updated[idx] = { ...updated[idx], measure: e.target.value };
@@ -5022,8 +5084,7 @@ export const StaffProfilePage = () => {
                                                 updated[idx] = { ...updated[idx], score: v || '' };
                                                 setFirstYearAppraisalData(p => ({ ...p, appraiserObjectives: updated }));
                                             }} />
-                                        <Textarea placeholder="Comment" value={obj.comment} readOnly={isViewMode && !isAdmin}
-                                            autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
+                                        <Textarea placeholder="Comment" value={obj.comment} readOnly={isViewMode && !isAdmin} minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                             onChange={e => {
                                                 const updated = [...firstYearAppraisalData.appraiserObjectives];
                                                 updated[idx] = { ...updated[idx], comment: e.target.value };
@@ -5065,8 +5126,7 @@ export const StaffProfilePage = () => {
                                                 }))} />
                                             <Textarea w={200} size="xs" placeholder="Notes"
                                                 value={firstYearAppraisalData.appraiserCapabilityScores?.[area]?.notes || ''}
-                                                readOnly={isViewMode && !isAdmin}
-                                                autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
+                                                readOnly={isViewMode && !isAdmin} minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                                 onChange={e => setFirstYearAppraisalData(p => ({
                                                     ...p,
                                                     appraiserCapabilityScores: { ...p.appraiserCapabilityScores, [area]: { ...p.appraiserCapabilityScores?.[area], notes: e.target.value } }
@@ -5077,8 +5137,7 @@ export const StaffProfilePage = () => {
 
                                 {/* ── Appraiser new role capabilities ── */}
                                 <Textarea label="New role requirements (specify)" mb="xs"
-                                    value={firstYearAppraisalData.newRoleRequirements} readOnly={isViewMode && !isAdmin}
-                                    autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
+                                    value={firstYearAppraisalData.newRoleRequirements} readOnly={isViewMode && !isAdmin} minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, newRoleRequirements: e.target.value }))} />
                                 <Paper withBorder p="sm" mb="md" radius="md">
                                     <Text fw={600} size="xs" mb="xs" c="#267FBA">New role requirements capabilities</Text>
@@ -5098,8 +5157,7 @@ export const StaffProfilePage = () => {
                                                 }))} />
                                             <Textarea w={200} size="xs" placeholder="Notes"
                                                 value={firstYearAppraisalData.appraiserNewRoleCapabilities?.[area]?.notes || ''}
-                                                readOnly={isViewMode && !isAdmin}
-                                                autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
+                                                readOnly={isViewMode && !isAdmin} minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                                 onChange={e => setFirstYearAppraisalData(p => ({
                                                     ...p,
                                                     appraiserNewRoleCapabilities: { ...p.appraiserNewRoleCapabilities, [area]: { ...p.appraiserNewRoleCapabilities?.[area], notes: e.target.value } }
@@ -5109,46 +5167,40 @@ export const StaffProfilePage = () => {
                                 </Paper>
 
                                 {/* ── Improvement / Development / Training ── */}
-                                <Textarea label="How the Appraisee can improve?" autosize minRows={3} mb="md"
+                                <Textarea label="How the Appraisee can improve?" minRows={3} mb="md"
                                     value={firstYearAppraisalData.improvementDetails} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, improvementDetails: e.target.value }))} />
-                                <Textarea label="Development and Training" autosize minRows={3} mb="md"
+                                <Textarea label="Development and Training" minRows={3} mb="md"
                                     value={firstYearAppraisalData.developmentTraining} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, developmentTraining: e.target.value }))} />
 
                                 <Text fw={700} size="sm" mb="xs" c="#139639">Training Sessions</Text>
                                 <SimpleGrid cols={2} mb="xs">
-                                    <Textarea label="1. Training session on" value={firstYearAppraisalData.training1} readOnly={isViewMode && !isAdmin}
-                                        autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
+                                    <Textarea label="1. Training session on" value={firstYearAppraisalData.training1} readOnly={isViewMode && !isAdmin} minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                         onChange={e => setFirstYearAppraisalData(p => ({ ...p, training1: e.target.value }))} />
-                                    <Textarea label="How will this be achieved?" value={firstYearAppraisalData.training1How} readOnly={isViewMode && !isAdmin}
-                                        autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
+                                    <Textarea label="How will this be achieved?" value={firstYearAppraisalData.training1How} readOnly={isViewMode && !isAdmin} minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                         onChange={e => setFirstYearAppraisalData(p => ({ ...p, training1How: e.target.value }))} />
                                 </SimpleGrid>
                                 <SimpleGrid cols={2} mb="xs">
-                                    <Textarea label="2. Training session on" value={firstYearAppraisalData.training2} readOnly={isViewMode && !isAdmin}
-                                        autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
+                                    <Textarea label="2. Training session on" value={firstYearAppraisalData.training2} readOnly={isViewMode && !isAdmin} minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                         onChange={e => setFirstYearAppraisalData(p => ({ ...p, training2: e.target.value }))} />
-                                    <Textarea label="How will this be achieved?" value={firstYearAppraisalData.training2How} readOnly={isViewMode && !isAdmin}
-                                        autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
+                                    <Textarea label="How will this be achieved?" value={firstYearAppraisalData.training2How} readOnly={isViewMode && !isAdmin} minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                         onChange={e => setFirstYearAppraisalData(p => ({ ...p, training2How: e.target.value }))} />
                                 </SimpleGrid>
                                 <SimpleGrid cols={2} mb="md">
-                                    <Textarea label="3. Training session on" value={firstYearAppraisalData.training3} readOnly={isViewMode && !isAdmin}
-                                        autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
+                                    <Textarea label="3. Training session on" value={firstYearAppraisalData.training3} readOnly={isViewMode && !isAdmin} minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                         onChange={e => setFirstYearAppraisalData(p => ({ ...p, training3: e.target.value }))} />
-                                    <Textarea label="How will this be achieved?" value={firstYearAppraisalData.training3How} readOnly={isViewMode && !isAdmin}
-                                        autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
+                                    <Textarea label="How will this be achieved?" value={firstYearAppraisalData.training3How} readOnly={isViewMode && !isAdmin} minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                         onChange={e => setFirstYearAppraisalData(p => ({ ...p, training3How: e.target.value }))} />
                                 </SimpleGrid>
 
-                                <Textarea label="Job Description — changes/amendments" autosize minRows={2} mb="md"
+                                <Textarea label="Job Description — changes/amendments" minRows={2} mb="md"
                                     value={firstYearAppraisalData.jobDescriptionChanges} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, jobDescriptionChanges: e.target.value }))} />
-                                <Textarea label="Interview Notes" autosize minRows={4} mb="md"
+                                <Textarea label="Interview Notes" minRows={4} mb="md"
                                     value={firstYearAppraisalData.interviewNotes} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, interviewNotes: e.target.value }))} />
-                                <Textarea label="Appraisee's comments" autosize minRows={3} mb="md"
+                                <Textarea label="Appraisee's comments" minRows={3} mb="md"
                                     value={firstYearAppraisalData.appraiseeComments} readOnly={isViewMode && !isAdmin}
                                     onChange={e => setFirstYearAppraisalData(p => ({ ...p, appraiseeComments: e.target.value }))} />
 
@@ -5163,7 +5215,6 @@ export const StaffProfilePage = () => {
                                         onChange={(e) => setFirstYearAppraisalData(prev => ({
                                             ...prev, reviewerComments2: e.target.value
                                         }))}
-                                        autosize
                                         minRows={3}
                                         radius="md"
                                     />
@@ -5258,15 +5309,13 @@ export const StaffProfilePage = () => {
 
                                 {(firstYearAppraisalData.actionPlanItems || []).map((item, idx) => (
                                     <SimpleGrid cols={3} key={idx} mb="xs">
-                                        <Textarea placeholder="Key Areas Discussed" value={item.keyArea} readOnly={isViewMode && !isAdmin}
-                                            autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
+                                        <Textarea placeholder="Key Areas Discussed" value={item.keyArea} readOnly={isViewMode && !isAdmin} minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                             onChange={e => {
                                                 const updated = [...firstYearAppraisalData.actionPlanItems];
                                                 updated[idx] = { ...updated[idx], keyArea: e.target.value };
                                                 setFirstYearAppraisalData(p => ({ ...p, actionPlanItems: updated }));
                                             }} />
-                                        <Textarea placeholder="Action Plan to Follow" value={item.actionPlan} readOnly={isViewMode && !isAdmin}
-                                            autosize minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
+                                        <Textarea placeholder="Action Plan to Follow" value={item.actionPlan} readOnly={isViewMode && !isAdmin} minRows={3} maxRows={8} styles={appraisalWrapTextareaStyles} radius="md"
                                             onChange={e => {
                                                 const updated = [...firstYearAppraisalData.actionPlanItems];
                                                 updated[idx] = { ...updated[idx], actionPlan: e.target.value };
@@ -5299,7 +5348,6 @@ export const StaffProfilePage = () => {
                                         onChange={(e) => setFirstYearAppraisalData(prev => ({
                                             ...prev, reviewerComments3: e.target.value
                                         }))}
-                                        autosize
                                         minRows={3}
                                         radius="md"
                                     />
@@ -6176,7 +6224,6 @@ export const StaffProfilePage = () => {
                                                             placeholder="e.g. She is progressing well..."
                                                             value={reviewFormData.reviewerCommentOverallWork || ''}
                                                             onChange={(e) => setReviewFormData({ ...reviewFormData, reviewerCommentOverallWork: e.target.value })}
-                                                            autosize
                                                             minRows={2}
                                                             radius="md"
                                                         />
@@ -6202,7 +6249,6 @@ export const StaffProfilePage = () => {
                                                             placeholder="e.g. She is progressing well..."
                                                             value={reviewFormData.reviewerCommentProgressTraining || ''}
                                                             onChange={(e) => setReviewFormData({ ...reviewFormData, reviewerCommentProgressTraining: e.target.value })}
-                                                            autosize
                                                             minRows={2}
                                                             radius="md"
                                                         />
@@ -6230,7 +6276,6 @@ export const StaffProfilePage = () => {
                                                             placeholder="e.g. She is progressing well..."
                                                             value={reviewFormData.reviewerCommentTeamWorking || ''}
                                                             onChange={(e) => setReviewFormData({ ...reviewFormData, reviewerCommentTeamWorking: e.target.value })}
-                                                            autosize
                                                             minRows={2}
                                                             radius="md"
                                                         />
@@ -6256,7 +6301,6 @@ export const StaffProfilePage = () => {
                                                             placeholder="e.g. She is progressing well..."
                                                             value={reviewFormData.reviewerCommentAttendance || ''}
                                                             onChange={(e) => setReviewFormData({ ...reviewFormData, reviewerCommentAttendance: e.target.value })}
-                                                            autosize
                                                             minRows={2}
                                                             radius="md"
                                                         />

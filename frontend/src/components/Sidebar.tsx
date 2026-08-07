@@ -17,7 +17,6 @@ import {
     BookOpen,
     Settings,
     UserPlus,
-    FileText,
     User,
     ClipboardCheck,
     FileBarChart,
@@ -28,6 +27,7 @@ import {
     Globe,
     ChevronLeft,
     ChevronRight,
+    Database,
     type LucideIcon,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -73,7 +73,8 @@ const NAV_SECTIONS: NavSection[] = [
         title: 'LEARNING',
         items: [
             { link: '/courses', label: 'Courses', icon: BookOpen },
-            { link: '/dashboard/policies', label: 'Policies', icon: FileText },
+            // Policies nav hidden for HR frontend (routes/APIs retained)
+            // { link: '/dashboard/policies', label: 'Policies', icon: FileText },
         ],
     },
     {
@@ -90,6 +91,7 @@ const NAV_SECTIONS: NavSection[] = [
         title: 'SYSTEM',
         items: [
             { link: '/dashboard/audit-logs', label: 'Audit Log', icon: ScrollText },
+            { link: '/dashboard/backup', label: 'Database Backup', icon: Database },
             { link: '/settings', label: 'Settings', icon: Settings },
         ],
     },
@@ -144,6 +146,7 @@ function shouldShowNavItem(item: NavItem, dashboardUser: boolean, strictAdmin: b
         return false;
     }
     if (item.label === 'Audit Log' && !canViewAuditLog()) return false;
+    if (item.label === 'Database Backup' && !strictAdmin) return false;
     if (item.label === 'Settings' && !dashboardUser && !strictAdmin) return false;
     if (item.label === 'View Profile' && !isStaffPortalRole()) return false;
     return true;

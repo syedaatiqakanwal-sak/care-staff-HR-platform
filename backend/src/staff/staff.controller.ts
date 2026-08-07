@@ -49,6 +49,7 @@ import { diskStorage } from 'multer';
 import { extname, join } from 'path';
 import * as fs from 'fs';
 import * as path from 'path';
+import { R2FilesService, isLegacyLocalFilePath } from '../common/r2-files.service';
 
 type UploadedImageFile = {
     filename: string;
@@ -67,6 +68,7 @@ export class StaffController {
         private staffService: StaffService,
         private jwtService: JwtService,
         private audit: AuditService,
+        private readonly r2: R2FilesService,
     ) { }
 
     @Get('me')
@@ -142,13 +144,17 @@ export class StaffController {
     @Put(':id')
     @Roles(...MANAGEMENT_ROLES)
     updateProfileById(@Param('id') id: string, @Body() body: UpdateStaffDto) {
-        return this.staffService.updateProfileByUserId(id, body);
+        // DTO uses ISO date strings; TypeORM date columns accept them
+        return this.staffService.updateProfileByUserId(id, body as any);
     }
 
     @Get()
     @Roles(...DASHBOARD_ROLES)
-    getAllStaff() {
-        return this.staffService.findAll();
+    getAllStaff(
+        @Query('page') page?: string,
+        @Query('limit') limit?: string,
+    ) {
+        return this.staffService.findAll({ page, limit });
     }
 
     @Get('stats')
@@ -454,22 +460,20 @@ export class StaffController {
 
         // Get profile to access staffId
         const profile = await this.staffService.getProfileByUserId(id);
-        
-        // Delete old profile picture if exists
+
+        const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+        const r2Key = `profile-pictures/${id}/${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+        await this.r2.promoteLocalFileToR2(
+            file.path,
+            r2Key,
+            file.mimetype || 'image/jpeg',
+        );
+
         if (profile.profilePicture) {
-            const oldPath = profile.profilePicture.startsWith('/') 
-                ? profile.profilePicture 
-                : path.join(process.cwd(), profile.profilePicture);
-            if (fs.existsSync(oldPath)) {
-                fs.unlinkSync(oldPath);
-            }
+            await this.r2.deleteStoredFile(profile.profilePicture);
         }
 
-        // Update profile with new picture path (store relative path from project root)
-        const relativePath = file.path.startsWith(process.cwd())
-            ? file.path.replace(process.cwd() + path.sep, '').replace(/\\/g, '/')
-            : file.path.replace(/\\/g, '/');
-        await this.staffService.updateProfileByUserId(id, { profilePicture: relativePath });
+        await this.staffService.updateProfileByUserId(id, { profilePicture: r2Key });
 
         return {
             success: true,
@@ -501,6 +505,12 @@ export class StaffController {
             return res.status(404).json({ message: 'Profile picture not found' });
         }
 
+        const stored = profile.profilePicture.replace(/\\/g, '/');
+        if (stored.startsWith('profile-pictures/')) {
+            const url = await this.r2.getPresignedUrl(stored);
+            return res.redirect(302, url);
+        }
+
         // Construct full path and validate it's within allowed directory
         const uploadsBase = path.resolve(process.cwd(), 'uploads', 'profile-pictures');
         const filePath = path.resolve(
@@ -510,6 +520,9 @@ export class StaffController {
         );
 
         // Prevent path traversal: ensure resolved path is within uploads directory
+        if (!filePath.startsWith(uploadsBase) && !isLegacyLocalFilePath(stored)) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
         if (!filePath.startsWith(uploadsBase)) {
             return res.status(403).json({ message: 'Access denied' });
         }
@@ -519,8 +532,8 @@ export class StaffController {
         }
 
         // Set proper content type based on file extension
-        const ext = path.extname(filePath).toLowerCase();
-        const contentType = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.gif' ? 'image/gif' : 'image/jpeg';
+        const fileExt = path.extname(filePath).toLowerCase();
+        const contentType = fileExt === '.png' ? 'image/png' : fileExt === '.jpg' || fileExt === '.jpeg' ? 'image/jpeg' : fileExt === '.gif' ? 'image/gif' : 'image/jpeg';
         res.setHeader('Content-Type', contentType);
         res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache for 1 year
 

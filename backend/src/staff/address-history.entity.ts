@@ -19,11 +19,12 @@ export class AddressHistory {
     @Column({ nullable: true })
     line2: string; // Optional
 
-    @Column()
-    town: string;
+    @Column({ type: 'varchar', nullable: true })
+    town: string | null;
 
-    @Column()
-    postcode: string;
+    /** Optional — international addresses often have no UK-style postcode. */
+    @Column({ type: 'varchar', nullable: true })
+    postcode: string | null;
 
     @Column({ type: 'date' })
     dateFrom: string;

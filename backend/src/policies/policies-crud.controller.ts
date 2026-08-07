@@ -149,14 +149,17 @@ export class PoliciesCrudController {
       throw new BadRequestException('Policy not active');
     }
 
-    const absPath = this.policiesCrudService.resolvePolicyFilePath(policy);
+    const served = await this.policiesCrudService.resolvePolicyServe(policy);
+    if (served.kind === 'r2') {
+      return res.redirect(302, served.url);
+    }
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
       `inline; filename="${policy.title.replace(/[^a-z0-9-_ ]/gi, '').slice(0, 60)}.pdf"`,
     );
-    fs.createReadStream(absPath).pipe(res);
+    fs.createReadStream(served.absPath).pipe(res);
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -198,11 +201,15 @@ export class PoliciesCrudController {
       throw new BadRequestException('Policy not active');
     }
 
-    const absPath = this.policiesCrudService.resolvePolicyFilePath(policy);
+    const served = await this.policiesCrudService.resolvePolicyServe(policy);
+
+    if (served.kind === 'r2') {
+      return res.redirect(302, served.url);
+    }
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${policy.title.replace(/[^a-z0-9-_ ]/gi, '').slice(0, 60)}.pdf"`);
-    fs.createReadStream(absPath).pipe(res);
+    fs.createReadStream(served.absPath).pipe(res);
   }
 }
 

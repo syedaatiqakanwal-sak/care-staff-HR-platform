@@ -10,6 +10,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { StaffService } from '../staff/staff.service';
 import { PolicyNotification } from './policy-notification.entity';
 import { isDashboardRole, normalizeUserRole } from '../users/role.utils';
+import {
+  isLegacyLocalFilePath,
+  R2FilesService,
+  sanitizeUploadFilename,
+} from '../common/r2-files.service';
 
 function ensureDir(dir: string) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -23,6 +28,7 @@ export class PoliciesCrudService implements OnModuleInit {
     @InjectRepository(Policy) private policiesRepo: Repository<Policy>,
     @InjectRepository(PolicyNotification) private notifsRepo: Repository<PolicyNotification>,
     private staffService: StaffService,
+    private readonly r2: R2FilesService,
   ) {}
 
   async onModuleInit() {
@@ -44,12 +50,21 @@ export class PoliciesCrudService implements OnModuleInit {
   }
 
   async createPolicy(adminUserId: string, dto: CreatePolicyDto, file: any) {
-    const relPath = path.join('uploads', 'policies', file.filename);
+    const localAbs =
+      file.path || path.join(process.cwd(), 'uploads', 'policies', file.filename);
+    const safeName = sanitizeUploadFilename(file.originalname || file.filename);
+    const r2Key = `policies/${Date.now()}_${safeName}`;
+    await this.r2.promoteLocalFileToR2(
+      localAbs,
+      r2Key,
+      file.mimetype || 'application/pdf',
+    );
+
     const policy = await this.policiesRepo.save(
       this.policiesRepo.create({
         title: dto.title,
         description: dto.description || '',
-        filePath: relPath,
+        filePath: r2Key,
         version: 1,
         isActive: dto.isActive ?? true,
         createdBy: adminUserId,
@@ -72,20 +87,22 @@ export class PoliciesCrudService implements OnModuleInit {
     if (dto.isActive !== undefined) policy.isActive = dto.isActive;
 
     if (file) {
-      // Optional: delete old file
-      try {
-        const oldAbs = path.join(process.cwd(), policy.filePath);
-        if (fs.existsSync(oldAbs)) fs.unlinkSync(oldAbs);
-      } catch {
-        // ignore
-      }
-      policy.filePath = path.join('uploads', 'policies', file.filename);
+      const localAbs =
+        file.path || path.join(process.cwd(), 'uploads', 'policies', file.filename);
+      const safeName = sanitizeUploadFilename(file.originalname || file.filename);
+      const r2Key = `policies/${Date.now()}_${safeName}`;
+      await this.r2.promoteLocalFileToR2(
+        localAbs,
+        r2Key,
+        file.mimetype || 'application/pdf',
+      );
+      await this.r2.deleteStoredFile(policy.filePath);
+      policy.filePath = r2Key;
     }
 
     const saved = await this.policiesRepo.save(policy);
 
     if (increment) {
-      // on version bump, force re-read via new notifications
       await this.createNotificationsForAllStaff(saved.id);
     }
 
@@ -96,13 +113,7 @@ export class PoliciesCrudService implements OnModuleInit {
     const policy = await this.policiesRepo.findOne({ where: { id } });
     if (!policy) throw new NotFoundException('Policy not found');
 
-    try {
-      const abs = path.join(process.cwd(), policy.filePath);
-      if (fs.existsSync(abs)) fs.unlinkSync(abs);
-    } catch {
-      // ignore
-    }
-
+    await this.r2.deleteStoredFile(policy.filePath);
     await this.policiesRepo.remove(policy);
     return { success: true };
   }
@@ -111,6 +122,30 @@ export class PoliciesCrudService implements OnModuleInit {
     const policy = await this.policiesRepo.findOne({ where: { id } });
     if (!policy) throw new NotFoundException('Policy not found');
     return policy;
+  }
+
+  /**
+   * Resolve how to serve a policy PDF: local disk (legacy) or R2 presigned URL.
+   */
+  async resolvePolicyServe(
+    policy: Policy,
+  ): Promise<{ kind: 'local'; absPath: string } | { kind: 'r2'; url: string }> {
+    const raw = (policy.filePath || '').trim();
+    if (!raw) {
+      throw new BadRequestException('Policy file path not set');
+    }
+    const normalized = raw.replace(/\\/g, '/');
+
+    if (normalized.startsWith('policies/')) {
+      const url = await this.r2.getPresignedUrl(normalized);
+      return { kind: 'r2', url };
+    }
+
+    if (isLegacyLocalFilePath(normalized) || !normalized.includes('/') || normalized.startsWith('uploads/')) {
+      return { kind: 'local', absPath: this.resolvePolicyFilePath(policy) };
+    }
+
+    throw new BadRequestException('Policy file not found on server');
   }
 
   /**
@@ -154,7 +189,7 @@ export class PoliciesCrudService implements OnModuleInit {
   }
 
   async createNotificationsForAllStaff(policyId: string) {
-    const staffProfiles = await this.staffService.findAll();
+    const staffProfiles = await this.staffService.findAllUnpaginated();
     const activeStaff = staffProfiles.filter((p: any) => p?.user?.isActive);
 
     const toInsert = activeStaff.map((p) =>
@@ -173,4 +208,3 @@ export class PoliciesCrudService implements OnModuleInit {
     return `${base}${v}.pdf`;
   }
 }
-

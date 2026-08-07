@@ -21,6 +21,7 @@ import { notifications } from '@mantine/notifications';
 import { Download, Edit, Plus, Trash2, Upload, FileText } from 'lucide-react';
 import axios from 'axios';
 import { Navigate } from 'react-router-dom';
+import { AppConfirmModal } from './AppConfirmModal';
 
 type PolicyRow = {
   id: string;
@@ -38,6 +39,8 @@ export const PoliciesManagePage = () => {
   const role = (localStorage.getItem('role') || '').toLowerCase();
   const isAdmin = ['admin', 'manager', 'hr'].includes(role);
   const canEdit = isAdmin && localStorage.getItem('readOnly') !== 'true';
+  const [deleteTarget, setDeleteTarget] = useState<PolicyRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const token = localStorage.getItem('token');
 
   const [loading, setLoading] = useState(true);
@@ -158,17 +161,18 @@ export const PoliciesManagePage = () => {
     }
   };
 
-  const remove = async (p: PolicyRow) => {
-    if (!token) return;
-    const ok = window.confirm(`Delete policy "${p.title}"? This cannot be undone.`);
-    if (!ok) return;
-
+  const remove = async () => {
+    if (!token || !deleteTarget) return;
+    setDeleting(true);
     try {
-      await axios.delete(`/api/v1/policies/${p.id}`, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.delete(`/api/v1/policies/${deleteTarget.id}`, { headers: { Authorization: `Bearer ${token}` } });
       notifications.show({ title: 'Deleted', message: 'Policy deleted', color: '#267FBA' });
+      setDeleteTarget(null);
       await fetchPolicies();
     } catch (err: any) {
       notifications.show({ title: 'Error', message: err?.response?.data?.message || 'Failed to delete policy.', color: 'red' });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -247,7 +251,7 @@ export const PoliciesManagePage = () => {
                       <ActionIcon variant="light" color="gray" onClick={() => downloadPdf(p)} title="Open PDF">
                         <Download size={16} />
                       </ActionIcon>
-                      <ActionIcon variant="light" color="red" onClick={() => remove(p)} title="Delete">
+                      <ActionIcon variant="light" color="red" onClick={() => setDeleteTarget(p)} title="Delete">
                         <Trash2 size={16} />
                       </ActionIcon>
                     </Group>
@@ -324,6 +328,17 @@ export const PoliciesManagePage = () => {
           </Group>
         </Box>
       </Modal>
+
+      <AppConfirmModal
+        opened={!!deleteTarget}
+        title="Delete policy"
+        message={`Delete policy "${deleteTarget?.title ?? ''}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        confirmColor="red"
+        loading={deleting}
+        onConfirm={remove}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </Box>
   );
 };

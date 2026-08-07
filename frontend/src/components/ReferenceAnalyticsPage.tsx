@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import { notifications } from '@mantine/notifications';
+import { AppConfirmModal } from './AppConfirmModal';
 
 interface Reference {
     id: string;
@@ -52,6 +53,7 @@ interface Reference {
     openedAt: string | null;
     submittedAt: string | null;
     reminderCount: number;
+    lastReminderSentAt?: string | null;
     ipAddress: string | null;
     submissionData?: any;
 }
@@ -77,6 +79,7 @@ export const ReferenceAnalyticsPage = () => {
     const [sendingReminders, setSendingReminders] = useState(false);
     const [reminderResult, setReminderResult] = useState<any>(null);
     const [remindingId, setRemindingId] = useState<string | null>(null);
+    const [confirmReminder, setConfirmReminder] = useState<Reference | null>(null);
 
     const MAX_REMINDERS = 4;
 
@@ -277,8 +280,9 @@ export const ReferenceAnalyticsPage = () => {
         }
     };
 
-    const handleSendSingleReminder = async (ref: Reference) => {
-        if (!window.confirm(`Send a reference reminder email to ${ref.email}?`)) return;
+    const handleSendSingleReminder = async () => {
+        if (!confirmReminder) return;
+        const ref = confirmReminder;
         try {
             setRemindingId(ref.id);
             const token = localStorage.getItem('token');
@@ -290,6 +294,7 @@ export const ReferenceAnalyticsPage = () => {
                 message: `Reminder email sent to ${ref.email}.`,
                 color: 'green',
             });
+            setConfirmReminder(null);
             await loadData();
         } catch (error: any) {
             const message = error.response?.data?.message || error.message || 'Failed to send reminder';
@@ -303,28 +308,37 @@ export const ReferenceAnalyticsPage = () => {
         }
     };
 
-    // Reminder-eligible category (matches the deployed 7-day / 4-reminder system):
-    // - pending and older than 7 days
-    // - opened and not submitted, older than 7 days from opened time
-    // - exclude records that already reached the 4-reminder cap
+    // Reminder-eligible (matches backend 7-day / 4-reminder rules):
+    // - not submitted
+    // - under 4-reminder max
+    // - first reminder: 7+ days after createdAt (pending) or openedAt (opened)
+    // - later reminders: 7+ days since lastReminderSentAt
     const getReminderReferences = () => {
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const now = Date.now();
+        const dayMs = 1000 * 60 * 60 * 24;
 
         return references.filter(ref => {
             if ((ref.reminderCount || 0) >= MAX_REMINDERS) return false;
             if (ref.submittedAt || ref.status.toLowerCase() === 'submitted') return false;
 
             const normalizedStatus = ref.status.toLowerCase();
-            if (normalizedStatus === 'pending') {
-                return new Date(ref.createdAt) < sevenDaysAgo;
+            if (normalizedStatus !== 'pending' && normalizedStatus !== 'opened') return false;
+
+            const reminderCount = ref.reminderCount || 0;
+            if (reminderCount === 0) {
+                const anchor =
+                    normalizedStatus === 'opened' && ref.openedAt
+                        ? new Date(ref.openedAt).getTime()
+                        : new Date(ref.createdAt).getTime();
+                return now - anchor >= 7 * dayMs;
             }
 
-            if (normalizedStatus === 'opened') {
-                return !!ref.openedAt && new Date(ref.openedAt) < sevenDaysAgo;
-            }
-
-            return false;
+            const lastSent = ref.lastReminderSentAt
+                ? new Date(ref.lastReminderSentAt).getTime()
+                : (normalizedStatus === 'opened' && ref.openedAt
+                    ? new Date(ref.openedAt).getTime()
+                    : new Date(ref.createdAt).getTime());
+            return now - lastSent >= 7 * dayMs;
         });
     };
 
@@ -516,10 +530,10 @@ export const ReferenceAnalyticsPage = () => {
                                 </ThemeIcon>
                                 <Box>
                                     <Text size="xs" c="dimmed" fw={600}>
-                                        3 Days Passed
+                                        Reminder Due
                                     </Text>
                                     <Text size="xl" fw={700}>
-                                        {analytics.threeDaysPassed}
+                                        {reminderReferences.length}
                                     </Text>
                                 </Box>
                             </Group>
@@ -650,7 +664,7 @@ export const ReferenceAnalyticsPage = () => {
                                                                     leftSection={<Send size={14} />}
                                                                     loading={remindingId === ref.id}
                                                                     disabled={(ref.reminderCount || 0) >= MAX_REMINDERS}
-                                                                    onClick={() => handleSendSingleReminder(ref)}
+                                                                    onClick={() => setConfirmReminder(ref)}
                                                                 >
                                                                     Send Reminder
                                                                 </Button>
@@ -845,6 +859,17 @@ export const ReferenceAnalyticsPage = () => {
                     </ScrollArea>
                 )}
             </Modal>
+
+            <AppConfirmModal
+                opened={!!confirmReminder}
+                title="Send reminder"
+                message={`Send a reference reminder email to ${confirmReminder?.email ?? ''}?`}
+                confirmLabel="Send reminder"
+                confirmColor="orange"
+                loading={!!remindingId}
+                onConfirm={handleSendSingleReminder}
+                onCancel={() => setConfirmReminder(null)}
+            />
         </Container>
     );
 };

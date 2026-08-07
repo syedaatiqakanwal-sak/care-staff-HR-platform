@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import axios from 'axios';
+import { notifications } from '@mantine/notifications';
 
 const BRAND_GREEN = '#139639';
 const LAST_GENERATED_KEY = 'hr_reports_last_generated';
@@ -317,7 +318,11 @@ export function HrReportsPage() {
       setLastGenerated(label);
     } catch (e) {
       console.error('Report download failed', e);
-      alert('Failed to generate report. Please try again.');
+      notifications.show({
+        title: 'Report failed',
+        message: 'Failed to generate report. Please try again.',
+        color: 'red',
+      });
     } finally {
       setLoadingPdf(false);
     }

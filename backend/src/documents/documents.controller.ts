@@ -40,6 +40,48 @@ function ensureDocumentsDir() {
   return dir;
 }
 
+const DOCUMENT_MIME_ALLOWLIST = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+]);
+
+const DOCUMENT_EXT_ALLOWLIST = new Set([
+  '.pdf',
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+]);
+
+function documentFileFilter(
+  _req: unknown,
+  file: { originalname: string; mimetype: string },
+  cb: (error: Error | null, acceptFile: boolean) => void,
+) {
+  const ext = path.extname(file.originalname || '').toLowerCase();
+  const mimeOk = DOCUMENT_MIME_ALLOWLIST.has((file.mimetype || '').toLowerCase());
+  const extOk = DOCUMENT_EXT_ALLOWLIST.has(ext);
+  if (mimeOk || extOk) {
+    cb(null, true);
+    return;
+  }
+  cb(
+    new BadRequestException(
+      'Only PDF, JPG, PNG, DOC, DOCX, XLS, and XLSX files are allowed',
+    ),
+    false,
+  );
+}
+
 @Controller('staff')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 export class StaffDocumentsController {
@@ -59,29 +101,46 @@ export class StaffDocumentsController {
         filename: (_req, file, cb) =>
           cb(null, `${Date.now()}_${file.originalname.replace(/\s+/g, '_')}`),
       }),
-      limits: { fileSize: 10 * 1024 * 1024 },
+      limits: { fileSize: 50 * 1024 * 1024 },
+      fileFilter: documentFileFilter,
     }),
   )
   async upload(
     @Param('id') userId: string,
     @Request() req,
     @Body() dto: CreateStaffDocumentDto,
-    @UploadedFile() file: { filename: string; originalname: string; size: number; mimetype?: string },
+    @UploadedFile() file: { filename: string; originalname: string; size: number; mimetype?: string; path?: string },
   ) {
-    const profile = await this.access.assertCanWriteStaffDocuments(
-      req.user,
-      userId,
-      dto.documentType,
-    );
-    const doc = await this.documentsService.uploadDocument(
-      profile.id,
-      req.user.userId,
-      dto,
-      file,
-      req.user,
-      req.ip,
-    );
-    return { success: true, document: doc };
+    try {
+      const profile = await this.access.assertCanWriteStaffDocuments(
+        req.user,
+        userId,
+        dto.documentType,
+      );
+      const doc = await this.documentsService.uploadDocument(
+        profile.id,
+        req.user.userId,
+        dto,
+        file,
+        req.user,
+        req.ip,
+        { r2StaffId: userId },
+      );
+      return { success: true, document: doc };
+    } catch (err) {
+      // Clean up orphaned Multer file on validation/service failure
+      if (file?.filename) {
+        const orphan = path.join(ensureDocumentsDir(), file.filename);
+        if (fs.existsSync(orphan)) {
+          try {
+            fs.unlinkSync(orphan);
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+      throw err;
+    }
   }
 
   @Get(':id/documents')
@@ -133,8 +192,11 @@ export class DocumentsController {
 
   @Get('dbs/analytics/all')
   @Roles(...MANAGEMENT_ROLES)
-  async getAllDbsRecords() {
-    return this.documentsService.getAllDbsForAnalytics();
+  async getAllDbsRecords(
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(100), ParseIntPipe) limit: number,
+  ) {
+    return this.documentsService.getAllDbsForAnalytics(page, limit);
   }
 
   @Get('expiring')
@@ -156,14 +218,17 @@ export class DocumentsController {
   @Get(':id/download')
   @Roles(...DASHBOARD_ROLES, UserRole.STAFF)
   async download(@Param('id') id: string, @Request() req, @Res() res: Response) {
-    const { doc, absPath } = await this.documentsService.getDocumentForDownload(
+    const result = await this.documentsService.getDocumentForDownload(
       id,
       req.user,
     );
-    const safeName = doc.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    if (result.kind === 'r2') {
+      return res.redirect(302, result.url);
+    }
+    const safeName = result.doc.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
     res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
     res.setHeader('Content-Type', 'application/octet-stream');
-    fs.createReadStream(absPath).pipe(res);
+    fs.createReadStream(result.absPath).pipe(res);
   }
 }
 

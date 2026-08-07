@@ -22,6 +22,7 @@ import {
 import { Key, Plus, Trash2, Copy, Check, AlertCircle, Calendar, Clock } from 'lucide-react';
 import { notifications } from '@mantine/notifications';
 import axios from 'axios';
+import { AppConfirmModal } from './AppConfirmModal';
 
 interface ApiToken {
     id: string;
@@ -38,6 +39,8 @@ export const ApiTokensPage = () => {
     const [createModalOpen, setCreateModalOpen] = useState(false);
     const [newTokenModalOpen, setNewTokenModalOpen] = useState(false);
     const [newToken, setNewToken] = useState<string>('');
+    const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+    const [deleting, setDeleting] = useState(false);
     const [creating, setCreating] = useState(false);
     const [tokenName, setTokenName] = useState('');
     const [selectedScopes, setSelectedScopes] = useState<string[]>([]);
@@ -127,14 +130,12 @@ export const ApiTokensPage = () => {
         }
     };
 
-    const handleDeleteToken = async (id: string) => {
-        if (!confirm('Are you sure you want to delete this token? This action cannot be undone.')) {
-            return;
-        }
-
+    const handleDeleteToken = async () => {
+        if (!deleteTargetId) return;
+        setDeleting(true);
         try {
             const token = localStorage.getItem('token');
-            await axios.delete(`/api/v1/api/manage/tokens/${id}`, {
+            await axios.delete(`/api/v1/api/manage/tokens/${deleteTargetId}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             notifications.show({
@@ -142,6 +143,7 @@ export const ApiTokensPage = () => {
                 message: 'Token deleted successfully',
                 color: '#267FBA',
             });
+            setDeleteTargetId(null);
             fetchTokens();
         } catch (error: any) {
             notifications.show({
@@ -149,6 +151,8 @@ export const ApiTokensPage = () => {
                 message: error.response?.data?.message || 'Failed to delete token',
                 color: 'red',
             });
+        } finally {
+            setDeleting(false);
         }
     };
 
@@ -255,7 +259,7 @@ export const ApiTokensPage = () => {
                                         <ActionIcon
                                             color="red"
                                             variant="light"
-                                            onClick={() => handleDeleteToken(token.id)}
+                                            onClick={() => setDeleteTargetId(token.id)}
                                         >
                                             <Trash2 size={16} />
                                         </ActionIcon>
@@ -389,6 +393,17 @@ export const ApiTokensPage = () => {
                     </Button>
                 </Stack>
             </Modal>
+
+            <AppConfirmModal
+                opened={!!deleteTargetId}
+                title="Delete API token"
+                message="Are you sure you want to delete this token? This action cannot be undone."
+                confirmLabel="Delete"
+                confirmColor="red"
+                loading={deleting}
+                onConfirm={handleDeleteToken}
+                onCancel={() => setDeleteTargetId(null)}
+            />
         </Paper>
     );
 };

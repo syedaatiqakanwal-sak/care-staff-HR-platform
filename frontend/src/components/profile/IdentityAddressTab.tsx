@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { notifications } from '@mantine/notifications';
 import { useDisclosure } from '@mantine/hooks';
 import axios from 'axios';
+import { AppConfirmModal } from '../AppConfirmModal';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -30,6 +31,8 @@ export const IdentityAddressTab = ({ profile, isEditing }: IdentityAddressTabPro
     const [gapSummary, setGapSummary] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [uploadingProofId, setUploadingProofId] = useState<string | null>(null);
+    const [deleteAddressId, setDeleteAddressId] = useState<string | null>(null);
+    const [deleting, setDeleting] = useState(false);
 
     // Add Address Form State
     const [opened, { open, close }] = useDisclosure(false);
@@ -174,19 +177,22 @@ export const IdentityAddressTab = ({ profile, isEditing }: IdentityAddressTabPro
         }
     };
 
-    const handleDeleteAddress = async (addressId: string) => {
-        if (!window.confirm('Are you sure you want to remove this address history?')) return;
-
+    const handleDeleteAddress = async () => {
+        if (!deleteAddressId) return;
+        setDeleting(true);
         const targetId = profile.user?.id || profile.id;
         try {
             const token = localStorage.getItem('token');
-            await axios.delete(`/api/v1/staff/${targetId}/addresses/${addressId}`, {
+            await axios.delete(`/api/v1/staff/${targetId}/addresses/${deleteAddressId}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             notifications.show({ title: 'Removed', message: 'Address history removed', color: 'blue' });
+            setDeleteAddressId(null);
             fetchAddresses();
         } catch (error) {
             notifications.show({ title: 'Error', message: 'Failed to delete address', color: 'red' });
+        } finally {
+            setDeleting(false);
         }
     };
 
@@ -466,7 +472,7 @@ export const IdentityAddressTab = ({ profile, isEditing }: IdentityAddressTabPro
                                                     variant="subtle"
                                                     size="xs"
                                                     style={{ height: 24, padding: '0 8px' }}
-                                                    onClick={() => handleDeleteAddress(addr.id)}
+                                                    onClick={() => setDeleteAddressId(addr.id)}
                                                 >
                                                     <Trash size={14} />
                                                 </Button>
@@ -632,6 +638,17 @@ export const IdentityAddressTab = ({ profile, isEditing }: IdentityAddressTabPro
                     </Group>
                 </Stack>
             </Modal>
+
+            <AppConfirmModal
+                opened={!!deleteAddressId}
+                title="Remove address"
+                message="Are you sure you want to remove this address history?"
+                confirmLabel="Remove"
+                confirmColor="red"
+                loading={deleting}
+                onConfirm={handleDeleteAddress}
+                onCancel={() => setDeleteAddressId(null)}
+            />
         </Stack>
     );
 };

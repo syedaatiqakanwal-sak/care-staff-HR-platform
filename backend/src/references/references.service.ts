@@ -6,6 +6,12 @@ import { StaffProfile } from '../staff/staff-profile.entity';
 import { EmailService } from '../email/email.service';
 import * as crypto from 'crypto';
 import * as puppeteer from 'puppeteer';
+import { puppeteerLaunchOptions } from '../common/puppeteer-pool';
+import {
+    R2FilesService,
+} from '../common/r2-files.service';
+import * as path from 'path';
+import * as fs from 'fs';
 
 // Reminder policy: up to 4 reminders total.
 // Reminder 1 fires 7 days after the initial request (creation/open);
@@ -22,6 +28,7 @@ export class ReferencesService {
         @InjectRepository(StaffProfile)
         private staffRepository: Repository<StaffProfile>,
         private emailService: EmailService,
+        private readonly r2: R2FilesService,
     ) { }
 
     async resolveStaffProfileId(staffIdOrUserId: string): Promise<string> {
@@ -85,6 +92,16 @@ export class ReferencesService {
         }
     ): Promise<StaffReference> {
         const resolvedStaffId = await this.resolveStaffProfileId(staffId);
+        const localAbs = path.isAbsolute(data.file.path)
+            ? data.file.path
+            : path.join(process.cwd(), data.file.path.replace(/^\.\//, ''));
+        const ext = path.extname(data.file.originalname || '').toLowerCase() || '.bin';
+        const r2Key = `references/${staffId}/ref-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+        await this.r2.promoteLocalFileToR2(
+            localAbs,
+            r2Key,
+            data.file.mimetype || 'application/octet-stream',
+        );
 
         const reference = this.referencesRepository.create({
             staffId: resolvedStaffId,
@@ -92,12 +109,29 @@ export class ReferencesService {
             email: data.refereeEmail || '',
             referenceType: data.referenceType as any,
             status: 'submitted' as any,
-            uploadedFilePath: data.file.path,
+            uploadedFilePath: r2Key,
             uploadedFileName: data.file.originalname,
             submittedAt: new Date(),
         });
 
         return this.referencesRepository.save(reference);
+    }
+
+    async resolveUploadedFileServe(
+        uploadedFilePath: string,
+    ): Promise<{ kind: 'local'; absPath: string } | { kind: 'r2'; url: string }> {
+        const stored = (uploadedFilePath || '').replace(/\\/g, '/');
+        if (stored.startsWith('references/')) {
+            const url = await this.r2.getPresignedUrl(stored);
+            return { kind: 'r2', url };
+        }
+        const absolutePath = path.isAbsolute(stored)
+            ? stored
+            : path.join(process.cwd(), stored.replace(/^\.\//, ''));
+        if (!fs.existsSync(absolutePath)) {
+            throw new NotFoundException('File not found on server');
+        }
+        return { kind: 'local', absPath: absolutePath };
     }
 
     /** Verify that a staff profile belongs to a given userId (for authorization checks) */
@@ -945,10 +979,7 @@ export class ReferencesService {
         `;
         }
 
-        const browser = await puppeteer.launch({
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox'],
-        });
+        const browser = await puppeteer.launch(puppeteerLaunchOptions());
         const page = await browser.newPage();
         await page.setContent(html, { waitUntil: 'networkidle0' });
         const pdfBuffer = await page.pdf({
@@ -1500,10 +1531,7 @@ export class ReferencesService {
         }
 
         // Generate PDF using Puppeteer
-        const browser = await puppeteer.launch({
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox'],
-        });
+        const browser = await puppeteer.launch(puppeteerLaunchOptions());
         const page = await browser.newPage();
         await page.setContent(html, { waitUntil: 'networkidle0' });
         const pdfBuffer = await page.pdf({
@@ -1703,21 +1731,25 @@ export class ReferencesService {
             throw new BadRequestException('This reference link has expired.');
         }
 
-        // Check if already submitted
-        if (reference.status === ReferenceStatus.SUBMITTED) {
+        // Atomic claim: only one concurrent submit wins
+        const claim = await this.referencesRepository
+            .createQueryBuilder()
+            .update(StaffReference)
+            .set({
+                submissionData: submissionData as any,
+                status: ReferenceStatus.SUBMITTED,
+                submittedAt: new Date(),
+                ...(ipAddress ? { ipAddress } : {}),
+            })
+            .where('id = :id', { id: reference.id })
+            .andWhere('status != :submitted', { submitted: ReferenceStatus.SUBMITTED })
+            .execute();
+
+        if (!claim.affected) {
             throw new BadRequestException('This reference has already been submitted.');
         }
 
-        // Update reference with submission data
-        reference.submissionData = submissionData;
-        reference.status = ReferenceStatus.SUBMITTED;
-        reference.submittedAt = new Date();
-        if (ipAddress) {
-            reference.ipAddress = ipAddress;
-        }
-
-        await this.referencesRepository.save(reference);
-        return reference;
+        return this.findByToken(token);
     }
 
     async sendReferenceWithSecureLink(
@@ -1798,45 +1830,62 @@ export class ReferencesService {
             throw new BadRequestException('This reference has already been submitted.');
         }
 
-        // Cap reminders at 4 per client requirement.
-        if ((reference.reminderCount || 0) >= MAX_REMINDERS) {
+        // Atomically reserve a reminder slot before sending (prevents concurrent over-send)
+        const reserve = await this.referencesRepository
+            .createQueryBuilder()
+            .update(StaffReference)
+            .set({
+                reminderCount: () => 'COALESCE("reminderCount", 0) + 1',
+                lastReminderSentAt: new Date(),
+            })
+            .where('id = :id', { id })
+            .andWhere('COALESCE("reminderCount", 0) < :max', { max: MAX_REMINDERS })
+            .andWhere('status NOT IN (:...done)', {
+                done: [ReferenceStatus.SUBMITTED, ReferenceStatus.COMPLETED],
+            })
+            .execute();
+
+        if (!reserve.affected) {
             throw new BadRequestException(`Maximum of ${MAX_REMINDERS} reminders already sent for this reference.`);
         }
 
-        const referenceUrl = this.getReferenceUrl(reference.token, requestBaseUrl);
+        const updated = await this.findOne(id);
+        const referenceUrl = this.getReferenceUrl(updated.token, requestBaseUrl);
 
         // Get staff information for email
         const staff = await this.staffRepository.findOne({
-            where: { id: reference.staffId },
+            where: { id: updated.staffId },
             relations: ['user'],
         });
         const candidateName = staff
             ? `${staff.firstName || ''} ${staff.middleName || ''} ${staff.lastName || ''}`.trim()
             : 'the candidate';
 
-        // Send reminder email with secure link
-        console.log(`[REMINDER] Attempting to send reminder email to: ${reference.email}`);
-        console.log(`[REMINDER] Reference URL: ${referenceUrl}`);
-        console.log(`[REMINDER] Candidate: ${candidateName}`);
-        console.log(`[REMINDER] Reminder number: ${reference.reminderCount + 1}`);
-        
+        console.log(`[REMINDER] Attempting to send reminder email to: ${updated.email}`);
+        console.log(`[REMINDER] Reminder number: ${updated.reminderCount}`);
+
         try {
             await this.emailService.sendReferenceReminderEmail(
-                reference.email,
+                updated.email,
                 referenceUrl,
                 candidateName,
-                reference.referenceType,
-                reference.reminderCount + 1,
+                updated.referenceType,
+                updated.reminderCount,
             );
-            console.log(`[REMINDER] Email sent successfully to ${reference.email}`);
+            console.log(`[REMINDER] Email sent successfully to ${updated.email}`);
         } catch (emailError: any) {
+            // Roll back the reserved slot so the reminder can be retried
+            await this.referencesRepository
+                .createQueryBuilder()
+                .update(StaffReference)
+                .set({
+                    reminderCount: () => 'GREATEST(COALESCE("reminderCount", 1) - 1, 0)',
+                })
+                .where('id = :id', { id })
+                .execute();
             console.error(`[REMINDER] Email service error:`, emailError);
             throw new BadRequestException(`Failed to send email: ${emailError.message}`);
         }
-
-        // Update reminder count and last-sent timestamp
-        const reminderCount = (reference.reminderCount || 0) + 1;
-        await this.update(id, { reminderCount, lastReminderSentAt: new Date() });
 
         return { success: true, message: 'Reminder sent successfully' };
     }
@@ -1850,73 +1899,41 @@ export class ReferencesService {
         threeDaysPassed: number;
         reminderEmailsSent: number;
     }> {
+        const threeDaysAgo = new Date();
+        threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+        threeDaysAgo.setHours(0, 0, 0, 0);
+
         const [
             totalReferences,
             totalSubmitted,
             rawPendingReferences,
             openedNotSubmitted,
             notOpened,
+            reminderRow,
+            threeDaysRow,
         ] = await Promise.all([
             this.referencesRepository.count(),
             this.referencesRepository.count({ where: { status: ReferenceStatus.SUBMITTED } }),
             this.referencesRepository.count({ where: { status: ReferenceStatus.PENDING } }),
             this.referencesRepository.count({ where: { status: ReferenceStatus.OPENED } }),
             this.referencesRepository.count({ where: { openedAt: IsNull(), status: ReferenceStatus.PENDING } }),
+            this.referencesRepository.query(
+                `SELECT COALESCE(SUM(COALESCE("reminderCount", 0)), 0)::int AS total FROM "references"`,
+            ),
+            this.referencesRepository.query(
+                `
+                SELECT COUNT(*)::int AS count FROM "references"
+                WHERE status NOT IN ('submitted', 'completed')
+                  AND "submittedAt" IS NULL
+                  AND (
+                    (status = 'opened' AND "openedAt" IS NOT NULL AND DATE_TRUNC('day', "openedAt") <= DATE_TRUNC('day', $1::timestamptz))
+                    OR
+                    (status = 'pending' AND DATE_TRUNC('day', "createdAt") <= DATE_TRUNC('day', $1::timestamptz))
+                  )
+                `,
+                [threeDaysAgo.toISOString()],
+            ),
         ]);
-
-        const allReferences = await this.referencesRepository.find();
-        
-        // Calculate 3 days ago at midnight (start of day) for proper day-based comparison
-        const threeDaysAgo = new Date();
-        threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-        threeDaysAgo.setHours(0, 0, 0, 0); // Set to midnight for day-based comparison
-        
-        // Helper function to normalize date to midnight for comparison
-        const normalizeToMidnight = (date: Date): Date => {
-            const normalized = new Date(date);
-            normalized.setHours(0, 0, 0, 0);
-            return normalized;
-        };
-        
-        const reminderEmailsSent = allReferences.reduce((sum, ref) => sum + (ref.reminderCount || 0), 0);
-        
-        // Debug: Log the threshold date
-        console.log(`[ANALYTICS] Calculating 3 Days Passed. Threshold date: ${threeDaysAgo.toISOString()}`);
-        
-        const threeDaysPassed = allReferences.filter((ref) => {
-            // Exclude submitted references
-            if (ref.status === ReferenceStatus.SUBMITTED || ref.submittedAt) {
-                return false;
-            }
-
-            // NOTE: We DON'T exclude references with reminderCount >= 3 here
-            // because "3 Days Passed" should show ALL references that are 3+ days old,
-            // regardless of whether they can receive more reminders.
-            // The reminder count check only applies when actually SENDING reminders.
-
-            // For OPENED references: check if openedAt is 3 or more days old
-            if (ref.status === ReferenceStatus.OPENED) {
-                if (!ref.openedAt) {
-                    return false;
-                }
-                const openedDate = normalizeToMidnight(new Date(ref.openedAt));
-                const isOldEnough = openedDate <= threeDaysAgo; // <= to include exactly 3 days old
-                console.log(`[ANALYTICS] Reference ${ref.id} (${ref.email}): Status=OPENED, OpenedAt=${openedDate.toISOString()}, Threshold=${threeDaysAgo.toISOString()}, IsOldEnough=${isOldEnough}, ReminderCount=${ref.reminderCount || 0}`);
-                return isOldEnough;
-            }
-
-            // For PENDING references: check if createdAt is 3 or more days old
-            if (ref.status === ReferenceStatus.PENDING) {
-                const createdDate = normalizeToMidnight(new Date(ref.createdAt));
-                const isOldEnough = createdDate <= threeDaysAgo; // <= to include exactly 3 days old
-                console.log(`[ANALYTICS] Reference ${ref.id} (${ref.email}): Status=PENDING, CreatedAt=${createdDate.toISOString()}, Threshold=${threeDaysAgo.toISOString()}, IsOldEnough=${isOldEnough}, ReminderCount=${ref.reminderCount || 0}`);
-                return isOldEnough;
-            }
-
-            return false;
-        }).length;
-        
-        console.log(`[ANALYTICS] Total references: ${allReferences.length}, ThreeDaysPassed count: ${threeDaysPassed}`);
 
         return {
             totalReferences,
@@ -1924,16 +1941,32 @@ export class ReferencesService {
             pendingReferences: rawPendingReferences + openedNotSubmitted,
             openedNotSubmitted,
             notOpened,
-            threeDaysPassed,
-            reminderEmailsSent,
+            threeDaysPassed: Number(threeDaysRow?.[0]?.count ?? 0),
+            reminderEmailsSent: Number(reminderRow?.[0]?.total ?? 0),
         };
     }
 
-    async getAllReferencesForAnalytics(): Promise<StaffReference[]> {
-        return this.referencesRepository.find({
+    async getAllReferencesForAnalytics(page = 1, limit = 100): Promise<{
+        data: StaffReference[];
+        meta: { page: number; limit: number; total: number; totalPages: number };
+    }> {
+        const take = Math.min(Math.max(1, limit), 200);
+        const skip = (Math.max(1, page) - 1) * take;
+        const [data, total] = await this.referencesRepository.findAndCount({
             relations: ['staff', 'staff.user'],
             order: { createdAt: 'DESC' },
+            skip,
+            take,
         });
+        return {
+            data,
+            meta: {
+                page: Math.max(1, page),
+                limit: take,
+                total,
+                totalPages: Math.max(1, Math.ceil(total / take)),
+            },
+        };
     }
 
     async processAutomatedReminders(requestBaseUrl?: string): Promise<{

@@ -7,6 +7,10 @@ export const theme: MantineThemeOverride = createTheme({
             '#e6f5eb', '#c2e8d1', '#9ddbb6', '#79ce9b', '#54c180',
             '#139639', '#118233', '#0e7a2d', '#0b6224', '#084a1b'
         ],
+        brandGreen: [
+            '#e6f5eb', '#c2e8d1', '#9ddbb6', '#79ce9b', '#54c180',
+            '#139639', '#118233', '#0e7a2d', '#0b6224', '#084a1b'
+        ],
         brandPink: [
             '#e3f0f8', '#b8d4ea', '#8db8dc', '#629cce', '#3780c0',
             '#267FBA', '#2172a7', '#1d6a9e', '#185388', '#133d72'

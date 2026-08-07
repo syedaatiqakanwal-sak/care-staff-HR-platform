@@ -12,7 +12,7 @@ import { notifications } from '@mantine/notifications';
 interface PersonalInformationTabProps {
     profile: any;
     onProfileChange?: (field: string, value: any) => void;
-    onSave?: () => Promise<boolean | void>;
+    onSave?: (draftProfile?: any) => Promise<boolean | void>;
 }
 
 export const PersonalInformationTab = ({ profile, onProfileChange, onSave }: PersonalInformationTabProps) => {
@@ -20,11 +20,23 @@ export const PersonalInformationTab = ({ profile, onProfileChange, onSave }: Per
     const [subTab, setSubTab] = useState<string | null>('details');
     const [isEditing, setIsEditing] = useState(false);
     const [saving, setSaving] = useState(false);
+    // Local draft so keystrokes don't re-render the entire StaffProfilePage
+    const [draft, setDraft] = useState(profile);
+
+    useEffect(() => {
+        if (!isEditing) {
+            setDraft(profile);
+        }
+    }, [profile, isEditing]);
+
+    const handleDraftChange = (field: string, value: any) => {
+        setDraft((prev: any) => ({ ...prev, [field]: value }));
+    };
 
     const handleSave = async () => {
         if (onSave) {
             setSaving(true);
-            const saved = await onSave();
+            const saved = await onSave(draft);
             setSaving(false);
             if (saved === false) return;
         }
@@ -33,6 +45,7 @@ export const PersonalInformationTab = ({ profile, onProfileChange, onSave }: Per
 
     const handleCancel = (e: React.MouseEvent) => {
         e.preventDefault();
+        setDraft(profile);
         setIsEditing(false);
         notifications.show({
             title: 'Edit Cancelled',
@@ -100,6 +113,7 @@ export const PersonalInformationTab = ({ profile, onProfileChange, onSave }: Per
                 variant="pills"
                 radius="xl"
                 defaultValue="details"
+                keepMounted={false}
                 styles={{
                     tab: {
                         transition: 'all 0.2s ease',
@@ -156,7 +170,11 @@ export const PersonalInformationTab = ({ profile, onProfileChange, onSave }: Per
                 </Tabs.List>
 
                 <Tabs.Panel value="details">
-                    <PersonalDetailsTab profile={profile} isEditing={isEditing} onProfileChange={onProfileChange} />
+                    <PersonalDetailsTab
+                        profile={isEditing ? draft : profile}
+                        isEditing={isEditing}
+                        onProfileChange={isEditing ? handleDraftChange : onProfileChange}
+                    />
                 </Tabs.Panel>
 
                 <Tabs.Panel value="identity">
@@ -168,9 +186,9 @@ export const PersonalInformationTab = ({ profile, onProfileChange, onSave }: Per
 
                 <Tabs.Panel value="identity-documents">
                     <IdentityDocumentsTab
-                        profile={profile}
+                        profile={isEditing ? draft : profile}
                         isEditing={isEditing}
-                        onProfileChange={onProfileChange}
+                        onProfileChange={isEditing ? handleDraftChange : onProfileChange}
                     />
                 </Tabs.Panel>
 

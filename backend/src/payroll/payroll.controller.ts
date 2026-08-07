@@ -32,6 +32,48 @@ function ensureDocumentsDir() {
   return dir;
 }
 
+const PAYROLL_DOC_MIME_ALLOWLIST = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+]);
+
+const PAYROLL_DOC_EXT_ALLOWLIST = new Set([
+  '.pdf',
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+]);
+
+function payrollDocumentFileFilter(
+  _req: unknown,
+  file: { originalname: string; mimetype: string },
+  cb: (error: Error | null, acceptFile: boolean) => void,
+) {
+  const ext = path.extname(file.originalname || '').toLowerCase();
+  const mimeOk = PAYROLL_DOC_MIME_ALLOWLIST.has((file.mimetype || '').toLowerCase());
+  const extOk = PAYROLL_DOC_EXT_ALLOWLIST.has(ext);
+  if (mimeOk || extOk) {
+    cb(null, true);
+    return;
+  }
+  cb(
+    new BadRequestException(
+      'Only PDF, JPG, PNG, DOC, DOCX, XLS, and XLSX files are allowed',
+    ),
+    false,
+  );
+}
+
 @Controller('staff')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 export class PayrollController {
@@ -71,17 +113,30 @@ export class PayrollController {
           cb(null, `${Date.now()}_${file.originalname.replace(/\s+/g, '_')}`),
       }),
       limits: { fileSize: 10 * 1024 * 1024 },
+      fileFilter: payrollDocumentFileFilter,
     }),
   )
   uploadPayrollDocument(
     @Param('id') userId: string,
     @Request() req: ExpressRequest & { user: { userId: string; role: string } },
     @Body() dto: CreateStaffDocumentDto,
-    @UploadedFile() file: { filename: string; originalname: string; size: number; mimetype?: string },
+    @UploadedFile() file: {
+      filename: string;
+      originalname: string;
+      size: number;
+      mimetype?: string;
+      path?: string;
+    },
   ) {
     if (!isPayrollDocumentType(dto.documentType)) {
       throw new BadRequestException('documentType must be HMRC, P45, or P60');
     }
-    return this.payrollService.uploadPayrollDocument(req.user, userId, dto, file, clientIpFromRequest(req));
+    return this.payrollService.uploadPayrollDocument(
+      req.user,
+      userId,
+      dto,
+      file,
+      clientIpFromRequest(req),
+    );
   }
 }

@@ -19,6 +19,8 @@ import { StaffDocument } from '../documents/staff-document.entity';
 import { User, UserRole } from '../users/user.entity';
 import { Notification } from '../notifications/notification.entity';
 import { NotificationsService } from '../notifications/notifications.service';
+import { pdfSemaphore, puppeteerLaunchOptions } from '../common/puppeteer-pool';
+import { parsePagination, paginatedResult, PaginationQuery } from '../common/pagination';
 
 /** Escape HTML special characters to prevent XSS in generated PDF templates */
 function escapeHtml(unsafe: string | null | undefined): string {
@@ -226,10 +228,22 @@ export class StaffService {
         return this.staffRepository.save(profile);
     }
 
-    async findAll(): Promise<StaffProfile[]> {
+    async findAll(query: PaginationQuery = {}) {
+        const { page, limit, skip } = parsePagination(query, { limit: 50 });
+        const [data, total] = await this.staffRepository.findAndCount({
+            relations: ['user'],
+            order: { firstName: 'ASC' },
+            skip,
+            take: limit,
+        });
+        return paginatedResult(data, total, page, limit);
+    }
+
+    /** Unpaginated list for internal callers that need full staff set (prefer aggregates). */
+    async findAllUnpaginated(): Promise<StaffProfile[]> {
         return this.staffRepository.find({
             relations: ['user'],
-            order: { firstName: 'ASC' }
+            order: { firstName: 'ASC' },
         });
     }
 
@@ -344,14 +358,22 @@ export class StaffService {
             return { hasGap: false, gapSummary: null };
         }
 
-        const sorted = [...addresses].sort(
-            (a, b) => new Date(a.dateFrom).getTime() - new Date(b.dateFrom).getTime(),
-        );
+        const sorted = [...addresses]
+            .filter((a) => a.dateFrom)
+            .sort(
+                (a, b) => new Date(a.dateFrom).getTime() - new Date(b.dateFrom).getTime(),
+            );
+
+        if (sorted.length < 2) {
+            return { hasGap: false, gapSummary: null };
+        }
 
         const missingYears: number[] = [];
         for (let i = 0; i < sorted.length - 1; i++) {
+            if (!sorted[i].dateTo || !sorted[i + 1].dateFrom) continue;
             const endYear = new Date(sorted[i].dateTo).getFullYear();
             const startYear = new Date(sorted[i + 1].dateFrom).getFullYear();
+            if (!Number.isFinite(endYear) || !Number.isFinite(startYear)) continue;
             if (startYear > endYear + 1) {
                 for (let year = endYear + 1; year < startYear; year++) {
                     missingYears.push(year);
@@ -376,6 +398,7 @@ export class StaffService {
         profile: StaffProfile,
         hasGap: boolean,
         gapSummary: string | null,
+        userId: string,
     ): Promise<void> {
         if (!hasGap || !gapSummary) {
             if (!hasGap && profile.addressGapNotifiedAt) {
@@ -404,10 +427,6 @@ export class StaffService {
 
         const staffName = `${profile.firstName || ''} ${profile.lastName || ''}`.replace(/\s+/g, ' ').trim();
         const lcacs = profile.lcaNumber || profile.ilccsNumber || 'N/A';
-        const staffUserId =
-            (profile as any).user?.id ||
-            (profile as any).userId ||
-            null;
         const title = 'Address history gap detected';
         const message = `Gap detected in address history for ${staffName} (Staff Number: ${lcacs}). ${gapSummary}.`;
 
@@ -416,7 +435,7 @@ export class StaffService {
                 kind: 'address_history_gap',
                 dedupeKey,
                 staffProfileId: profile.id,
-                userId: staffUserId,
+                userId,
                 staffName,
                 lcacsNumber: lcacs,
                 gapSummary,
@@ -426,7 +445,7 @@ export class StaffService {
         await this.staffRepository.update(profile.id, { addressGapNotifiedAt: new Date() });
     }
 
-    private async enrichAddressesResponse(profile: StaffProfile, addresses: AddressHistory[]) {
+    private async enrichAddressesResponse(profile: StaffProfile, addresses: AddressHistory[], userId: string) {
         const proofIds = addresses
             .map((addr) => addr.proofDocumentId)
             .filter((id): id is string => Boolean(id));
@@ -443,7 +462,13 @@ export class StaffService {
         }
 
         const { hasGap, gapSummary } = this.detectAddressGaps(addresses);
-        await this.maybeNotifyAddressGap(profile, hasGap, gapSummary);
+        try {
+            await this.maybeNotifyAddressGap(profile, hasGap, gapSummary, userId);
+        } catch (notifyErr) {
+            this.logger.warn(
+                `Address gap notify failed: ${notifyErr instanceof Error ? notifyErr.message : notifyErr}`,
+            );
+        }
 
         return {
             addresses: addresses.map((addr) => ({
@@ -458,10 +483,7 @@ export class StaffService {
     }
 
     async getAddresses(userId: string) {
-        const profile = await this.staffRepository.findOne({
-            where: { user: { id: userId } },
-            relations: ['user'],
-        });
+        const profile = await this.staffRepository.findOne({ where: { user: { id: userId } } });
         if (!profile) {
             return { addresses: [], hasGap: false, gapSummary: null };
         }
@@ -471,32 +493,65 @@ export class StaffService {
             order: { dateFrom: 'DESC' },
         });
 
-        return this.enrichAddressesResponse(profile, addresses);
+        return this.enrichAddressesResponse(profile, addresses, userId);
     }
 
     async addAddress(userId: string, data: CreateAddressDto) {
-        const profile = await this.staffRepository.findOne({
-            where: { user: { id: userId } },
-            relations: ['user'],
-        });
+        const profile = await this.staffRepository.findOne({ where: { user: { id: userId } } });
         if (!profile) throw new NotFoundException('Staff Profile not found');
 
-        const line1 =
-            data.line1 != null && String(data.line1).trim() !== '' ? String(data.line1).trim() : null;
+        const trimOrNull = (v?: string | null) =>
+            v != null && String(v).trim() !== '' ? String(v).trim() : null;
+
+        // International addresses may omit postcode; never insert SQL NULL into NOT NULL cols
+        // before migration, and prefer null after nullable migration.
+        const line1 = trimOrNull(data.line1);
+        const line2 = trimOrNull(data.line2);
+        const town = trimOrNull(data.town);
+        const postcode = trimOrNull(data.postcode);
+        const dateFrom = trimOrNull(data.dateFrom);
+        const dateTo = trimOrNull(data.dateTo);
+
+        if (!dateFrom || !dateTo) {
+            throw new BadRequestException('dateFrom and dateTo are required');
+        }
+        if (!town && !line1) {
+            throw new BadRequestException('At least address line 1 or town is required');
+        }
 
         const address = this.addressRepository.create({
-            ...data,
             line1,
+            line2: line2 ?? '',
+            town: town ?? '',
+            postcode,
+            dateFrom,
+            dateTo,
             staffProfile: profile,
-            staffId: profile.id
+            staffId: profile.id,
         });
-        const saved = await this.addressRepository.save(address);
-        const allAddresses = await this.addressRepository.find({
-            where: { staffProfile: { id: profile.id } },
-            order: { dateFrom: 'DESC' },
-        });
-        await this.enrichAddressesResponse(profile, allAddresses);
-        return saved;
+        try {
+            const saved = await this.addressRepository.save(address);
+            const allAddresses = await this.addressRepository.find({
+                where: { staffProfile: { id: profile.id } },
+                order: { dateFrom: 'DESC' },
+            });
+            try {
+                await this.enrichAddressesResponse(profile, allAddresses, userId);
+            } catch (enrichErr) {
+                // Gap notification must not fail the save
+                this.logger.warn(
+                    `Address gap enrich failed after save: ${enrichErr instanceof Error ? enrichErr.message : enrichErr}`,
+                );
+            }
+            return saved;
+        } catch (err: any) {
+            if (err?.code === '23502' || err?.driverError?.code === '23502') {
+                throw new BadRequestException(
+                    'Address could not be saved: a required field is missing (check town/postcode/dates). For international addresses, postcode may be left blank.',
+                );
+            }
+            throw err;
+        }
     }
 
     async linkAddressProof(userId: string, addressId: string, proofDocumentId: string) {
@@ -949,26 +1004,8 @@ export class StaffService {
             </html>
         `;
 
-        // Generate PDF using Puppeteer
-        const browser = await puppeteer.launch({
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox'],
-        });
-        const page = await browser.newPage();
-        await page.setContent(html, { waitUntil: 'networkidle0' });
-        const pdfBuffer = await page.pdf({
-            format: 'A4',
-            printBackground: true,
-            margin: {
-                top: '15mm',
-                right: '15mm',
-                bottom: '15mm',
-                left: '15mm',
-            },
-        });
-        await browser.close();
-
-        return Buffer.from(pdfBuffer);
+        // Generate PDF using Puppeteer (concurrency-capped)
+        return this.renderHtmlToPdf(html);
     }
 
     async generateYearlyReport(staffId: string, year: number): Promise<Buffer> {
@@ -1253,26 +1290,8 @@ export class StaffService {
             </html>
         `;
 
-        // Generate PDF using Puppeteer
-        const browser = await puppeteer.launch({
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox'],
-        });
-        const page = await browser.newPage();
-        await page.setContent(html, { waitUntil: 'networkidle0' });
-        const pdfBuffer = await page.pdf({
-            format: 'A4',
-            printBackground: true,
-            margin: {
-                top: '15mm',
-                right: '15mm',
-                bottom: '15mm',
-                left: '15mm',
-            },
-        });
-        await browser.close();
-
-        return Buffer.from(pdfBuffer);
+        // Generate PDF using Puppeteer (concurrency-capped)
+        return this.renderHtmlToPdf(html);
     }
 
     async generateEnrollmentCompletionReport(staffId: string): Promise<Buffer> {
@@ -1484,25 +1503,30 @@ export class StaffService {
             </html>
         `;
 
-        // Generate PDF using Puppeteer
-        const browser = await puppeteer.launch({
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox'],
-        });
-        const page = await browser.newPage();
-        await page.setContent(html, { waitUntil: 'networkidle0' });
-        const pdfBuffer = await page.pdf({
-            format: 'A4',
-            printBackground: true,
-            margin: {
-                top: '15mm',
-                right: '15mm',
-                bottom: '15mm',
-                left: '15mm',
-            },
-        });
-        await browser.close();
+        // Generate PDF using Puppeteer (concurrency-capped)
+        return this.renderHtmlToPdf(html);
+    }
 
-        return Buffer.from(pdfBuffer);
+    private async renderHtmlToPdf(html: string): Promise<Buffer> {
+        return pdfSemaphore.run(async () => {
+            const browser = await puppeteer.launch(puppeteerLaunchOptions());
+            try {
+                const page = await browser.newPage();
+                await page.setContent(html, { waitUntil: 'networkidle0' });
+                const pdfBuffer = await page.pdf({
+                    format: 'A4',
+                    printBackground: true,
+                    margin: {
+                        top: '15mm',
+                        right: '15mm',
+                        bottom: '15mm',
+                        left: '15mm',
+                    },
+                });
+                return Buffer.from(pdfBuffer);
+            } finally {
+                await browser.close();
+            }
+        });
     }
 }

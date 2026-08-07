@@ -16,6 +16,7 @@ import { SettingsPage } from './components/SettingsPage'
 import { ApiTokensPage } from './components/ApiTokensPage'
 import { ForgotPasswordPage } from './components/ForgotPasswordPage'
 import { PageWrapper } from './components/PageWrapper'
+import { PageBackButton } from './components/PageBackButton'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { AdminRoute, StrictAdminRoute, AuditViewRoute } from './components/RoleRoute'
 import { PoliciesPage } from './components/PoliciesPage'
@@ -29,6 +30,7 @@ import { ReferenceAnalyticsPage } from './components/ReferenceAnalyticsPage'
 import { HrAnalyticsPage } from './components/HrAnalyticsPage'
 import DbsAnalyticsPage from './components/DbsAnalyticsPage'
 import RtwAnalyticsPage from './components/RtwAnalyticsPage'
+import { BackupPage } from './components/BackupPage'
 import { useState, useEffect } from 'react'
 import { Linkedin } from 'lucide-react'
 import { Notifications } from '@mantine/notifications'
@@ -143,6 +145,11 @@ const GlobalStyles = () => (
 
       .mantine-Button-root[data-variant="filled"] {
         background: #139639 !important;
+        color: #fff !important;
+      }
+
+      .mantine-Button-root[data-variant="filled"] .mantine-Button-label,
+      .mantine-Button-root[data-variant="filled"] .mantine-Button-section {
         color: #fff !important;
       }
 
@@ -276,6 +283,7 @@ function AppLayoutInner({ children, searchQuery, onSearch }: { children: React.R
 
       <AppShell.Main>
         <PageWrapper>
+          <PageBackButton />
           {children}
         </PageWrapper>
       </AppShell.Main>
@@ -538,6 +546,14 @@ function App() {
               <StrictAdminRoute>
                 <AppLayout>
                   <ApiTokensPage />
+                </AppLayout>
+              </StrictAdminRoute>
+            } />
+
+            <Route path="/dashboard/backup" element={
+              <StrictAdminRoute>
+                <AppLayout>
+                  <BackupPage />
                 </AppLayout>
               </StrictAdminRoute>
             } />

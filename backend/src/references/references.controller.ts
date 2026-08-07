@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req, ForbiddenException, HttpException, HttpStatus, Ip, Res, UnauthorizedException, UseInterceptors, UploadedFile, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req, ForbiddenException, HttpException, HttpStatus, Ip, Res, UnauthorizedException, UseInterceptors, UploadedFile, NotFoundException, Query } from '@nestjs/common';
 import { ReferencesService } from './references.service';
 import { AuthGuard } from '@nestjs/passport';
 import { Roles } from '../auth/roles.decorator';
@@ -9,7 +9,7 @@ import { Public } from '../auth/public.decorator';
 import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { extname, resolve as resolvePath } from 'path';
+import { extname } from 'path';
 import * as fs from 'fs';
 
 @Controller('references')
@@ -86,10 +86,16 @@ export class ReferencesController {
 
     @Get('analytics/all')
     @Roles(...MANAGEMENT_ROLES)
-    async getAllReferencesForAnalytics() {
+    async getAllReferencesForAnalytics(
+        @Query('page') page?: string,
+        @Query('limit') limit?: string,
+    ) {
         try {
-            const references = await this.referencesService.getAllReferencesForAnalytics();
-            return { success: true, references };
+            const result = await this.referencesService.getAllReferencesForAnalytics(
+                page ? parseInt(page, 10) : 1,
+                limit ? parseInt(limit, 10) : 100,
+            );
+            return { success: true, references: result.data, meta: result.meta };
         } catch (error: any) {
             throw new HttpException(
                 {
@@ -478,12 +484,14 @@ export class StaffReferencesController {
             throw new NotFoundException('No uploaded file found for this reference');
         }
 
-        const absolutePath = resolvePath(process.cwd(), reference.uploadedFilePath);
-        if (!fs.existsSync(absolutePath)) {
-            throw new NotFoundException('File not found on server');
+        const served = await this.referencesService.resolveUploadedFileServe(
+            reference.uploadedFilePath,
+        );
+        if (served.kind === 'r2') {
+            return res.redirect(302, served.url);
         }
 
-        return res.sendFile(absolutePath);
+        return res.sendFile(served.absPath);
     }
 
     @Get('received')

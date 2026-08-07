@@ -33,7 +33,33 @@ export class NotificationsService {
             .execute();
     }
 
+    /**
+     * Backfill metadata.userId on staff-profile notifications that only have staffProfileId.
+     * Needed so the HR frontend can navigate to /dashboard/staff/:userId.
+     */
+    async backfillStaffUserIdsInMetadata(): Promise<void> {
+        try {
+            await this.repo.query(`
+                UPDATE notifications n
+                SET metadata = jsonb_set(
+                    COALESCE(n.metadata, '{}'::jsonb),
+                    '{userId}',
+                    to_jsonb(sp."userId"::text),
+                    true
+                )
+                FROM staff_profiles sp
+                WHERE n.metadata->>'staffProfileId' IS NOT NULL
+                  AND (n.metadata->>'userId' IS NULL OR n.metadata->>'userId' = '')
+                  AND sp.id::text = n.metadata->>'staffProfileId'
+                  AND n.metadata->>'kind' IN ('dbs_declaration_due', 'address_history_gap')
+            `);
+        } catch {
+            // Non-fatal: older DBs / dialects may not support this; new notifications include userId.
+        }
+    }
+
     async findAllForUser(userId: string) {
+        await this.backfillStaffUserIdsInMetadata();
         return this.repo.find({
             where: { user: { id: userId } },
             order: { createdAt: 'DESC' },

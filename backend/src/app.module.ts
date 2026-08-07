@@ -26,6 +26,8 @@ import { AuditModule } from './audit/audit.module';
 import { HrNotesModule } from './hr-notes/hr-notes.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { PayrollModule } from './payroll/payroll.module';
+import { BackupModule } from './backup/backup.module';
+import { CommonModule } from './common/common.module';
 import { DevAwareThrottlerGuard } from './auth/dev-aware-throttler.guard';
 import { ReadOnlyGuard } from './auth/readonly.guard';
 import { JwtOrApiTokenGuard } from './staff/jwt-or-api-token.guard';
@@ -36,10 +38,15 @@ import { JwtOrApiTokenGuard } from './staff/jwt-or-api-token.guard';
       isGlobal: true,
       envFilePath: [join(__dirname, '../.env'), '.env'],
     }),
-    ThrottlerModule.forRoot([{
-      ttl: 60000,
-      limit: 100,
-    }]),
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const ttl = parseInt(config.get<string>('THROTTLE_TTL_MS') || '60000', 10);
+        const limit = parseInt(config.get<string>('THROTTLE_LIMIT') || '100', 10);
+        return [{ ttl, limit }];
+      },
+    }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
@@ -54,6 +61,7 @@ import { JwtOrApiTokenGuard } from './staff/jwt-or-api-token.guard';
       }),
       inject: [ConfigService],
     }),
+    CommonModule,
     UsersModule,
     AuthModule,
     StaffModule,
@@ -74,6 +82,7 @@ import { JwtOrApiTokenGuard } from './staff/jwt-or-api-token.guard';
     HrNotesModule,
     AttendanceModule,
     PayrollModule,
+    BackupModule,
   ],
   controllers: [AppController],
   providers: [

@@ -168,6 +168,7 @@ export class PayrollService {
       file,
       requestUser,
       ipAddress,
+      { payrollKeyPrefix: true, r2StaffId: targetUserId },
     );
     return doc;
   }

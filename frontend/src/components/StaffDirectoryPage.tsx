@@ -20,6 +20,7 @@ import {
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { ChevronRight, Search, UserPlus, Users } from 'lucide-react';
+import { notifications } from '@mantine/notifications';
 import { AddStaffModal } from './AddStaffModal';
 import { useRole } from '../hooks/useRole';
 
@@ -98,6 +99,14 @@ export const StaffDirectoryPage = ({ searchQuery = '' }: { searchQuery?: string 
         const t = setTimeout(() => setDebouncedSearch(localSearch.trim()), 300);
         return () => clearTimeout(t);
     }, [localSearch]);
+
+    // Sync local search from header query so header search works from any page
+    useEffect(() => {
+        if (searchQuery !== undefined && searchQuery !== localSearch) {
+            setLocalSearch(searchQuery);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- only sync when header query changes
+    }, [searchQuery]);
 
     const fetchStaff = useCallback(async () => {
         setLoading(true);
@@ -263,7 +272,11 @@ export const StaffDirectoryPage = ({ searchQuery = '' }: { searchQuery?: string 
             setDeleteTarget(null);
         } catch (err: unknown) {
             const msg = axios.isAxiosError(err) ? err.response?.data?.message : 'Failed to delete user';
-            window.alert(msg || 'Failed to delete user');
+            notifications.show({
+                title: 'Delete failed',
+                message: String(msg || 'Failed to delete user'),
+                color: 'red',
+            });
         } finally {
             setDeleting(false);
         }

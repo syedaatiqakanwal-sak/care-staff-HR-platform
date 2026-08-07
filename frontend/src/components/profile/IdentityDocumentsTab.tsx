@@ -26,6 +26,7 @@ import { DocumentUploadForm } from '../documents/DocumentUploadForm';
 import { ExpiryBadge } from '../documents/ExpiryBadge';
 import { isManagementRole, canMutate } from '../../utils/roles';
 import type { StaffDocumentDto } from '../../types/documents';
+import { AppConfirmModal } from '../AppConfirmModal';
 
 const NATIONALITY_OPTIONS = ['British', 'Irish', 'Indian', 'Pakistani', 'Somali', 'Other'];
 
@@ -81,6 +82,8 @@ export function IdentityDocumentsTab({
 
   const [rtwDocumentName, setRtwDocumentName] = useState<string | null>(null);
   const [rtwUploading, setRtwUploading] = useState(false);
+  const [deleteDocId, setDeleteDocId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const rtwFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -110,17 +113,21 @@ export function IdentityDocumentsTab({
     }
   };
 
-  const handleDelete = async (docId: string) => {
-    if (!window.confirm('Delete this document?')) return;
+  const handleDelete = async () => {
+    if (!deleteDocId) return;
+    setDeleting(true);
     const token = localStorage.getItem('token');
     try {
-      await axios.delete(`/api/v1/documents/${docId}`, {
+      await axios.delete(`/api/v1/documents/${deleteDocId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       notifications.show({ title: 'Deleted', message: 'Document removed', color: 'blue' });
+      setDeleteDocId(null);
       refetch();
     } catch {
       notifications.show({ title: 'Error', message: 'Delete failed', color: 'red' });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -465,7 +472,7 @@ export function IdentityDocumentsTab({
                         <ActionIcon
                           variant="light"
                           color="red"
-                          onClick={() => handleDelete(doc.id)}
+                          onClick={() => setDeleteDocId(doc.id)}
                         >
                           <Trash size={16} />
                         </ActionIcon>
@@ -478,6 +485,17 @@ export function IdentityDocumentsTab({
           </Table>
         )}
       </Paper>
+
+      <AppConfirmModal
+        opened={!!deleteDocId}
+        title="Delete document"
+        message="Delete this document?"
+        confirmLabel="Delete"
+        confirmColor="red"
+        loading={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteDocId(null)}
+      />
     </Stack>
   );
 }

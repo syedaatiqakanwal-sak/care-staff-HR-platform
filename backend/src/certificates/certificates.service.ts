@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, InternalServerErrorException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, InternalServerErrorException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
 
@@ -11,6 +11,12 @@ import { TrainingRecord, TrainingStatus } from '../training/training-record.enti
 import { v4 as uuidv4 } from 'uuid';
 import { NotificationsService } from '../notifications/notifications.service';
 import { JwtService } from '@nestjs/jwt';
+import { pdfSemaphore, puppeteerLaunchOptions } from '../common/puppeteer-pool';
+import { parsePagination, paginatedResult, PaginationQuery } from '../common/pagination';
+import {
+    isLegacyLocalFilePath,
+    R2FilesService,
+} from '../common/r2-files.service';
 
 @Injectable()
 export class CertificatesService {
@@ -27,6 +33,7 @@ export class CertificatesService {
         private trainingRepository: Repository<TrainingRecord>,
         private notificationsService: NotificationsService, // Injected dependency
         private jwtService: JwtService,
+        private readonly r2: R2FilesService,
     ) { }
 
     // Group certificates by month
@@ -45,18 +52,25 @@ export class CertificatesService {
         return grouped;
     }
 
-    async findAll() {
-        const certs = await this.certificatesRepository.find({ order: { monthNumber: 'ASC', createdAt: 'DESC' }, relations: ['user'] });
+    async findAll(query: PaginationQuery = {}) {
+        const { page, limit, skip } = parsePagination(query, { limit: 50 });
+        const [certs, total] = await this.certificatesRepository.findAndCount({
+            order: { monthNumber: 'ASC', createdAt: 'DESC' },
+            relations: ['user'],
+            skip,
+            take: limit,
+        });
 
-        // Group by month - UPDATED to include Month 0 (Specialist)
         const months = [0, ...Array.from({ length: 12 }, (_, i) => i + 1)];
-
         const grouped = months.map(m => ({
             month: m,
             certificates: certs.filter(c => c.monthNumber === m)
-        }));
+        })).filter(g => g.certificates.length > 0);
 
-        return grouped;
+        return {
+            ...paginatedResult(grouped, total, page, limit),
+            certificates: certs,
+        };
     }
 
     async create(dto: { userId: string, courseName: string, provider: string, monthNumber?: number, subModule?: string }) {
@@ -100,13 +114,9 @@ export class CertificatesService {
         if (!cert) throw new NotFoundException('Certificate record not found');
 
         // 1. Delete the PDF file if it exists
-        if (cert.filePath && fs.existsSync(cert.filePath)) {
-            try {
-                fs.unlinkSync(cert.filePath);
-                this.logger.log(`Deleted certificate file: ${cert.filePath}`);
-            } catch (err) {
-                this.logger.error(`Failed to delete certificate file: ${err.message}`);
-            }
+        if (cert.filePath) {
+            await this.r2.deleteStoredFile(cert.filePath);
+            this.logger.log(`Deleted certificate file: ${cert.filePath}`);
         }
 
         // 2. Reset Certificate Status
@@ -185,7 +195,9 @@ export class CertificatesService {
         if (!cert) throw new NotFoundException('Certificate record not found');
 
         if (cert.status !== CertificateStatus.COMPLETED) {
-            throw new InternalServerErrorException('Certificate must be Completed before force-regenerate');
+            throw new BadRequestException(
+                'Certificate is not completed yet. Please complete the certificate first, then generate it.',
+            );
         }
 
         const staffProfile = await this.staffProfileRepository.findOne({ where: { user: { id: cert.userId } } });
@@ -228,33 +240,48 @@ export class CertificatesService {
         const verificationCode = cert.verificationCode || uuidv4();
         const fileName = `${cert.id}.pdf`;
         const uploadDir = path.join(process.cwd(), 'uploads', 'certificates', cert.userId);
-        const filePath = cert.filePath && cert.filePath.length > 0
-            ? cert.filePath
-            : path.join(uploadDir, fileName);
+        const localPath = path.join(uploadDir, fileName);
 
         if (!fs.existsSync(uploadDir)) {
             fs.mkdirSync(uploadDir, { recursive: true });
         }
 
-        if (cert.filePath && fs.existsSync(cert.filePath)) {
-            fs.unlinkSync(cert.filePath);
+        if (cert.filePath) {
+            await this.r2.deleteStoredFile(cert.filePath);
             this.logger.log('[CERT-DEBUG] Deleted old PDF: ' + cert.filePath);
         }
 
         const displayRegNo = staffProfile?.ilccsNumber || staffProfile?.lcaNumber || regNo;
 
-        await this.generatePdf(cert, filePath, verificationCode, issuedAt, fullName, displayRegNo);
-        this.logger.log('[CERT-DEBUG] Regenerated PDF at ' + filePath);
+        await this.generatePdf(cert, localPath, verificationCode, issuedAt, fullName, displayRegNo);
+        const r2Key = await this.promoteCertificatePdf(localPath, cert.userId, cert.id);
+        this.logger.log('[CERT-DEBUG] Regenerated PDF at ' + r2Key);
 
-        cert.filePath = filePath;
+        cert.filePath = r2Key;
         cert.verificationCode = verificationCode;
         cert.issuedAt = issuedAt;
         await this.certificatesRepository.save(cert);
 
-        return { filePath, regNo: displayRegNo };
+        return { filePath: r2Key, regNo: displayRegNo };
     }
 
     async markComplete(id: string, adminUser: any, subModule?: string) {
+        // Cross-request lock so concurrent markComplete cannot double-generate PDFs
+        await this.certificatesRepository.query(
+            `SELECT pg_advisory_lock(('x' || substr(md5($1::text), 1, 16))::bit(64)::bigint)`,
+            [id],
+        );
+        try {
+            return await this.markCompleteLocked(id, adminUser, subModule);
+        } finally {
+            await this.certificatesRepository.query(
+                `SELECT pg_advisory_unlock(('x' || substr(md5($1::text), 1, 16))::bit(64)::bigint)`,
+                [id],
+            );
+        }
+    }
+
+    private async markCompleteLocked(id: string, adminUser: any, subModule?: string) {
         // Need filePath to check existence
         let cert = await this.certificatesRepository.findOne({
             where: { id },
@@ -287,7 +314,11 @@ export class CertificatesService {
         }
 
         // Idempotency check: If already completed, return it.
-        if (cert.status === CertificateStatus.COMPLETED && cert.filePath && fs.existsSync(cert.filePath)) {
+        if (
+            cert.status === CertificateStatus.COMPLETED &&
+            cert.filePath &&
+            (await this.certificateFileAvailable(cert.filePath))
+        ) {
             // STILL SEND NOTIFICATION (for testing/re-notifying)
             try {
                 await this.notificationsService.createForUser(
@@ -414,17 +445,29 @@ export class CertificatesService {
             const displayRegNo = staffProfile?.ilccsNumber || staffProfile?.lcaNumber || regNo;
             this.logger.debug(`Certificate Generation: Using RegNo="${displayRegNo}" (Source: ${staffProfile?.ilccsNumber ? 'ILCCS' : (staffProfile?.lcaNumber ? 'LCA' : 'Generated')})`);
 
-            await this.generatePdf(cert, filePath, verificationCode, issuedAt, fullName, displayRegNo);
+            await pdfSemaphore.run(() =>
+                this.generatePdf(cert, filePath, verificationCode, issuedAt, fullName, displayRegNo),
+            );
         } catch (pdfErr) {
             this.logger.error(`PDF Generation Error: ${pdfErr.message}`, pdfErr.stack);
             throw new InternalServerErrorException(`Certificate Generation Failed (PDF Engine): ${pdfErr.message}`);
+        }
+
+        let r2Key: string;
+        try {
+            r2Key = await this.promoteCertificatePdf(filePath, cert.userId, cert.id);
+        } catch (r2Err: any) {
+            this.logger.error(`Certificate R2 upload failed: ${r2Err?.message ?? r2Err}`);
+            throw new InternalServerErrorException(
+                `Certificate Generation Failed (R2 upload): ${r2Err?.message ?? r2Err}`,
+            );
         }
 
         // --- STEP 3: Finalize Record ---
         cert.status = CertificateStatus.COMPLETED;
         cert.issuedAt = issuedAt;
         cert.verificationCode = verificationCode;
-        cert.filePath = filePath;
+        cert.filePath = r2Key;
 
         const savedCert = await this.certificatesRepository.save(cert);
 
@@ -516,15 +559,14 @@ export class CertificatesService {
             const puppeteerMod = await import('puppeteer');
             const puppeteer = puppeteerMod.default || puppeteerMod;
 
-            browser = await puppeteer.launch({
-                headless: true,
+            browser = await puppeteer.launch(puppeteerLaunchOptions({
                 args: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
                     '--disable-dev-shm-usage',
                     '--disable-gpu'
                 ]
-            });
+            }));
             const page = await browser.newPage();
 
             // Set timeout for all page operations
@@ -603,6 +645,54 @@ export class CertificatesService {
                 this.logger.debug('Browser closed');
             }
         }
+    }
+
+    private async promoteCertificatePdf(
+        localPath: string,
+        userId: string,
+        certId: string,
+    ): Promise<string> {
+        const r2Key = `certificates/${userId}/${certId}.pdf`;
+        return this.r2.promoteLocalFileToR2(localPath, r2Key, 'application/pdf');
+    }
+
+    private async certificateFileAvailable(stored: string): Promise<boolean> {
+        const normalized = (stored || '').replace(/\\/g, '/');
+        if (normalized.startsWith('certificates/')) {
+            return this.r2.fileExists(normalized);
+        }
+        if (path.isAbsolute(stored) || isLegacyLocalFilePath(normalized)) {
+            const abs = path.isAbsolute(stored)
+                ? stored
+                : path.join(process.cwd(), stored);
+            return fs.existsSync(abs);
+        }
+        return false;
+    }
+
+    async resolveCertificateServe(
+        filePath: string,
+        options: { inline: boolean; fileName: string },
+    ): Promise<{ kind: 'local'; absPath: string } | { kind: 'r2'; url: string }> {
+        const stored = (filePath || '').replace(/\\/g, '/');
+        if (stored.startsWith('certificates/')) {
+            const disposition = options.inline ? 'inline' : 'attachment';
+            const url = await this.r2.getPresignedUrl(stored, 900, {
+                responseContentType: 'application/pdf',
+                responseContentDisposition: `${disposition}; filename="${options.fileName}"`,
+            });
+            return { kind: 'r2', url };
+        }
+        if (path.isAbsolute(filePath) || isLegacyLocalFilePath(stored)) {
+            const absPath = path.isAbsolute(filePath)
+                ? filePath
+                : path.join(process.cwd(), filePath);
+            if (!fs.existsSync(absPath)) {
+                throw new NotFoundException('Certificate file missing');
+            }
+            return { kind: 'local', absPath };
+        }
+        throw new NotFoundException('Certificate file missing');
     }
 
     // --- SECURE VIEWER METHODS ---

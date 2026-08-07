@@ -23,6 +23,11 @@ import { Roles } from '../auth/roles.decorator';
 import { UserRole } from '../users/user.entity';
 import { InHouseTrainingService } from './inhouse-training.service';
 import { UpdateInHouseTrainingDto } from './dto/update-inhouse-training.dto';
+import {
+    isLegacyInhouseDocumentPath,
+    R2FilesService,
+    sanitizeUploadFilename,
+} from '../common/r2-files.service';
 
 function ensureInHouseDir() {
     const dir = path.join(process.cwd(), 'uploads', 'inhouse-documents');
@@ -44,7 +49,10 @@ const ALLOWED_MIME = [
 @Controller('staff')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 export class InHouseTrainingController {
-    constructor(private readonly service: InHouseTrainingService) {
+    constructor(
+        private readonly service: InHouseTrainingService,
+        private readonly r2: R2FilesService,
+    ) {
         ensureInHouseDir();
     }
 
@@ -95,14 +103,32 @@ export class InHouseTrainingController {
     async upload(
         @Param('id') staffId: string,
         @Param('recordId') recordId: string,
-        @UploadedFile() file: { filename: string; originalname: string },
+        @UploadedFile() file: {
+            filename: string;
+            originalname: string;
+            path?: string;
+            mimetype?: string;
+        },
     ) {
         if (!file) throw new BadRequestException('No file uploaded');
+        const localAbs =
+            file.path || path.join(ensureInHouseDir(), file.filename);
+        const safeName = sanitizeUploadFilename(file.originalname);
+        const r2Key = `inhouse-documents/${staffId}/${Date.now()}_${safeName}`;
+        try {
+            await this.r2.promoteLocalFileToR2(
+                localAbs,
+                r2Key,
+                file.mimetype || 'application/octet-stream',
+            );
+        } catch (err) {
+            throw err;
+        }
         const record = await this.service.setDocument(
             staffId,
             recordId,
             file.originalname,
-            file.filename,
+            r2Key,
         );
         return { success: true, record };
     }
@@ -118,13 +144,29 @@ export class InHouseTrainingController {
         if (!record.documentPath) {
             throw new NotFoundException('No document attached to this record');
         }
-        const absPath = path.join(ensureInHouseDir(), record.documentPath);
-        if (!fs.existsSync(absPath)) {
-            throw new NotFoundException('Document file is missing on the server');
+        const stored = record.documentPath.replace(/\\/g, '/');
+        if (stored.startsWith('inhouse-documents/')) {
+            const url = await this.r2.getPresignedUrl(stored);
+            return res.redirect(302, url);
         }
-        const safeName = (record.documentName || record.documentPath).replace(/[^a-zA-Z0-9._-]/g, '_');
-        res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
-        res.setHeader('Content-Type', 'application/octet-stream');
-        fs.createReadStream(absPath).pipe(res);
+        if (isLegacyInhouseDocumentPath(stored)) {
+            const absPath = stored.includes('/')
+                ? path.isAbsolute(stored)
+                    ? stored
+                    : path.join(process.cwd(), stored)
+                : path.join(ensureInHouseDir(), stored);
+            if (!fs.existsSync(absPath)) {
+                throw new NotFoundException('Document file is missing on the server');
+            }
+            const safeName = (record.documentName || record.documentPath).replace(
+                /[^a-zA-Z0-9._-]/g,
+                '_',
+            );
+            res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+            res.setHeader('Content-Type', 'application/octet-stream');
+            fs.createReadStream(absPath).pipe(res);
+            return;
+        }
+        throw new NotFoundException('Document file is missing on the server');
     }
 }

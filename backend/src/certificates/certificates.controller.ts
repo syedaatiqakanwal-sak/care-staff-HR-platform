@@ -22,9 +22,9 @@ export class CertificatesController {
 
     @Get()
     @UseGuards(AuthGuard('jwt'))
-    async findAll(@Req() req) {
+    async findAll(@Req() req, @Query('page') page?: string, @Query('limit') limit?: string) {
         if (isDashboardRole(req.user.role)) {
-            return this.certificatesService.findAll();
+            return this.certificatesService.findAll({ page, limit });
         }
         return this.certificatesService.findAllForUser(req.user.userId);
     }
@@ -151,33 +151,44 @@ export class CertificatesController {
         }
 
         if (cert.status !== CertificateStatus.COMPLETED) {
-            throw new ForbiddenException('Certificate is not ready for viewing or download');
+            throw new BadRequestException(
+                'Certificate is not completed yet. Please complete the certificate first, then generate it.',
+            );
         }
 
-        // Check file existence
-        try {
-            await fs.promises.access(cert.filePath);
-        } catch (e) {
-            console.warn(`Certificate file missing for ID ${id}. Attempting to regenerate...`);
+        const ensureFile = async () => {
             try {
-                // Auto-recover. Pass undefined for subModule as we don't have it in this context easily,
-                // relying on what is saved in DB if logic allows, or standard regeneration.
-                // NOTE: markComplete now expects user + optional subModule.
-                // For regeneration, we just assume existing metadata is enough or pass null for subModule if not changing it.
+                return await this.certificatesService.resolveCertificateServe(cert.filePath, {
+                    inline: options.inline,
+                    fileName: `${cert.courseName.replace(/\s/g, '_')}_Certificate.pdf`,
+                });
+            } catch {
+                console.warn(`Certificate file missing for ID ${id}. Attempting to regenerate...`);
                 await this.certificatesService.markComplete(id, req.user);
-
-                // Re-fetch
                 const updatedCert = await this.certificatesService.findOne(id, true);
-                if (updatedCert && updatedCert.filePath) {
+                if (updatedCert?.filePath) {
                     cert.filePath = updatedCert.filePath;
                 }
-            } catch (regenError) {
-                console.error('Failed to regenerate certificate:', regenError);
-                throw new InternalServerErrorException('Certificate file missing and generation failed');
+                return this.certificatesService.resolveCertificateServe(cert.filePath, {
+                    inline: options.inline,
+                    fileName: `${cert.courseName.replace(/\s/g, '_')}_Certificate.pdf`,
+                });
             }
+        };
+
+        let served: { kind: 'local'; absPath: string } | { kind: 'r2'; url: string };
+        try {
+            served = await ensureFile();
+        } catch (regenError) {
+            console.error('Failed to regenerate certificate:', regenError);
+            throw new InternalServerErrorException('Certificate file missing and generation failed');
         }
 
-        const file = createReadStream(cert.filePath);
+        if (served.kind === 'r2') {
+            return res.redirect(302, served.url);
+        }
+
+        const file = createReadStream(served.absPath);
         const disposition = options.inline ? 'inline' : 'attachment';
 
         const headers: any = {

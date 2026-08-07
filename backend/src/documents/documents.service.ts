@@ -27,17 +27,13 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { Reminder } from '../reminders/reminder.entity';
 import { StaffProfile } from '../staff/staff-profile.entity';
 import { User, UserRole } from '../users/user.entity';
+import {
+  isLegacyLocalFilePath,
+  R2FilesService,
+  sanitizeUploadFilename,
+} from '../common/r2-files.service';
 
-const ALLOWED_EXTENSIONS = new Set([
-  '.pdf',
-  '.jpg',
-  '.jpeg',
-  '.png',
-  '.doc',
-  '.docx',
-]);
-
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_FILE_BYTES = 50 * 1024 * 1024;
 
 export type DocumentWithExpiry = StaffDocument & {
   expiryStatus: DocumentExpiryStatus;
@@ -71,6 +67,7 @@ export class DocumentsService {
     private readonly usersRepo: Repository<User>,
     private readonly notificationsService: NotificationsService,
     private readonly audit: AuditService,
+    private readonly r2: R2FilesService,
   ) {
     if (!fs.existsSync(this.uploadsDir)) {
       fs.mkdirSync(this.uploadsDir, { recursive: true });
@@ -97,29 +94,52 @@ export class DocumentsService {
     staffProfileId: string,
     uploadedByUserId: string,
     dto: CreateStaffDocumentDto,
-    file: { filename: string; originalname: string; size: number; mimetype?: string },
+    file: {
+      filename: string;
+      originalname: string;
+      size: number;
+      mimetype?: string;
+      path?: string;
+    },
     requestUser?: { userId: string; role: string },
     ipAddress?: string,
+    options?: { payrollKeyPrefix?: boolean; r2StaffId?: string },
   ): Promise<DocumentWithExpiry> {
     if (!file) {
       throw new BadRequestException('File is required');
     }
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (!ALLOWED_EXTENSIONS.has(ext)) {
-      throw new BadRequestException(
-        `File type not allowed. Allowed: ${[...ALLOWED_EXTENSIONS].join(', ')}`,
-      );
-    }
+    const localAbs =
+      file.path ||
+      path.join(process.cwd(), 'uploads', 'documents', file.filename);
     if (file.size > MAX_FILE_BYTES) {
-      throw new BadRequestException('File must not exceed 10MB');
+      if (file.filename && fs.existsSync(localAbs)) {
+        try {
+          fs.unlinkSync(localAbs);
+        } catch {
+          /* ignore */
+        }
+      }
+      throw new BadRequestException('File must not exceed 50MB');
     }
 
-    const relPath = path.join('uploads', 'documents', file.filename);
+    const safeName = sanitizeUploadFilename(file.originalname);
+    const ts = Date.now();
+    const staffKey = options?.r2StaffId || staffProfileId;
+    const r2Key = options?.payrollKeyPrefix
+      ? `documents/${staffKey}/payroll_${ts}_${safeName}`
+      : `documents/${staffKey}/${ts}_${safeName}`;
+
+    await this.r2.promoteLocalFileToR2(
+      localAbs,
+      r2Key,
+      file.mimetype || 'application/octet-stream',
+    );
+
     const doc = this.documentsRepo.create({
       staffId: staffProfileId,
       documentType: dto.documentType,
       fileName: file.originalname,
-      filePath: relPath,
+      filePath: r2Key,
       issueDate: dto.issueDate || null,
       expiryDate: dto.expiryDate || null,
       notes: dto.notes || null,
@@ -156,14 +176,7 @@ export class DocumentsService {
     ) {
       throw new ForbiddenException('Payroll documents are restricted to Admin and HR');
     }
-    const abs = path.join(process.cwd(), doc.filePath);
-    if (fs.existsSync(abs)) {
-      try {
-        fs.unlinkSync(abs);
-      } catch (e) {
-        this.logger.warn(`Failed to delete file ${abs}: ${e}`);
-      }
-    }
+    await this.r2.deleteStoredFile(doc.filePath);
     await this.documentsRepo.delete({ id: documentId });
     if (requestUser) {
       await this.audit.log({
@@ -180,7 +193,10 @@ export class DocumentsService {
   async getDocumentForDownload(
     documentId: string,
     requestUser: { userId: string; role: string },
-  ): Promise<{ doc: StaffDocument; absPath: string }> {
+  ): Promise<
+    | { doc: StaffDocument; kind: 'local'; absPath: string }
+    | { doc: StaffDocument; kind: 'r2'; url: string }
+  > {
     const doc = await this.documentsRepo.findOne({
       where: { id: documentId },
       relations: ['staff', 'staff.user'],
@@ -209,11 +225,22 @@ export class DocumentsService {
         summary: `Downloaded payroll document ${doc.documentType}: ${doc.fileName}`,
       });
     }
-    const absPath = path.join(process.cwd(), doc.filePath);
-    if (!fs.existsSync(absPath)) {
-      throw new NotFoundException('File not found on disk');
+
+    const stored = (doc.filePath || '').replace(/\\/g, '/');
+    if (stored.startsWith('documents/')) {
+      const url = await this.r2.getPresignedUrl(stored);
+      return { doc, kind: 'r2', url };
     }
-    return { doc, absPath };
+    if (isLegacyLocalFilePath(stored)) {
+      const absPath = path.isAbsolute(doc.filePath)
+        ? doc.filePath
+        : path.join(process.cwd(), doc.filePath);
+      if (!fs.existsSync(absPath)) {
+        throw new NotFoundException('File not found on disk');
+      }
+      return { doc, kind: 'local', absPath };
+    }
+    throw new NotFoundException('File not found');
   }
 
   async findExpiring(withinDays: number): Promise<
@@ -432,7 +459,6 @@ export class DocumentsService {
               dedupeKey,
               dbsRecordId: row.dbsRecordId,
               staffProfileId: row.staffProfileId,
-              userId: row.userId,
               staffName,
               lcacsNumber: lcacs,
               dueDate: row.dueDate,
@@ -640,69 +666,70 @@ export class DocumentsService {
   }
 
   async getDbsAnalytics() {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const in30Days = new Date(today);
-    in30Days.setDate(today.getDate() + 30);
-    const in90Days = new Date(today);
-    in90Days.setDate(today.getDate() + 90);
-
-    const allDbs = await this.dbsRepo.find({
-      relations: ['staff'],
-    });
-
-    const total = allDbs.length;
-    const updateServiceEnrolled = allDbs.filter(
-      (d) => d.updateServiceStatus === true,
-    ).length;
-    const expiringIn30Days = allDbs.filter((d) => {
-      if (!d.renewalDate) return false;
-      const renewal = new Date(d.renewalDate);
-      return renewal >= today && renewal <= in30Days;
-    }).length;
-    const expiringIn90Days = allDbs.filter((d) => {
-      if (!d.renewalDate) return false;
-      const renewal = new Date(d.renewalDate);
-      return renewal >= today && renewal <= in90Days;
-    }).length;
-    const expired = allDbs.filter((d) => {
-      if (!d.renewalDate) return false;
-      return new Date(d.renewalDate) < today;
-    }).length;
-    const noRenewalDate = allDbs.filter((d) => !d.renewalDate).length;
+    const [row] = await this.dbsRepo.query(
+      `
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE "updateServiceStatus" = true)::int AS "updateServiceEnrolled",
+        COUNT(*) FILTER (
+          WHERE "renewalDate" IS NOT NULL
+            AND "renewalDate"::date >= CURRENT_DATE
+            AND "renewalDate"::date <= CURRENT_DATE + 30
+        )::int AS "expiringIn30Days",
+        COUNT(*) FILTER (
+          WHERE "renewalDate" IS NOT NULL
+            AND "renewalDate"::date >= CURRENT_DATE
+            AND "renewalDate"::date <= CURRENT_DATE + 90
+        )::int AS "expiringIn90Days",
+        COUNT(*) FILTER (
+          WHERE "renewalDate" IS NOT NULL
+            AND "renewalDate"::date < CURRENT_DATE
+        )::int AS expired,
+        COUNT(*) FILTER (WHERE "renewalDate" IS NULL)::int AS "noRenewalDate"
+      FROM dbs_records
+      `,
+    );
 
     return {
-      total,
-      updateServiceEnrolled,
-      expiringIn30Days,
-      expiringIn90Days,
-      expired,
-      noRenewalDate,
+      total: Number(row?.total ?? 0),
+      updateServiceEnrolled: Number(row?.updateServiceEnrolled ?? 0),
+      expiringIn30Days: Number(row?.expiringIn30Days ?? 0),
+      expiringIn90Days: Number(row?.expiringIn90Days ?? 0),
+      expired: Number(row?.expired ?? 0),
+      noRenewalDate: Number(row?.noRenewalDate ?? 0),
     };
   }
 
-  async getAllDbsForAnalytics() {
-    const records = await this.dbsRepo
-      .createQueryBuilder('dbs')
-      .leftJoinAndSelect('dbs.staff', 'staff')
-      .leftJoinAndSelect('staff.user', 'user')
-      .orderBy('dbs.renewalDate', 'ASC')
-      .getMany();
+  async getAllDbsForAnalytics(page = 1, limit = 100) {
+    const take = Math.min(Math.max(1, limit), 200);
+    const skip = (Math.max(1, page) - 1) * take;
+    const [records, total] = await this.dbsRepo.findAndCount({
+      relations: ['staff', 'staff.user'],
+      order: { renewalDate: 'ASC' },
+      skip,
+      take,
+    });
 
-    return records.map((d) => ({
-      id: d.id,
-      staffId: d.staffId,
-      staffName: d.staff
-        ? `${d.staff.firstName || ''} ${d.staff.lastName || ''}`.trim()
-        : 'Unknown',
-      dbsNumber: d.dbsNumber,
-      dbsCertificateNumber: d.dbsCertificateNumber,
-      issueDate: d.issueDate,
-      renewalDate: d.renewalDate,
-      lastDeclarationDate: d.lastDeclarationDate,
-      nextDeclarationDate: d.nextDeclarationDate,
-      updateServiceStatus: d.updateServiceStatus,
-      enrolledDate: d.enrolledDate,
-    }));
+    return {
+      data: records.map((d) => ({
+        id: d.id,
+        staffId: d.staffId,
+        staffName: d.staff
+          ? `${d.staff.firstName || ''} ${d.staff.lastName || ''}`.trim()
+          : 'Unknown',
+        dbsNumber: d.dbsNumber,
+        dbsCertificateNumber: d.dbsCertificateNumber,
+        issueDate: d.issueDate,
+        renewalDate: d.renewalDate,
+        lastDeclarationDate: d.lastDeclarationDate,
+        updateServiceStatus: d.updateServiceStatus,
+      })),
+      meta: {
+        page: Math.max(1, page),
+        limit: take,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / take)),
+      },
+    };
   }
 }

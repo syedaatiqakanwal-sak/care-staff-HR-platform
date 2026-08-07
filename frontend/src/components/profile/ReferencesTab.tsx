@@ -5,6 +5,7 @@ import { notifications } from '@mantine/notifications';
 import { useDisclosure } from '@mantine/hooks';
 import axios from 'axios';
 import { useParams } from 'react-router-dom';
+import { AppConfirmModal } from '../AppConfirmModal';
 
 interface ReferencesTabProps {
     isEditing: boolean;
@@ -27,6 +28,8 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
     const [loadingReceived, setLoadingReceived] = useState(false);
     const [selectedReceivedRef, setSelectedReceivedRef] = useState<any | null>(null);
     const [receivedModalOpen, setReceivedModalOpen] = useState(false);
+    const [deleteRefId, setDeleteRefId] = useState<string | null>(null);
+    const [deleting, setDeleting] = useState(false);
 
     // Reference request modals state (for sending reference requests)
     const [typeSelectionModalOpen, setTypeSelectionModalOpen] = useState(false);
@@ -106,17 +109,21 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
         fetchSavedReferences();
     }, [profile, id]);
 
-    const handleDelete = async (refId: string) => {
-        if (!confirm('Are you sure you want to remove this reference?')) return;
+    const handleDelete = async () => {
+        if (!deleteRefId) return;
+        setDeleting(true);
         try {
             const token = localStorage.getItem('token');
-            await axios.delete(`/api/v1/references/${refId}`, {
+            await axios.delete(`/api/v1/references/${deleteRefId}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             notifications.show({ title: 'Deleted', message: 'Reference removed.', color: 'blue' });
+            setDeleteRefId(null);
             fetchSavedReferences();
         } catch (error) {
             notifications.show({ title: 'Error', message: 'Delete failed.', color: 'red' });
+        } finally {
+            setDeleting(false);
         }
     };
 
@@ -556,7 +563,7 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                                                 variant="subtle"
                                                 color="red"
                                                 size="md"
-                                                onClick={() => handleDelete(ref.id)}
+                                                onClick={() => setDeleteRefId(ref.id)}
                                                 style={{ color: 'white' }}
                                             >
                                                 <Trash size={16} />
@@ -1251,6 +1258,16 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                 )}
             </Modal>
 
+            <AppConfirmModal
+                opened={!!deleteRefId}
+                title="Remove reference"
+                message="Are you sure you want to remove this reference?"
+                confirmLabel="Remove"
+                confirmColor="red"
+                loading={deleting}
+                onConfirm={handleDelete}
+                onCancel={() => setDeleteRefId(null)}
+            />
         </Stack>
     );
 };
