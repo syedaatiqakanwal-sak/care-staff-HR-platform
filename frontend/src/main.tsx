@@ -109,15 +109,34 @@ const GlobalStyles = () => (
         color: rgba(19, 150, 57, 0.7);
       }
 
+      .mantine-AppShell-root {
+        height: 100dvh !important;
+        max-height: 100dvh !important;
+        overflow: hidden !important;
+      }
+
       .mantine-AppShell-main {
         background-color: #F5F5F5 !important;
-        overflow: visible !important;
+        display: flex !important;
+        flex-direction: column !important;
+        min-height: 0 !important;
       }
 
       .mantine-AppShell-footer {
-        background-color: transparent !important;
-        border-top: none !important;
+        background-color: #ffffff !important;
+        border-top: 2px solid #139639 !important;
         box-shadow: none !important;
+        height: 64px !important;
+        max-height: 64px !important;
+        top: auto !important;
+        bottom: 0 !important;
+      }
+
+      .app-footer .linkedin-chip {
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(38, 127, 186, 0.08);
+        border: 1px solid rgba(38, 127, 186, 0.18);
       }
 
       .app-footer .linkedin-link {
@@ -220,39 +239,80 @@ const GlobalStyles = () => (
 );
 
 function AppLayoutInner({ children, searchQuery, onSearch }: { children: React.ReactNode, searchQuery?: string, onSearch?: (val: string) => void }) {
-  const { collapsed, toggle } = useSidebar();
+  const { collapsed } = useSidebar();
   const [mobileOpened, setMobileOpened] = useState(false);
-  
+  const { pathname } = useLocation();
+  const isDashboardHome = pathname === '/dashboard' || pathname === '/dashboard/';
+  const currentYear = new Date().getFullYear();
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
   return (
     <>
       <AppShell
         header={{ height: 80 }}
-        footer={{ height: 56 }}
+        footer={{ height: 64 }}
         navbar={{
           width: { base: 0, sm: collapsed ? 72 : 272 },
           breakpoint: 'sm',
           collapsed: { mobile: true },
         }}
         padding="md"
+        style={{
+          height: '100dvh',
+          maxHeight: '100dvh',
+          overflow: 'hidden',
+        }}
         styles={{
+          root: {
+            height: '100dvh',
+            maxHeight: '100dvh',
+            overflow: 'hidden',
+          },
           header: {
             background: 'rgba(19, 150, 57, 0.2)',
             borderBottom: '1px solid rgba(19, 150, 57, 0.35)',
             boxShadow: '0 4px 15px rgba(19, 150, 57, 0.2)',
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 100,
           },
           navbar: {
             backgroundColor: '#ffffff',
             borderRight: '1px solid #dee2e6',
             overflowX: 'hidden',
             overflowY: 'auto',
+            position: 'fixed',
+            boxShadow: '4px 0 18px rgba(15, 23, 42, 0.06)',
           },
           main: {
             backgroundColor: '#F5F5F5',
+            height: '100%',
+            minHeight: 0,
+            overflow: isDashboardHome ? 'hidden' : 'auto',
+            display: 'flex',
+            flexDirection: 'column',
           },
           footer: {
-            backgroundColor: 'transparent',
-            borderTop: 'none',
+            backgroundColor: '#ffffff',
+            borderTop: '2px solid #139639',
             boxShadow: 'none',
+            height: 64,
+            maxHeight: 64,
+            position: 'fixed',
+            top: 'auto',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 100,
           },
         }}
       >
@@ -292,26 +352,53 @@ function AppLayoutInner({ children, searchQuery, onSearch }: { children: React.R
         className="app-footer"
         p={0}
         style={{
-          backgroundColor: 'transparent',
-          borderTop: 'none',
+          backgroundColor: '#ffffff',
+          borderTop: '2px solid #139639',
           boxShadow: 'none',
+          height: 64,
+          maxHeight: 64,
+          top: 'auto',
+          bottom: 0,
         }}
       >
         <Group
           justify="space-between"
           align="center"
-          h={56}
+          h={64}
           px={24}
-          py={12}
-          wrap="wrap"
+          wrap="nowrap"
           gap="sm"
-          style={{ maxWidth: '100%' }}
+          style={{ maxWidth: '100%', height: 64, maxHeight: 64 }}
         >
-          <Text size="sm" fw={400} style={{ color: '#6B7280' }}>
-            © {new Date().getFullYear()} Lets Care All Ltd. All rights reserved.
-          </Text>
-          <Group gap="xs" wrap="nowrap">
-            <Text size="sm" fw={400} style={{ color: '#6B7280' }}>
+          <Group gap={12} wrap="nowrap" align="center">
+            <Box
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 8,
+                background: 'linear-gradient(145deg, #139639 0%, #0e7a2d 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                boxShadow: '0 2px 8px rgba(19, 150, 57, 0.25)',
+              }}
+            >
+              <Text fw={800} size="sm" c="white" style={{ letterSpacing: '0.02em', lineHeight: 1 }}>
+                LC
+              </Text>
+            </Box>
+            <Box style={{ lineHeight: 1.2 }}>
+              <Text size="sm" fw={700} style={{ color: '#1f2937' }}>
+                Lets Care All Ltd
+              </Text>
+              <Text size="xs" style={{ color: '#9CA3AF' }}>
+                © {currentYear} All rights reserved
+              </Text>
+            </Box>
+          </Group>
+          <Group gap="xs" wrap="nowrap" className="linkedin-chip">
+            <Text size="sm" fw={500} style={{ color: '#6B7280' }}>
               Developer
             </Text>
             <a
@@ -321,7 +408,7 @@ function AppLayoutInner({ children, searchQuery, onSearch }: { children: React.R
               rel="noopener noreferrer"
               aria-label="Developer LinkedIn profile"
             >
-              <Linkedin size={20} strokeWidth={2} color="#0A66C2" />
+              <Linkedin size={18} strokeWidth={2} color="#0A66C2" />
             </a>
           </Group>
         </Group>

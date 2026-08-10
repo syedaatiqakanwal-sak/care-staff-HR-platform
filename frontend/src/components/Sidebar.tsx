@@ -9,7 +9,6 @@ import {
     Badge,
     ActionIcon,
     Tooltip,
-    Divider,
 } from '@mantine/core';
 import {
     Users,
@@ -25,16 +24,22 @@ import {
     BarChart3,
     Shield,
     Globe,
-    ChevronLeft,
-    ChevronRight,
     Database,
+    PanelLeftClose,
+    PanelLeftOpen,
     type LucideIcon,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 import { Check } from 'lucide-react';
 import { logout } from '../utils/auth';
-import { canViewAuditLog, hasDashboardAccess, isStaffPortalRole, isStrictAdmin } from '../utils/roles';
+import {
+    canViewAuditLog,
+    hasDashboardAccess,
+    isStaffPortalRole,
+    isStrictAdmin,
+    roleLabel,
+} from '../utils/roles';
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useSidebar } from '../contexts/SidebarContext';
@@ -43,10 +48,7 @@ const ICON_SIZE = 20;
 const BRAND_GREEN = '#139639';
 const INACTIVE_TEXT = '#4B5563';
 const SECTION_LABEL_COLOR = '#9CA3AF';
-const SIDEBAR_WIDTH_EXPANDED = 272;
-const SIDEBAR_WIDTH_COLLAPSED = 72;
-const TOGGLE_SIZE = 26;
-const TOGGLE_EDGE_INSET = 8;
+const ACTIVE_GRADIENT = 'linear-gradient(90deg, #0e7a2d 0%, #139639 50%, #ffffff 100%)';
 
 type NavItem = {
     link: string;
@@ -161,6 +163,8 @@ export function Sidebar({ onLinkClick, hideHeader = false }: { onLinkClick?: () 
     const token = localStorage.getItem('token');
     const dashboardUser = hasDashboardAccess();
     const strictAdmin = isStrictAdmin();
+    const portalTitle = isStaffPortalRole() ? 'Staff Portal' : 'Admin Portal';
+    const portalSubtitle = roleLabel();
 
     const [unreadPolicyCount, setUnreadPolicyCount] = useState(0);
 
@@ -221,15 +225,16 @@ export function Sidebar({ onLinkClick, hideHeader = false }: { onLinkClick?: () 
                         position: 'relative',
                         padding: collapsed ? `${rem(10)} ${rem(8)}` : `${rem(10)} ${rem(12)}`,
                         borderRadius: rem(12),
-                        transition: 'background-color 0.2s ease, color 0.2s ease',
+                        transition: 'background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease',
                         color: isActive ? '#ffffff' : INACTIVE_TEXT,
-                        backgroundColor: isActive ? BRAND_GREEN : 'transparent',
+                        background: isActive ? ACTIVE_GRADIENT : 'transparent',
                         fontWeight: isActive ? 700 : 600,
-                        boxShadow: isActive ? '0 4px 12px rgba(19, 150, 57, 0.22)' : 'none',
+                        boxShadow: isActive ? '0 4px 12px rgba(19, 150, 57, 0.18)' : 'none',
+                        textShadow: isActive ? '0 1px 2px rgba(0, 0, 0, 0.25)' : 'none',
                     }}
                     onMouseEnter={(e) => {
                         if (!isActive) {
-                            e.currentTarget.style.backgroundColor = 'rgba(19, 150, 57, 0.1)';
+                            e.currentTarget.style.backgroundColor = '#F3F4F6';
                         }
                     }}
                     onMouseLeave={(e) => {
@@ -243,7 +248,10 @@ export function Sidebar({ onLinkClick, hideHeader = false }: { onLinkClick?: () 
                             size={ICON_SIZE}
                             strokeWidth={2}
                             color={isActive ? '#ffffff' : INACTIVE_TEXT}
-                            style={{ flexShrink: 0 }}
+                            style={{
+                                flexShrink: 0,
+                                filter: isActive ? 'drop-shadow(0 1px 1px rgba(0,0,0,0.2))' : 'none',
+                            }}
                         />
                         {!collapsed && (
                             <Group gap={8} wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
@@ -293,41 +301,59 @@ export function Sidebar({ onLinkClick, hideHeader = false }: { onLinkClick?: () 
                     backgroundColor: '#ffffff',
                     position: 'relative',
                     overflow: 'hidden',
+                    boxShadow: '4px 0 18px rgba(15, 23, 42, 0.06)',
                 }}
             >
                 {!hideHeader && (
-                    <Tooltip
-                        label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                        position="right"
+                    <Group
+                        justify={collapsed ? 'center' : 'space-between'}
+                        align="flex-start"
+                        wrap="nowrap"
+                        mb="md"
+                        gap="xs"
+                        style={{ flexShrink: 0 }}
                     >
-                        <ActionIcon
-                            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                            onClick={toggle}
-                            radius="xl"
-                            style={{
-                                position: 'fixed',
-                                top: '50vh',
-                                left: (collapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED) - TOGGLE_SIZE - TOGGLE_EDGE_INSET,
-                                transform: 'translateY(-50%)',
-                                zIndex: 200,
-                                width: TOGGLE_SIZE,
-                                height: TOGGLE_SIZE,
-                                minWidth: TOGGLE_SIZE,
-                                minHeight: TOGGLE_SIZE,
-                                padding: 0,
-                                backgroundColor: BRAND_GREEN,
-                                border: `1px solid ${BRAND_GREEN}`,
-                                color: '#ffffff',
-                                boxShadow: '0 1px 6px rgba(19, 150, 57, 0.22)',
-                            }}
+                        {!collapsed && (
+                            <Box style={{ minWidth: 0, flex: 1 }}>
+                                <Text fw={800} size="md" style={{ color: BRAND_GREEN, lineHeight: 1.2 }}>
+                                    {portalTitle}
+                                </Text>
+                                <Text size="xs" c="dimmed" fw={600} mt={4}>
+                                    {portalSubtitle}
+                                </Text>
+                            </Box>
+                        )}
+                        <Tooltip
+                            label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                            position="right"
                         >
-                            {collapsed ? (
-                                <ChevronRight size={14} strokeWidth={2.5} />
-                            ) : (
-                                <ChevronLeft size={14} strokeWidth={2.5} />
-                            )}
-                        </ActionIcon>
-                    </Tooltip>
+                            <ActionIcon
+                                aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                                onClick={toggle}
+                                variant="subtle"
+                                color="gray"
+                                radius="md"
+                                style={{
+                                    flexShrink: 0,
+                                    color: INACTIVE_TEXT,
+                                }}
+                            >
+                                {collapsed ? (
+                                    <PanelLeftOpen size={18} strokeWidth={2} />
+                                ) : (
+                                    <PanelLeftClose size={18} strokeWidth={2} />
+                                )}
+                            </ActionIcon>
+                        </Tooltip>
+                    </Group>
+                )}
+
+                {collapsed && !hideHeader && (
+                    <Box mb="sm" style={{ textAlign: 'center', flexShrink: 0 }}>
+                        <Text fw={800} size="xs" style={{ color: BRAND_GREEN, letterSpacing: '0.04em' }}>
+                            {isStaffPortalRole() ? 'SP' : 'AP'}
+                        </Text>
+                    </Box>
                 )}
 
                 <Stack
@@ -364,10 +390,8 @@ export function Sidebar({ onLinkClick, hideHeader = false }: { onLinkClick?: () 
                     ))}
                 </Stack>
 
-                <Divider color="#E5E7EB" mt="md" mb="md" style={{ flexShrink: 0 }} />
-
-                <Box style={{ flexShrink: 0 }}>
-                    <Tooltip label="Signout" position="right" disabled={!collapsed}>
+                <Box mt="md" style={{ flexShrink: 0 }}>
+                    <Tooltip label="Sign Out" position="right" disabled={!collapsed}>
                         <UnstyledButton
                             onClick={() => {
                                 logout();
@@ -383,26 +407,41 @@ export function Sidebar({ onLinkClick, hideHeader = false }: { onLinkClick?: () 
                                 display: 'block',
                                 width: '100%',
                                 boxSizing: 'border-box',
-                                padding: collapsed ? `${rem(10)} ${rem(8)}` : `${rem(10)} ${rem(12)}`,
+                                padding: collapsed ? `${rem(10)} ${rem(8)}` : `${rem(12)} ${rem(12)}`,
                                 borderRadius: rem(12),
-                                transition: 'background-color 0.2s ease',
-                                color: 'var(--mantine-color-red-6)',
+                                transition: 'background-color 0.2s ease, box-shadow 0.2s ease',
+                                backgroundColor: '#F9FAFB',
+                                border: '1px solid #E5E7EB',
+                                boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
                             }}
                             onMouseEnter={(e) => {
-                                e.currentTarget.style.backgroundColor = 'rgba(250, 82, 82, 0.08)';
+                                e.currentTarget.style.backgroundColor = '#FEF2F2';
+                                e.currentTarget.style.borderColor = 'rgba(250, 82, 82, 0.25)';
                             }}
                             onMouseLeave={(e) => {
-                                e.currentTarget.style.backgroundColor = 'transparent';
+                                e.currentTarget.style.backgroundColor = '#F9FAFB';
+                                e.currentTarget.style.borderColor = '#E5E7EB';
                             }}
                         >
                             <Group justify={collapsed ? 'center' : 'flex-start'} wrap="nowrap" gap={10}>
-                                <ThemeIcon variant="light" color="red" size="lg" radius="md">
-                                    <LogOut size={ICON_SIZE} />
+                                <ThemeIcon
+                                    variant="light"
+                                    color="red"
+                                    size="lg"
+                                    radius="md"
+                                    style={{ backgroundColor: 'rgba(250, 82, 82, 0.12)' }}
+                                >
+                                    <LogOut size={ICON_SIZE} color="#fa5252" />
                                 </ThemeIcon>
                                 {!collapsed && (
-                                    <Text fw={700} size="sm" c="red.6">
-                                        Signout
-                                    </Text>
+                                    <Box style={{ minWidth: 0 }}>
+                                        <Text fw={700} size="sm" c="red.6" lh={1.2}>
+                                            Sign Out
+                                        </Text>
+                                        <Text size="xs" c="dimmed" mt={2}>
+                                            End current session
+                                        </Text>
+                                    </Box>
                                 )}
                             </Group>
                         </UnstyledButton>

@@ -66,17 +66,17 @@ type MetricTile = {
 };
 
 const METRIC_TILES: MetricTile[] = [
-    { key: 'active', label: 'Total Active', field: 'totalActive', filter: 'active', icon: UserCheck, gradient: `linear-gradient(145deg, ${BRAND_GREEN} 0%, #0e7a2d 100%)`, shadow: 'rgba(19, 150, 57, 0.3)' },
-    { key: 'new', label: 'New Starters', field: 'newStarters', filter: 'new_starters', icon: Star, gradient: `linear-gradient(145deg, ${BRAND_BLUE} 0%, #1d6a9e 100%)`, shadow: 'rgba(38, 127, 186, 0.3)' },
-    { key: 'shadow', label: 'On Shadow', field: 'staffOnShadow', filter: 'on_shadow', icon: Eye, gradient: 'linear-gradient(145deg, #5c6bc0 0%, #3949ab 100%)', shadow: 'rgba(57, 73, 171, 0.3)' },
-    { key: 'dbs', label: 'DBS Expiring', field: 'dbsExpiringSoon', filter: 'dbs_expiring', icon: Shield, gradient: 'linear-gradient(145deg, #e65100 0%, #bf360c 100%)', shadow: 'rgba(230, 81, 0, 0.3)' },
-    { key: 'dbs-declaration', label: 'DBS Declaration Due', field: 'dbsDeclarationDue', filter: 'dbs_declaration_due', icon: Shield, gradient: 'linear-gradient(145deg, #ef6c00 0%, #e65100 100%)', shadow: 'rgba(239, 108, 0, 0.3)' },
-    { key: 'share-code', label: 'Share Code Expiring', field: 'shareCodeExpiring', filter: 'share_code_expiring', icon: Shield, gradient: 'linear-gradient(145deg, #f57c00 0%, #ef6c00 100%)', shadow: 'rgba(245, 124, 0, 0.3)' },
-    { key: 'visa', label: 'Visa Expiring', field: 'visaExpiringSoon', filter: 'visa_expiring', icon: Plane, gradient: 'linear-gradient(145deg, #00838f 0%, #006064 100%)', shadow: 'rgba(0, 131, 143, 0.3)' },
-    { key: 'training', label: 'Training Due', field: 'trainingDue', filter: 'training_due', icon: GraduationCap, gradient: `linear-gradient(145deg, ${BRAND_BLUE} 0%, #1a5f8a 100%)`, shadow: 'rgba(38, 127, 186, 0.3)' },
+    { key: 'active', label: 'Total Active', field: 'totalActive', filter: 'active', icon: UserCheck, gradient: `linear-gradient(145deg, ${BRAND_GREEN} 0%, #0e7a2d 100%)`, shadow: 'rgba(19, 150, 57, 0.28)' },
+    { key: 'new', label: 'New Starters', field: 'newStarters', filter: 'new_starters', icon: Star, gradient: `linear-gradient(145deg, ${BRAND_BLUE} 0%, #1a5f8a 100%)`, shadow: 'rgba(38, 127, 186, 0.28)' },
+    { key: 'shadow', label: 'On Shadow', field: 'staffOnShadow', filter: 'on_shadow', icon: Eye, gradient: `linear-gradient(145deg, ${BRAND_GREEN} 0%, ${BRAND_BLUE} 100%)`, shadow: 'rgba(19, 150, 57, 0.22)' },
+    { key: 'dbs', label: 'DBS Expiring', field: 'dbsExpiringSoon', filter: 'dbs_expiring', icon: Shield, gradient: `linear-gradient(145deg, #0e7a2d 0%, ${BRAND_GREEN} 100%)`, shadow: 'rgba(19, 150, 57, 0.28)' },
+    { key: 'dbs-declaration', label: 'DBS Declaration Due', field: 'dbsDeclarationDue', filter: 'dbs_declaration_due', icon: Shield, gradient: `linear-gradient(145deg, ${BRAND_BLUE} 0%, #1d6a9e 100%)`, shadow: 'rgba(38, 127, 186, 0.28)' },
+    { key: 'share-code', label: 'Share Code Expiring', field: 'shareCodeExpiring', filter: 'share_code_expiring', icon: Shield, gradient: `linear-gradient(145deg, ${BRAND_GREEN} 0%, #0a5c24 100%)`, shadow: 'rgba(19, 150, 57, 0.25)' },
+    { key: 'visa', label: 'Visa Expiring', field: 'visaExpiringSoon', filter: 'visa_expiring', icon: Plane, gradient: `linear-gradient(145deg, ${BRAND_BLUE} 0%, #133d72 100%)`, shadow: 'rgba(38, 127, 186, 0.28)' },
+    { key: 'training', label: 'Training Due', field: 'trainingDue', filter: 'training_due', icon: GraduationCap, gradient: `linear-gradient(145deg, ${BRAND_BLUE} 0%, #1a5f8a 100%)`, shadow: 'rgba(38, 127, 186, 0.28)' },
     { key: 'reviews', label: 'Reviews Due', field: 'reviewsDue', filter: 'reviews_due', icon: ClipboardList, gradient: `linear-gradient(145deg, ${BRAND_GREEN} 0%, #0a5c24 100%)`, shadow: 'rgba(19, 150, 57, 0.25)' },
-    { key: 'supervisions', label: 'Supervisions Due', field: 'supervisionsDue', filter: 'supervisions_due', icon: Users, gradient: 'linear-gradient(145deg, #6a1b9a 0%, #4a148c 100%)', shadow: 'rgba(106, 27, 154, 0.3)' },
-    { key: 'appraisals', label: 'Appraisals Due', field: 'appraisalsDue', filter: 'appraisals_due', icon: Calendar, gradient: 'linear-gradient(145deg, #c62828 0%, #8e0000 100%)', shadow: 'rgba(198, 40, 40, 0.3)' },
+    { key: 'supervisions', label: 'Supervisions Due', field: 'supervisionsDue', filter: 'supervisions_due', icon: Users, gradient: `linear-gradient(145deg, ${BRAND_GREEN} 0%, ${BRAND_BLUE} 100%)`, shadow: 'rgba(38, 127, 186, 0.22)' },
+    { key: 'appraisals', label: 'Appraisals Due', field: 'appraisalsDue', filter: 'appraisals_due', icon: Calendar, gradient: `linear-gradient(145deg, ${BRAND_BLUE} 0%, #0e7a2d 100%)`, shadow: 'rgba(19, 150, 57, 0.22)' },
 ];
 
 const QUICK_ACTIONS = [
@@ -293,37 +293,99 @@ export const DashboardView = () => {
               : 'Needs attention';
 
     return (
-        <Box p="md" style={{ animation: 'fadeIn 0.5s ease-out' }}>
+        <Box
+            className="compliance-dashboard"
+            style={{
+                flex: 1,
+                minHeight: 0,
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+                animation: 'fadeIn 0.5s ease-out',
+            }}
+        >
             <style>{`
                 @keyframes fadeIn {
-                    from { opacity: 0; transform: translateY(20px); }
+                    from { opacity: 0; transform: translateY(12px); }
                     to { opacity: 1; transform: translateY(0); }
                 }
+                .compliance-dashboard .metrics-grid {
+                    display: grid;
+                    grid-template-columns: repeat(5, minmax(0, 1fr));
+                    grid-auto-rows: 1fr;
+                    gap: 10px;
+                    flex: 1.15;
+                    min-height: 0;
+                }
+                .compliance-dashboard .lower-row {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 12px;
+                    flex: 1;
+                    min-height: 0;
+                }
+                .compliance-dashboard .metric-card {
+                    height: 100%;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: space-between;
+                }
+                .compliance-dashboard .mantine-Paper-root::before,
+                .compliance-dashboard .mantine-Paper-root::after {
+                    display: none;
+                }
+                .compliance-dashboard .quick-action-row:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 6px 16px rgba(19, 150, 57, 0.12);
+                }
+                @media (max-width: 1200px) {
+                    .compliance-dashboard .metrics-grid {
+                        grid-template-columns: repeat(3, minmax(0, 1fr));
+                    }
+                }
+                @media (max-width: 768px) {
+                    .compliance-dashboard .metrics-grid {
+                        grid-template-columns: repeat(2, minmax(0, 1fr));
+                    }
+                    .compliance-dashboard .lower-row {
+                        grid-template-columns: 1fr;
+                    }
+                }
             `}</style>
-            <Container size="xl" p={0}>
-                <Group justify="space-between" align="flex-end" mb={24}>
+            <Container
+                size="xl"
+                p={0}
+                style={{
+                    flex: 1,
+                    minHeight: 0,
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    width: '100%',
+                    maxWidth: '100%',
+                }}
+            >
+                <Group justify="space-between" align="center" mb={10} style={{ flexShrink: 0 }}>
                     <Box>
                         <Group align="center" gap="xs" mb={2}>
-                            <ThemeIcon variant="light" size="md" radius="md" color="brandBlue.6">
-                                <Users size={16} />
+                            <ThemeIcon variant="light" size="sm" radius="md" color="brandBlue.6">
+                                <Users size={14} />
                             </ThemeIcon>
                             <Text fw={700} c="brandBlue.6" tt="uppercase" size="xs" style={{ letterSpacing: '0.5px' }}>
                                 HR Command Centre
                             </Text>
                         </Group>
-                        <Title order={1} size={32} fw={900} c="dark.4" style={{ letterSpacing: '-0.5px' }}>
+                        <Title order={1} size={26} fw={900} c="dark.4" style={{ letterSpacing: '-0.4px', lineHeight: 1.15 }}>
                             Compliance Dashboard
                         </Title>
-                        <Text c="dimmed" mt={2} size="sm" maw={640}>
-                            Workforce compliance at a glance. Click a metric to open the staff directory with that filter applied.
-                        </Text>
                     </Box>
                     <Button component={Link} to="/dashboard/reports" variant="light" color="brandBlue.6" leftSection={<FileBarChart size={16} />}>
                         All Reports
                     </Button>
                 </Group>
 
-                <SimpleGrid cols={{ base: 2, sm: 3, lg: 5 }} spacing="sm" mb="md">
+                <Box className="metrics-grid" mb={12}>
                     {METRIC_TILES.map((tile) => {
                         const Icon = tile.icon;
                         const value = Number(data[tile.field] ?? 0);
@@ -331,94 +393,163 @@ export const DashboardView = () => {
                             <UnstyledButton
                                 key={tile.key}
                                 onClick={() => navigate(`/dashboard/staff?filter=${tile.filter}`)}
-                                style={{ width: '100%' }}
+                                style={{ width: '100%', height: '100%', minHeight: 0 }}
                             >
                                 <Paper
-                                    p="md"
+                                    className="metric-card"
+                                    p="sm"
                                     radius="lg"
                                     style={{
                                         background: tile.gradient,
                                         color: 'white',
-                                        boxShadow: `0 10px 40px ${tile.shadow}`,
+                                        boxShadow: `0 8px 24px ${tile.shadow}`,
                                         transition: 'transform 0.15s ease',
+                                        border: 'none',
                                     }}
                                 >
-                                    <Group justify="space-between" align="flex-start" mb={4}>
-                                        <Text size="xs" fw={700} tt="uppercase" opacity={0.9}>
+                                    <Group justify="space-between" align="flex-start" mb={4} wrap="nowrap">
+                                        <Text size="xs" fw={700} tt="uppercase" c="white" style={{ lineHeight: 1.25 }}>
                                             {tile.label}
                                         </Text>
-                                        <ThemeIcon size={28} radius="md" color="white" variant="white" style={{ color: BRAND_GREEN }}>
-                                            <Icon size={14} />
+                                        <ThemeIcon
+                                            size={26}
+                                            radius="md"
+                                            color="white"
+                                            variant="white"
+                                            style={{
+                                                color: BRAND_GREEN,
+                                                backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                                                flexShrink: 0,
+                                            }}
+                                        >
+                                            <Icon size={13} />
                                         </ThemeIcon>
                                     </Group>
-                                    <Title order={2} size={28} fw={900}>
+                                    <Title order={2} size={24} fw={900} c="white" style={{ lineHeight: 1 }}>
                                         {loading ? '—' : value}
                                     </Title>
                                 </Paper>
                             </UnstyledButton>
                         );
                     })}
-                </SimpleGrid>
+                </Box>
 
-                <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" mb="xl">
+                <Box className="lower-row">
                     <Paper
                         p="md"
                         radius="xl"
                         style={{
-                            background: `linear-gradient(145deg, ${BRAND_BLUE} 0%, #1d6a9e 100%)`,
+                            background: 'linear-gradient(145deg, #4AA3D8 0%, #267FBA 48%, #1a5f8a 100%)',
                             color: 'white',
-                            boxShadow: '0 10px 40px rgba(38, 127, 186, 0.3)',
+                            boxShadow: '0 10px 32px rgba(38, 127, 186, 0.28)',
+                            border: 'none',
+                            height: '100%',
+                            display: 'flex',
+                            alignItems: 'center',
                         }}
                     >
-                        <Group justify="space-between" align="center">
-                            <Stack gap={2}>
-                                <Text size="xs" fw={700} tt="uppercase" opacity={0.8}>
+                        <Group justify="space-between" align="center" w="100%" wrap="nowrap">
+                            <Stack gap={4} style={{ minWidth: 0 }}>
+                                <Text size="xs" fw={700} tt="uppercase" c="white" style={{ opacity: 0.9, letterSpacing: '0.06em' }}>
                                     Staff Compliance
                                 </Text>
-                                <Title order={2} size={28} fw={900}>
+                                <Title order={2} size={28} fw={900} c="white">
                                     {complianceLabel}
                                 </Title>
-                                <Text size="xs" opacity={0.9}>
+                                <Text size="xs" c="white" style={{ opacity: 0.9 }}>
                                     Weighted score (DBS, visa, training, references, policies)
                                 </Text>
                             </Stack>
                             <RingProgress
-                                size={80}
-                                thickness={8}
+                                size={96}
+                                thickness={9}
                                 roundCaps
                                 sections={[{ value: data.staffCompliancePercentage, color: 'white' }]}
                                 label={
-                                    <Text c="white" fw={900} ta="center" size="sm">
+                                    <Text c="white" fw={900} ta="center" size="md">
                                         {data.staffCompliancePercentage}%
                                     </Text>
                                 }
-                                rootColor="rgba(255, 255, 255, 0.2)"
+                                rootColor="rgba(255, 255, 255, 0.22)"
                             />
                         </Group>
                     </Paper>
 
-                    <Paper p="md" radius="xl" withBorder>
-                        <Text fw={800} size="sm" mb="sm" c="dark.4">
-                            Quick Actions
-                        </Text>
-                        <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="xs">
-                            {QUICK_ACTIONS.map((action) => (
-                                <Button
-                                    key={action.label}
-                                    variant="light"
-                                    color="brandGreen.6"
-                                    size="xs"
-                                    leftSection={<action.icon size={14} />}
-                                    justify="flex-start"
-                                    styles={{ root: { height: 'auto', padding: '8px 12px' } }}
-                                    onClick={() => void handleQuickAction(action.key, action.to)}
-                                >
-                                    {action.label}
-                                </Button>
-                            ))}
-                        </SimpleGrid>
+                    <Paper
+                        p={0}
+                        radius="xl"
+                        style={{
+                            background: '#ffffff',
+                            border: '1px solid rgba(19, 150, 57, 0.22)',
+                            boxShadow: '0 8px 24px rgba(19, 150, 57, 0.08)',
+                            height: '100%',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            overflow: 'hidden',
+                        }}
+                    >
+                        <Box
+                            style={{
+                                height: 4,
+                                background: `linear-gradient(90deg, ${BRAND_GREEN} 0%, ${BRAND_BLUE} 100%)`,
+                                flexShrink: 0,
+                            }}
+                        />
+                        <Box p="md" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                            <Group justify="space-between" align="center" mb="sm" style={{ flexShrink: 0 }}>
+                                <Text fw={800} size="sm" c="dark.4">
+                                    Quick Actions
+                                </Text>
+                                <Text size="xs" c="dimmed" fw={600}>
+                                    8 shortcuts
+                                </Text>
+                            </Group>
+                            <SimpleGrid cols={2} spacing={8} style={{ flex: 1, minHeight: 0, alignContent: 'stretch' }}>
+                                {QUICK_ACTIONS.map((action) => {
+                                    const IconComp = action.icon;
+                                    return (
+                                        <UnstyledButton
+                                            key={action.key}
+                                            className="quick-action-row"
+                                            onClick={() => void handleQuickAction(action.key, action.to)}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 10,
+                                                width: '100%',
+                                                height: '100%',
+                                                minHeight: 40,
+                                                padding: '8px 10px',
+                                                borderRadius: 10,
+                                                background:
+                                                    action.key.includes('reference') || action.key.includes('compliance') || action.key.includes('upload')
+                                                        ? 'rgba(38, 127, 186, 0.08)'
+                                                        : 'rgba(19, 150, 57, 0.08)',
+                                                border: '1px solid rgba(19, 150, 57, 0.1)',
+                                                transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                                            }}
+                                        >
+                                            <ThemeIcon
+                                                size={30}
+                                                radius="md"
+                                                style={{
+                                                    background: `linear-gradient(135deg, ${BRAND_GREEN} 0%, ${BRAND_BLUE} 100%)`,
+                                                    color: '#ffffff',
+                                                    flexShrink: 0,
+                                                }}
+                                            >
+                                                <IconComp size={14} color="#ffffff" />
+                                            </ThemeIcon>
+                                            <Text size="xs" fw={700} c="dark.4" style={{ lineHeight: 1.25, whiteSpace: 'normal' }}>
+                                                {action.label}
+                                            </Text>
+                                        </UnstyledButton>
+                                    );
+                                })}
+                            </SimpleGrid>
+                        </Box>
                     </Paper>
-                </SimpleGrid>
+                </Box>
             </Container>
 
             <Modal

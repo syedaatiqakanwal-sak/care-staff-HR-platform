@@ -8,9 +8,16 @@ export const PageWrapper = ({ children }: { children: React.ReactNode }) => {
             exit={{ opacity: 0, y: -15 }}
             transition={{
                 duration: 0.4,
-                ease: [0.4, 0, 0.2, 1] // Native-like ease
+                ease: [0.4, 0, 0.2, 1], // Native-like ease
             }}
-            style={{ width: '100%' }}
+            style={{
+                width: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                flex: 1,
+                minHeight: 0,
+                height: '100%',
+            }}
         >
             {children}
         </motion.div>
