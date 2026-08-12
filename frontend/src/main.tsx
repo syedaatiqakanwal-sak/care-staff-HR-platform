@@ -31,6 +31,7 @@ import { HrAnalyticsPage } from './components/HrAnalyticsPage'
 import DbsAnalyticsPage from './components/DbsAnalyticsPage'
 import RtwAnalyticsPage from './components/RtwAnalyticsPage'
 import { BackupPage } from './components/BackupPage'
+import { ScheduledFormsPage } from './components/ScheduledFormsPage'
 import { useState, useEffect } from 'react'
 import { Linkedin } from 'lucide-react'
 import { Notifications } from '@mantine/notifications'
@@ -470,6 +471,7 @@ function getPageTitle(pathname: string): string {
   if (pathname === '/dashboard/policies/analytics') return `Policy Analytics | ${SITE_NAME}`;
   if (pathname === '/dashboard/references/analytics') return `Reference Analytics | ${SITE_NAME}`;
   if (pathname === '/dashboard/reports/analytics') return `HR Analytics | ${SITE_NAME}`;
+  if (pathname === '/dashboard/schedules') return `Schedules | ${SITE_NAME}`;
   if (pathname === '/settings') return `Settings | ${SITE_NAME}`;
   if (pathname === '/settings/api-tokens') return `API Tokens | ${SITE_NAME}`;
   return SITE_NAME;
@@ -595,6 +597,14 @@ function App() {
               <AdminRoute>
                 <AppLayout>
                   <RtwAnalyticsPage />
+                </AppLayout>
+              </AdminRoute>
+            } />
+
+            <Route path="/dashboard/schedules" element={
+              <AdminRoute>
+                <AppLayout>
+                  <ScheduledFormsPage />
                 </AppLayout>
               </AdminRoute>
             } />

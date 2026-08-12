@@ -27,6 +27,7 @@ import {
     Database,
     PanelLeftClose,
     PanelLeftOpen,
+    Calendar,
     type LucideIcon,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -82,6 +83,7 @@ const NAV_SECTIONS: NavSection[] = [
     {
         title: 'HR',
         items: [
+            { link: '/dashboard/schedules', label: 'Schedules', icon: Calendar },
             { link: '/dashboard/references/analytics', label: 'Reference', icon: ClipboardCheck },
             { link: '/dashboard/dbs/analytics', label: 'DBS', icon: Shield },
             { link: '/dashboard/rtw/analytics', label: 'Right to Work', icon: Globe },
