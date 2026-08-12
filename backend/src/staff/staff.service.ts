@@ -653,7 +653,240 @@ export class StaffService {
             });
         }
 
+        // In-app notifications for staff + ADMIN/HR/MANAGER (non-blocking)
+        setImmediate(() => {
+            this.notifyReviewFormScheduled(saved, profile).catch((err) => {
+                this.logger.warn(
+                    `Schedule notifications failed (non-blocking) for formId=${saved.id}: ${
+                        err instanceof Error ? err.message : String(err)
+                    }`,
+                );
+            });
+        });
+
         return saved;
+    }
+
+    /** YYYY-MM-DD in Europe/London. */
+    private londonTodayDateOnly(): string {
+        return new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Europe/London',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+        }).format(new Date());
+    }
+
+    private toDateOnly(value: string | Date | null | undefined): string | null {
+        if (value == null || value === '') return null;
+        if (typeof value === 'string') {
+            const part = value.trim().slice(0, 10);
+            return /^\d{4}-\d{2}-\d{2}$/.test(part) ? part : null;
+        }
+        if (value instanceof Date && !Number.isNaN(value.getTime())) {
+            const y = value.getUTCFullYear();
+            const m = String(value.getUTCMonth() + 1).padStart(2, '0');
+            const d = String(value.getUTCDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+        return null;
+    }
+
+    private scheduleStatusForDate(
+        dateOfReview: string,
+        today: string,
+    ): 'upcoming' | 'due_today' | 'overdue' {
+        if (dateOfReview === today) return 'due_today';
+        if (dateOfReview < today) return 'overdue';
+        return 'upcoming';
+    }
+
+    private formTypeLabel(formType: string): string {
+        const t = (formType || '').toLowerCase();
+        if (t === 'appraisal') return 'Appraisal';
+        if (t === 'supervision') return 'Supervision';
+        if (t === 'review') return 'Review';
+        return formType || 'Form';
+    }
+
+    private async getManagementUserIds(): Promise<string[]> {
+        const users = await this.usersRepository.find({
+            where: {
+                role: In([UserRole.ADMIN, UserRole.HR, UserRole.MANAGER]),
+                isActive: true,
+            },
+            select: ['id'],
+        });
+        return users.map((u) => u.id);
+    }
+
+    private async hasNotificationDedupeKey(dedupeKey: string): Promise<boolean> {
+        const count = await this.notificationRepository
+            .createQueryBuilder('n')
+            .where("n.metadata->>'dedupeKey' = :dedupeKey", { dedupeKey })
+            .getCount();
+        return count > 0;
+    }
+
+    private async notifyReviewFormScheduled(
+        form: ReviewForm,
+        profile: StaffProfile,
+    ): Promise<void> {
+        const formId = form.id;
+        const dedupeKey = `schedule-created-${formId}`;
+        if (await this.hasNotificationDedupeKey(dedupeKey)) return;
+
+        const dateOnly = this.toDateOnly(form.dateOfReview) || String(form.dateOfReview || '');
+        const typeLabel = this.formTypeLabel(form.formType);
+        const staffName =
+            form.staffName ||
+            `${profile.firstName || ''} ${profile.lastName || ''}`.replace(/\s+/g, ' ').trim() ||
+            'Staff member';
+        const userId = profile.user?.id;
+        const title = `${typeLabel} scheduled`;
+        const subtype = form.formSubType ? ` (${form.formSubType})` : '';
+        const message = `${typeLabel}${subtype} scheduled for ${staffName} on ${dateOnly}.`;
+        const metadata = {
+            kind: 'schedule_created',
+            dedupeKey,
+            reviewFormId: formId,
+            formType: form.formType,
+            formSubType: form.formSubType,
+            dateOfReview: dateOnly,
+            userId: userId || null,
+            staffName,
+            link: '/dashboard/schedules',
+        };
+
+        const recipients = new Set<string>(await this.getManagementUserIds());
+        if (userId) recipients.add(userId);
+
+        for (const recipientId of recipients) {
+            await this.notificationsService.createForUser(recipientId, title, message, metadata);
+        }
+    }
+
+    /**
+     * Creates deduped "due today" in-app notifications for staff + ADMIN/HR/MANAGER.
+     * Safe to call repeatedly (idempotent via metadata.dedupeKey).
+     */
+    async processDueScheduleNotifications(): Promise<{ created: number }> {
+        const today = this.londonTodayDateOnly();
+        const forms = await this.reviewFormRepository
+            .createQueryBuilder('f')
+            .leftJoinAndSelect('f.staff', 'staff')
+            .leftJoinAndSelect('staff.user', 'user')
+            .where('f.dateOfReview = :today', { today })
+            .getMany();
+
+        let created = 0;
+        const managementIds = await this.getManagementUserIds();
+
+        for (const form of forms) {
+            const dedupeKey = `schedule-due-${form.id}-${today}`;
+            if (await this.hasNotificationDedupeKey(dedupeKey)) continue;
+
+            const dateOnly = this.toDateOnly(form.dateOfReview) || today;
+            const typeLabel = this.formTypeLabel(form.formType);
+            const staffName =
+                form.staffName ||
+                `${form.staff?.firstName || ''} ${form.staff?.lastName || ''}`
+                    .replace(/\s+/g, ' ')
+                    .trim() ||
+                'Staff member';
+            const userId = form.staff?.user?.id;
+            const title = `${typeLabel} due today`;
+            const subtype = form.formSubType ? ` (${form.formSubType})` : '';
+            const message = `${typeLabel}${subtype} for ${staffName} is due today (${dateOnly}).`;
+            const metadata = {
+                kind: 'schedule_due_today',
+                dedupeKey,
+                reviewFormId: form.id,
+                formType: form.formType,
+                formSubType: form.formSubType,
+                dateOfReview: dateOnly,
+                userId: userId || null,
+                staffName,
+                link: '/dashboard/schedules',
+            };
+
+            const recipients = new Set<string>(managementIds);
+            if (userId) recipients.add(userId);
+
+            for (const recipientId of recipients) {
+                await this.notificationsService.createForUser(recipientId, title, message, metadata);
+                created += 1;
+            }
+        }
+
+        return { created };
+    }
+
+    /**
+     * Upcoming / due / overdue scheduled appraisals, reviews, and supervisions.
+     * Also runs due-notification processing (idempotent).
+     */
+    async getScheduledForms(): Promise<{
+        counts: {
+            appraisals: number;
+            supervisions: number;
+            reviews: number;
+            dueToday: number;
+            totalUpcoming: number;
+        };
+        records: Array<{
+            id: string;
+            staffName: string;
+            formType: string;
+            formSubType: string;
+            dateOfReview: string;
+            status: 'upcoming' | 'due_today' | 'overdue';
+            userId: string | null;
+        }>;
+    }> {
+        await this.processDueScheduleNotifications();
+
+        const today = this.londonTodayDateOnly();
+        const forms = await this.reviewFormRepository.find({
+            relations: ['staff', 'staff.user'],
+            order: { dateOfReview: 'ASC', createdAt: 'ASC' },
+        });
+
+        const records = forms
+            .map((form) => {
+                const dateOfReview = this.toDateOnly(form.dateOfReview);
+                if (!dateOfReview) return null;
+                const status = this.scheduleStatusForDate(dateOfReview, today);
+                const staffName =
+                    form.staffName ||
+                    `${form.staff?.firstName || ''} ${form.staff?.lastName || ''}`
+                        .replace(/\s+/g, ' ')
+                        .trim() ||
+                    '—';
+                return {
+                    id: form.id,
+                    staffName,
+                    formType: form.formType,
+                    formSubType: form.formSubType,
+                    dateOfReview,
+                    status,
+                    userId: form.staff?.user?.id ?? null,
+                };
+            })
+            .filter((r): r is NonNullable<typeof r> => r !== null);
+
+        const typeOf = (t: string) => (t || '').toLowerCase();
+        const notOverdue = records.filter((r) => r.status === 'upcoming' || r.status === 'due_today');
+
+        const counts = {
+            appraisals: notOverdue.filter((r) => typeOf(r.formType) === 'appraisal').length,
+            supervisions: notOverdue.filter((r) => typeOf(r.formType) === 'supervision').length,
+            reviews: notOverdue.filter((r) => typeOf(r.formType) === 'review').length,
+            dueToday: records.filter((r) => r.status === 'due_today').length,
+            totalUpcoming: records.filter((r) => r.status === 'upcoming').length,
+        };
+
+        return { counts, records };
     }
 
     async getReviewFormsByStaffId(staffId: string): Promise<ReviewForm[]> {

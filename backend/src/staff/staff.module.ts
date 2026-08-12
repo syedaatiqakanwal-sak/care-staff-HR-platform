@@ -21,6 +21,7 @@ import { EmailModule } from '../email/email.module';
 import { StaffDocument } from '../documents/staff-document.entity';
 import { User } from '../users/user.entity';
 import { Notification } from '../notifications/notification.entity';
+import { ReviewScheduleScheduler } from './review-schedule.scheduler';
 
 @Module({
     imports: [
@@ -49,7 +50,7 @@ import { Notification } from '../notifications/notification.entity';
         }),
     ],
     controllers: [StaffController, DashboardController, VleCredentialsController],
-    providers: [StaffService, JwtOrApiTokenGuard],
+    providers: [StaffService, JwtOrApiTokenGuard, ReviewScheduleScheduler],
     exports: [StaffService, JwtOrApiTokenGuard, ApiTokensModule],
 })
 export class StaffModule { }

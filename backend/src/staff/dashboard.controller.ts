@@ -33,4 +33,10 @@ export class DashboardController {
       period === 'week' || period === 'month' || period === 'year' ? period : 'month';
     return this.hrDashboardService.getAnalyticsData(normalized);
   }
+
+  @Get('scheduled-forms')
+  @Roles(...DASHBOARD_ROLES)
+  getScheduledForms() {
+    return this.staffService.getScheduledForms();
+  }
 }
