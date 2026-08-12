@@ -109,6 +109,12 @@ export class InHouseTrainingController {
             path?: string;
             mimetype?: string;
         },
+        @Body()
+        body?: {
+            enrollmentDate?: string;
+            completionDate?: string;
+            status?: string;
+        },
     ) {
         if (!file) throw new BadRequestException('No file uploaded');
         const localAbs =
@@ -124,11 +130,28 @@ export class InHouseTrainingController {
         } catch (err) {
             throw err;
         }
+
+        const extras: {
+            enrollmentDate?: string | null;
+            completionDate?: string | null;
+            status?: string | null;
+        } = {};
+        if (body?.enrollmentDate !== undefined) {
+            extras.enrollmentDate = body.enrollmentDate;
+        }
+        if (body?.completionDate !== undefined) {
+            extras.completionDate = body.completionDate;
+        }
+        if (body?.status !== undefined) {
+            extras.status = body.status;
+        }
+
         const record = await this.service.setDocument(
             staffId,
             recordId,
             file.originalname,
             r2Key,
+            Object.keys(extras).length > 0 ? extras : undefined,
         );
         return { success: true, record };
     }

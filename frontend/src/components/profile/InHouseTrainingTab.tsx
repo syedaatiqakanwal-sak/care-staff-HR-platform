@@ -1,4 +1,4 @@
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, Fragment, useRef } from 'react';
 import {
     Box,
     Group,
@@ -60,6 +60,31 @@ const FILTER_LABELS = Object.fromEntries(
     FILTER_OPTIONS.map((opt) => [opt.value, opt.label]),
 ) as Record<string, string>;
 
+/** Normalize any date / ISO string to YYYY-MM-DD for HTML date inputs. */
+const toDateInputValue = (value: unknown): string | null => {
+    if (value == null || value === '') return null;
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed) return null;
+        const datePart = trimmed.slice(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return datePart;
+        const parsed = new Date(trimmed);
+        if (Number.isNaN(parsed.getTime())) return null;
+        const y = parsed.getFullYear();
+        const m = String(parsed.getMonth() + 1).padStart(2, '0');
+        const day = String(parsed.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    }
+    if (value instanceof Date) {
+        if (Number.isNaN(value.getTime())) return null;
+        const y = value.getFullYear();
+        const m = String(value.getMonth() + 1).padStart(2, '0');
+        const day = String(value.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    }
+    return null;
+};
+
 /** Resolve filter group from field or infer from sortOrder / group name (API fallback). */
 const resolveFilterGroup = (rec: InHouseRecord): string | null => {
     if (rec.filterGroup) return rec.filterGroup;
@@ -99,6 +124,8 @@ const normalizeRecords = (
         ...r,
         filterGroup: r.filterGroup ?? r.filter_group ?? null,
         categoryHeader: r.categoryHeader ?? r.category_header ?? null,
+        enrollmentDate: toDateInputValue(r.enrollmentDate),
+        completionDate: toDateInputValue(r.completionDate),
     }));
 
 const STATUS_OPTIONS = [
@@ -142,9 +169,14 @@ export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps
     const [initializing, setInitializing] = useState(false);
     const [savingId, setSavingId] = useState<string | null>(null);
     const [uploadingId, setUploadingId] = useState<string | null>(null);
+    const recordsRef = useRef<InHouseRecord[]>([]);
 
     const targetId = profile?.user?.id || profile?.id;
     const authHeader = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
+
+    useEffect(() => {
+        recordsRef.current = records;
+    }, [records]);
 
     const fetchRecords = async () => {
         if (!targetId) return;
@@ -206,20 +238,37 @@ export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps
 
     const handleSaveRow = async (record: InHouseRecord) => {
         if (!targetId) return;
+        const enrollmentDate = toDateInputValue(record.enrollmentDate);
+        const completionDate = toDateInputValue(record.completionDate);
+        const status = record.status || null;
         try {
             setSavingId(record.id);
             const res = await axios.patch(
                 `/api/v1/staff/${targetId}/inhouse-training/${record.id}`,
                 {
-                    enrollmentDate: record.enrollmentDate || null,
-                    completionDate: record.completionDate || null,
-                    status: record.status || null,
+                    enrollmentDate,
+                    completionDate,
+                    status,
                 },
                 { headers: authHeader() },
             );
             const updated = res.data?.record;
             if (updated) {
-                setRecords((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
+                setRecords((prev) =>
+                    prev.map((r) =>
+                        r.id === updated.id
+                            ? {
+                                  ...r,
+                                  ...updated,
+                                  enrollmentDate:
+                                      toDateInputValue(updated.enrollmentDate) ?? enrollmentDate,
+                                  completionDate:
+                                      toDateInputValue(updated.completionDate) ?? completionDate,
+                                  status: updated.status ?? status,
+                              }
+                            : r,
+                    ),
+                );
             }
             notifications.show({
                 title: 'Saved',
@@ -238,20 +287,45 @@ export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps
         }
     };
 
-    const handleUpload = async (record: InHouseRecord, file: File | null) => {
+    const handleUpload = async (recordId: string, file: File | null) => {
         if (!file || !targetId) return;
+        const latest =
+            recordsRef.current.find((r) => r.id === recordId) ||
+            records.find((r) => r.id === recordId);
+        if (!latest) return;
+        const enrollmentDate = toDateInputValue(latest.enrollmentDate);
+        const completionDate = toDateInputValue(latest.completionDate);
+        const status = latest.status || null;
         try {
-            setUploadingId(record.id);
+            setUploadingId(recordId);
             const formData = new FormData();
             formData.append('file', file);
+            if (enrollmentDate) formData.append('enrollmentDate', enrollmentDate);
+            if (completionDate) formData.append('completionDate', completionDate);
+            if (status) formData.append('status', status);
             const res = await axios.post(
-                `/api/v1/staff/${targetId}/inhouse-training/${record.id}/upload`,
+                `/api/v1/staff/${targetId}/inhouse-training/${recordId}/upload`,
                 formData,
                 { headers: { ...authHeader(), 'Content-Type': 'multipart/form-data' } },
             );
             const updated = res.data?.record;
             if (updated) {
-                setRecords((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
+                setRecords((prev) =>
+                    prev.map((r) => {
+                        if (r.id !== updated.id) return r;
+                        return {
+                            ...r,
+                            ...updated,
+                            enrollmentDate:
+                                toDateInputValue(updated.enrollmentDate) ??
+                                toDateInputValue(r.enrollmentDate),
+                            completionDate:
+                                toDateInputValue(updated.completionDate) ??
+                                toDateInputValue(r.completionDate),
+                            status: updated.status ?? r.status,
+                        };
+                    }),
+                );
             }
             notifications.show({
                 title: 'Document uploaded',
@@ -506,7 +580,7 @@ export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps
                                                         )}
                                                         {canEdit && (
                                                             <FileButton
-                                                                onChange={(file) => handleUpload(record, file)}
+                                                                onChange={(file) => handleUpload(record.id, file)}
                                                                 accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*"
                                                             >
                                                                 {(props) => (
