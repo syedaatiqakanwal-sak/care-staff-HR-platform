@@ -16,7 +16,6 @@ import { SettingsPage } from './components/SettingsPage'
 import { ApiTokensPage } from './components/ApiTokensPage'
 import { ForgotPasswordPage } from './components/ForgotPasswordPage'
 import { PageWrapper } from './components/PageWrapper'
-import { PageBackButton } from './components/PageBackButton'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { AdminRoute, StrictAdminRoute, AuditViewRoute } from './components/RoleRoute'
 import { PoliciesPage } from './components/PoliciesPage'
@@ -344,7 +343,6 @@ function AppLayoutInner({ children, searchQuery, onSearch }: { children: React.R
 
       <AppShell.Main>
         <PageWrapper>
-          <PageBackButton />
           {children}
         </PageWrapper>
       </AppShell.Main>

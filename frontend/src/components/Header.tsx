@@ -1,18 +1,20 @@
 import { Group, ActionIcon, Indicator, Avatar, Box, Text, Divider, TextInput, Menu, UnstyledButton } from '@mantine/core';
-import { Bell, Search, Settings, User, LogOut, ShieldCheck, Mail } from 'lucide-react';
+import { Bell, Search, Settings, User, LogOut, ShieldCheck, Mail, Calendar } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { notifications as mantineNotifications } from '@mantine/notifications';
-
-const DBS_NOTIFICATION_SHOWN_KEY = 'dbs_notification_shown';
 
 const isDbsDeclarationNotification = (n: { title?: string; metadata?: { kind?: string } }) =>
     n.metadata?.kind === 'dbs_declaration_due' || n.title === 'DBS declaration due';
 
 const isAddressGapNotification = (n: { title?: string; metadata?: { kind?: string } }) =>
     n.metadata?.kind === 'address_history_gap' || n.title === 'Address history gap detected';
+
+const isScheduleNotification = (metadata?: { kind?: string; link?: string }) =>
+    metadata?.kind === 'schedule_created' ||
+    metadata?.kind === 'schedule_due_today' ||
+    metadata?.link === '/dashboard/schedules';
 
 const staffProfileNavUserId = (metadata?: { kind?: string; userId?: string }) => {
     if (!metadata?.userId) return null;
@@ -26,7 +28,6 @@ export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onS
     const navigate = useNavigate();
     const [notifications, setNotifications] = useState<any[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
-    const knownIdsRef = useRef<Set<string>>(new Set());
 
     const handleSearchChange = (val: string) => {
         onSearch?.(val);
@@ -40,103 +41,18 @@ export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onS
         try {
             const token = localStorage.getItem('token');
             if (!token) return;
-            console.log('Fetching notifications...'); // DEBUG
             const res = await axios.get('/api/v1/notifications', {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            console.log('Notifications fetched:', res.data); // DEBUG
             const fetched = res.data;
             setNotifications(fetched);
             setUnreadCount(fetched.filter((n: any) => !n.isRead).length);
-
-            // Check for new unread notifications to popup
-            // Check for new unread notifications to popup
-            const newUnread = fetched.filter((n: any) => !n.isRead && !knownIdsRef.current.has(n.id));
-            const certNotifications = newUnread.filter((n: any) => n.metadata?.certificateId);
-            const otherNotifications = newUnread.filter((n: any) => !n.metadata?.certificateId);
-
-            // 1. Handle Certificate Notifications
-            if (certNotifications.length > 1) {
-                // Grouped Notification
-                mantineNotifications.show({
-                    title: 'Certificates Ready',
-                    message: (
-                        <Box
-                            onClick={() => navigate('/dashboard/me?tab=certificates')}
-                            style={{ cursor: 'pointer' }}
-                        >
-                            {`${certNotifications.length} certificates are ready to download. Click here to view them.`}
-                        </Box>
-                    ),
-                    color: 'brandBlue',
-                    icon: <ShieldCheck size={18} />,
-                    autoClose: 5000,
-                    withCloseButton: true,
-                });
-                // Mark all as known so we don't show them again
-                certNotifications.forEach((n: any) => knownIdsRef.current.add(n.id));
-            } else if (certNotifications.length === 1) {
-                // Single Notification
-                const n = certNotifications[0];
-                mantineNotifications.show({
-                    title: n.title,
-                    message: (
-                        <Box
-                            onClick={() => navigate('/dashboard/me?tab=certificates')}
-                            style={{ cursor: 'pointer' }}
-                        >
-                            {n.message}
-                        </Box>
-                    ),
-                    color: 'brandBlue',
-                    icon: <ShieldCheck size={18} />,
-                    autoClose: 5000,
-                    withCloseButton: true,
-                });
-                knownIdsRef.current.add(n.id);
-            }
-
-            // 2. Handle Other Notifications (Show individual popups)
-            otherNotifications.forEach((n: any) => {
-                if (isDbsDeclarationNotification(n)) {
-                    knownIdsRef.current.add(n.id);
-                    if (sessionStorage.getItem(DBS_NOTIFICATION_SHOWN_KEY)) {
-                        return;
-                    }
-                    mantineNotifications.show({
-                        title: n.title,
-                        message: n.message,
-                        color: 'brandBlue',
-                        icon: <Mail size={18} />,
-                        autoClose: 5000,
-                        withCloseButton: true,
-                    });
-                    sessionStorage.setItem(DBS_NOTIFICATION_SHOWN_KEY, '1');
-                    return;
-                }
-
-                mantineNotifications.show({
-                    title: n.title,
-                    message: n.message, // Standard message for others
-                    color: 'brandBlue',
-                    icon: <Mail size={18} />,
-                    autoClose: 5000,
-                    withCloseButton: true,
-                });
-                knownIdsRef.current.add(n.id);
-            });
-
-            // 3. Mark existing read ones as known just in case
-            fetched.forEach((n: any) => {
-                if (n.isRead) knownIdsRef.current.add(n.id);
-            });
-
         } catch (error) {
             console.error('Failed to fetch notifications');
         }
     };
 
-    // Polling every 60s
+    // Polling every 5 minutes — no toast popups (avoids re-showing on AppLayout remount)
     useEffect(() => {
         fetchNotifications();
         const interval = setInterval(fetchNotifications, 300000);
@@ -154,6 +70,10 @@ export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onS
             setUnreadCount(prev => Math.max(0, prev - 1));
 
             // Interaction logic
+            if (isScheduleNotification(metadata)) {
+                navigate('/dashboard/schedules');
+                return;
+            }
             const profileUserId = staffProfileNavUserId(metadata);
             if (profileUserId) {
                 navigate(`/dashboard/staff/${profileUserId}`);
@@ -233,6 +153,8 @@ export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onS
                                     key={notif.id}
                                     leftSection={
                                         notif.metadata?.certificateId ? <ShieldCheck size={16} color="#139639" />
+                                            : isScheduleNotification(notif.metadata)
+                                                ? <Calendar size={16} color="#267FBA" />
                                             : isDbsDeclarationNotification(notif) || isAddressGapNotification(notif)
                                                 ? <ShieldCheck size={16} color="#139639" />
                                                 : <Mail size={16} />
@@ -305,4 +227,3 @@ export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onS
         </Group>
     );
 };
-
