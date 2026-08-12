@@ -46,6 +46,22 @@ const ALLOWED_MIME = [
     'image/gif',
 ];
 
+function guessContentType(filename: string): string {
+    const ext = path.extname(filename || '').toLowerCase();
+    const map: Record<string, string> = {
+        '.pdf': 'application/pdf',
+        '.doc': 'application/msword',
+        '.docx':
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.webp': 'image/webp',
+        '.gif': 'image/gif',
+    };
+    return map[ext] || 'application/octet-stream';
+}
+
 @Controller('staff')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 export class InHouseTrainingController {
@@ -168,9 +184,19 @@ export class InHouseTrainingController {
             throw new NotFoundException('No document attached to this record');
         }
         const stored = record.documentPath.replace(/\\/g, '/');
+        const safeName = (record.documentName || path.basename(stored)).replace(
+            /[^a-zA-Z0-9._-]/g,
+            '_',
+        );
         if (stored.startsWith('inhouse-documents/')) {
-            const url = await this.r2.getPresignedUrl(stored);
-            return res.redirect(302, url);
+            const { buffer, contentType } = await this.r2.getObjectBuffer(stored);
+            const mime =
+                contentType ||
+                guessContentType(record.documentName || stored);
+            res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+            res.setHeader('Content-Type', mime);
+            res.setHeader('Content-Length', String(buffer.length));
+            return res.send(buffer);
         }
         if (isLegacyInhouseDocumentPath(stored)) {
             const absPath = stored.includes('/')
@@ -181,12 +207,11 @@ export class InHouseTrainingController {
             if (!fs.existsSync(absPath)) {
                 throw new NotFoundException('Document file is missing on the server');
             }
-            const safeName = (record.documentName || record.documentPath).replace(
-                /[^a-zA-Z0-9._-]/g,
-                '_',
-            );
             res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
-            res.setHeader('Content-Type', 'application/octet-stream');
+            res.setHeader(
+                'Content-Type',
+                guessContentType(record.documentName || stored),
+            );
             fs.createReadStream(absPath).pipe(res);
             return;
         }

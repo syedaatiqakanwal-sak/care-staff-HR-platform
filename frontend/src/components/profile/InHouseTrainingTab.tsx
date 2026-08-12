@@ -13,10 +13,8 @@ import {
     Stack,
     LoadingOverlay,
     FileButton,
-    ActionIcon,
-    Tooltip,
 } from '@mantine/core';
-import { ClipboardList, Upload, Download, Save, Plus } from 'lucide-react';
+import { ClipboardList, Upload, Eye, Save, Plus } from 'lucide-react';
 import { notifications } from '@mantine/notifications';
 import axios from 'axios';
 
@@ -351,8 +349,21 @@ export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps
                 `/api/v1/staff/${targetId}/inhouse-training/${record.id}/document`,
                 { headers: authHeader(), responseType: 'blob' },
             );
-            const url = window.URL.createObjectURL(new Blob([res.data]));
-            window.open(url, '_blank');
+            const contentType =
+                (res.headers['content-type'] as string) ||
+                (res.data instanceof Blob && res.data.type) ||
+                'application/octet-stream';
+            const blob = new Blob([res.data], { type: contentType.split(';')[0].trim() });
+            const url = window.URL.createObjectURL(blob);
+            const win = window.open(url, '_blank');
+            if (!win) {
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = record.documentName || 'document';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            }
             setTimeout(() => window.URL.revokeObjectURL(url), 60000);
         } catch (error) {
             console.error('Failed to open document', error);
@@ -568,15 +579,15 @@ export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps
                                                 <Table.Td>
                                                     <Group gap="xs" wrap="nowrap">
                                                         {record.documentPath && (
-                                                            <Tooltip label={record.documentName || 'View document'}>
-                                                                <ActionIcon
-                                                                    variant="light"
-                                                                    color="green"
-                                                                    onClick={() => handleViewDocument(record)}
-                                                                >
-                                                                    <Download size={16} />
-                                                                </ActionIcon>
-                                                            </Tooltip>
+                                                            <Button
+                                                                size="xs"
+                                                                variant="light"
+                                                                color="green"
+                                                                leftSection={<Eye size={14} />}
+                                                                onClick={() => handleViewDocument(record)}
+                                                            >
+                                                                View
+                                                            </Button>
                                                         )}
                                                         {canEdit && (
                                                             <FileButton
