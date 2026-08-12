@@ -673,15 +673,10 @@ export class CertificatesService {
     async resolveCertificateServe(
         filePath: string,
         options: { inline: boolean; fileName: string },
-    ): Promise<{ kind: 'local'; absPath: string } | { kind: 'r2'; url: string }> {
+    ): Promise<{ kind: 'local'; absPath: string } | { kind: 'r2'; r2Key: string }> {
         const stored = (filePath || '').replace(/\\/g, '/');
         if (stored.startsWith('certificates/')) {
-            const disposition = options.inline ? 'inline' : 'attachment';
-            const url = await this.r2.getPresignedUrl(stored, 900, {
-                responseContentType: 'application/pdf',
-                responseContentDisposition: `${disposition}; filename="${options.fileName}"`,
-            });
-            return { kind: 'r2', url };
+            return { kind: 'r2', r2Key: stored };
         }
         if (path.isAbsolute(filePath) || isLegacyLocalFilePath(stored)) {
             const absPath = path.isAbsolute(filePath)

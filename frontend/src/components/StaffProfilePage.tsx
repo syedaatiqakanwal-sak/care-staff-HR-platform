@@ -2311,7 +2311,13 @@ export const StaffProfilePage = () => {
             const streamUrl = `/api/v1/certificates/${certificateId}/stream?token=${viewToken}`;
             try {
                 const streamResponse = await axios.get(streamUrl, { responseType: 'blob' });
-                return window.URL.createObjectURL(streamResponse.data);
+                const contentType =
+                    (streamResponse.headers['content-type'] as string) ||
+                    'application/pdf';
+                const blob = new Blob([streamResponse.data], {
+                    type: contentType.split(';')[0].trim() || 'application/pdf',
+                });
+                return window.URL.createObjectURL(blob);
             } catch (streamErr: any) {
                 if (streamErr?.response?.status === 401 && attempt === 0) {
                     continue;

@@ -15,10 +15,14 @@ import { createReadStream } from 'fs';
 import * as fs from 'fs';
 import { join } from 'path';
 import { CertificateStatus } from './certificate.entity';
+import { R2FilesService } from '../common/r2-files.service';
 
 @Controller('certificates')
 export class CertificatesController {
-    constructor(private readonly certificatesService: CertificatesService) { }
+    constructor(
+        private readonly certificatesService: CertificatesService,
+        private readonly r2: R2FilesService,
+    ) { }
 
     @Get()
     @UseGuards(AuthGuard('jwt'))
@@ -176,7 +180,7 @@ export class CertificatesController {
             }
         };
 
-        let served: { kind: 'local'; absPath: string } | { kind: 'r2'; url: string };
+        let served: { kind: 'local'; absPath: string } | { kind: 'r2'; r2Key: string };
         try {
             served = await ensureFile();
         } catch (regenError) {
@@ -184,16 +188,11 @@ export class CertificatesController {
             throw new InternalServerErrorException('Certificate file missing and generation failed');
         }
 
-        if (served.kind === 'r2') {
-            return res.redirect(302, served.url);
-        }
-
-        const file = createReadStream(served.absPath);
         const disposition = options.inline ? 'inline' : 'attachment';
-
-        const headers: any = {
+        const fileName = `${cert.courseName.replace(/\s/g, '_')}_Certificate.pdf`;
+        const headers: Record<string, string> = {
             'Content-Type': 'application/pdf',
-            'Content-Disposition': `${disposition}; filename="${cert.courseName.replace(/\s/g, '_')}_Certificate.pdf"`,
+            'Content-Disposition': `${disposition}; filename="${fileName}"`,
         };
 
         if (options.secureStream) {
@@ -202,6 +201,15 @@ export class CertificatesController {
             headers['Expires'] = '0';
         }
 
+        if (served.kind === 'r2') {
+            const { buffer, contentType } = await this.r2.getObjectBuffer(served.r2Key);
+            headers['Content-Type'] = contentType || 'application/pdf';
+            headers['Content-Length'] = String(buffer.length);
+            res.set(headers);
+            return res.send(buffer);
+        }
+
+        const file = createReadStream(served.absPath);
         res.set(headers);
 
         file.on('error', (err) => {
