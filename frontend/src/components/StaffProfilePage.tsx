@@ -744,10 +744,18 @@ export const StaffProfilePage = () => {
                 const targetUserId = response.data.user?.id || response.data.id;
                 if (response.data.profilePicture && typeof response.data.profilePicture === 'string' && response.data.profilePicture.trim() && targetUserId) {
                     try {
-                        const imageResponse = await axios.get(`/api/v1/staff/${targetUserId}/profile-picture`, {
-                            headers: { Authorization: `Bearer ${token}` },
-                            responseType: 'blob'
-                        });
+                        const picVersion = response.data.profilePicture.replace(/\\/g, '/').split('/').pop() || '';
+                        const imageResponse = await axios.get(
+                            `/api/v1/staff/${targetUserId}/profile-picture?v=${encodeURIComponent(picVersion)}`,
+                            {
+                                headers: {
+                                    Authorization: `Bearer ${token}`,
+                                    'Cache-Control': 'no-cache',
+                                    Pragma: 'no-cache',
+                                },
+                                responseType: 'blob'
+                            }
+                        );
                         const blobUrl = URL.createObjectURL(imageResponse.data);
                         setProfilePictureUrl(blobUrl);
                     } catch (error) {
@@ -2502,7 +2510,7 @@ export const StaffProfilePage = () => {
                                             
                                             // Determine target ID: if viewing own profile, use profile.user?.id, otherwise use id
                                             const targetId = (id === 'me' || window.location.pathname.includes('/me')) ? profile.user?.id : id;
-                                            await axios.post(`/api/v1/staff/${targetId}/profile-picture`, formData, {
+                                            const uploadRes = await axios.post(`/api/v1/staff/${targetId}/profile-picture`, formData, {
                                                 headers: {
                                                     Authorization: `Bearer ${token}`,
                                                     'Content-Type': 'multipart/form-data'
@@ -2534,10 +2542,21 @@ export const StaffProfilePage = () => {
                                                     if (profilePictureUrl) {
                                                         URL.revokeObjectURL(profilePictureUrl);
                                                     }
-                                                    const imageResponse = await axios.get(`/api/v1/staff/${targetId}/profile-picture`, {
-                                                        headers: { Authorization: `Bearer ${token}` },
-                                                        responseType: 'blob'
-                                                    });
+                                                    const picKey = typeof profileRes.data.profilePicture === 'string'
+                                                        ? profileRes.data.profilePicture.replace(/\\/g, '/').split('/').pop()
+                                                        : null;
+                                                    const version = uploadRes.data?.version || picKey || String(Date.now());
+                                                    const imageResponse = await axios.get(
+                                                        `/api/v1/staff/${targetId}/profile-picture?v=${encodeURIComponent(version)}`,
+                                                        {
+                                                            headers: {
+                                                                Authorization: `Bearer ${token}`,
+                                                                'Cache-Control': 'no-cache',
+                                                                Pragma: 'no-cache',
+                                                            },
+                                                            responseType: 'blob'
+                                                        }
+                                                    );
                                                     const blobUrl = URL.createObjectURL(imageResponse.data);
                                                     setProfilePictureUrl(blobUrl);
                                                 } catch (error) {

@@ -135,9 +135,11 @@ export const StaffDirectoryPage = ({ searchQuery = '' }: { searchQuery?: string 
                         department: p.department,
                         ilccsNumber: p.ilccsNumber,
                         lcaNumber: p.lcaNumber,
-                        profilePicture: p.user?.id
-                            ? `/api/v1/staff/${p.user.id}/profile-picture`
-                            : null,
+                        profilePicture: (() => {
+                            if (!p.user?.id || !p.profilePicture) return null;
+                            const basename = String(p.profilePicture).replace(/\\/g, '/').split('/').pop() || '';
+                            return `/api/v1/staff/${p.user.id}/profile-picture?v=${encodeURIComponent(basename)}`;
+                        })(),
                         employmentStatus: p.employmentStatus,
                         isActive: p.user?.isActive !== false,
                     }),
@@ -151,7 +153,11 @@ export const StaffDirectoryPage = ({ searchQuery = '' }: { searchQuery?: string 
                     if (!member.profilePicture) return;
                     try {
                         const imgRes = await axios.get(member.profilePicture, {
-                            headers: { Authorization: `Bearer ${token}` },
+                            headers: {
+                                Authorization: `Bearer ${token}`,
+                                'Cache-Control': 'no-cache',
+                                Pragma: 'no-cache',
+                            },
                             responseType: 'blob',
                         });
                         urls[member.id] = URL.createObjectURL(imgRes.data);

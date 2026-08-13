@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ConflictException, ForbiddenException, B
 import { QueryFailedError, In } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as path from 'path';
 import { StaffProfile } from './staff-profile.entity';
 import { UsersService } from '../users/users.service';
 
@@ -314,7 +315,9 @@ export class StaffService {
                 employmentStatusBadge,
                 lastLoginAt: row.lastLoginAt,
                 ilccsNumber: row.ilccsNumber,
-                profilePicture: row.profilePicture ? `/api/v1/staff/${row.userId}/profile-picture` : null
+                profilePicture: row.profilePicture
+                    ? `/api/v1/staff/${row.userId}/profile-picture?v=${encodeURIComponent(path.basename(String(row.profilePicture).replace(/\\/g, '/')))}`
+                    : null
             };
         });
 
