@@ -298,10 +298,10 @@ export const DashboardView = () => {
             style={{
                 flex: 1,
                 minHeight: 0,
-                height: '100%',
                 display: 'flex',
                 flexDirection: 'column',
                 overflow: 'auto',
+                paddingBottom: 16,
                 animation: 'fadeIn 0.5s ease-out',
             }}
         >
@@ -313,21 +313,20 @@ export const DashboardView = () => {
                 .compliance-dashboard .metrics-grid {
                     display: grid;
                     grid-template-columns: repeat(5, minmax(0, 1fr));
-                    grid-auto-rows: 1fr;
                     gap: 10px;
-                    flex: 1.15;
-                    min-height: 0;
+                    flex: 0 0 auto;
                 }
                 .compliance-dashboard .lower-row {
                     display: grid;
                     grid-template-columns: 1fr 1fr;
                     gap: 12px;
-                    flex: 1.25 1 auto;
-                    min-height: 300px;
+                    flex: 0 0 auto;
                     align-items: stretch;
                 }
                 .compliance-dashboard .metric-card {
+                    min-height: 96px;
                     height: 100%;
+                    overflow: hidden;
                     display: flex;
                     flex-direction: column;
                     justify-content: space-between;
@@ -357,14 +356,12 @@ export const DashboardView = () => {
             <Container
                 size="xl"
                 p={0}
+                pb={8}
                 style={{
-                    flex: 1,
-                    minHeight: 0,
-                    height: '100%',
-                    display: 'flex',
-                    flexDirection: 'column',
                     width: '100%',
                     maxWidth: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
                 }}
             >
                 <Group justify="space-between" align="center" mb={10} style={{ flexShrink: 0 }}>
@@ -394,7 +391,7 @@ export const DashboardView = () => {
                             <UnstyledButton
                                 key={tile.key}
                                 onClick={() => navigate(`/dashboard/staff?filter=${tile.filter}`)}
-                                style={{ width: '100%', height: '100%', minHeight: 0 }}
+                                style={{ width: '100%', height: '100%', minHeight: 96 }}
                             >
                                 <Paper
                                     className="metric-card"
@@ -426,7 +423,7 @@ export const DashboardView = () => {
                                             <Icon size={13} />
                                         </ThemeIcon>
                                     </Group>
-                                    <Title order={2} size={24} fw={900} c="white" style={{ lineHeight: 1 }}>
+                                    <Title order={2} size={24} fw={900} c="white" style={{ lineHeight: 1, flexShrink: 0 }}>
                                         {loading ? '—' : value}
                                     </Title>
                                 </Paper>
@@ -444,6 +441,7 @@ export const DashboardView = () => {
                             color: 'white',
                             boxShadow: '0 10px 32px rgba(38, 127, 186, 0.28)',
                             border: 'none',
+                            minHeight: 280,
                             height: '100%',
                             display: 'flex',
                             alignItems: 'center',
@@ -484,10 +482,10 @@ export const DashboardView = () => {
                             border: '1px solid rgba(19, 150, 57, 0.22)',
                             boxShadow: '0 8px 24px rgba(19, 150, 57, 0.08)',
                             height: '100%',
-                            minHeight: 300,
+                            minHeight: 280,
                             display: 'flex',
                             flexDirection: 'column',
-                            overflow: 'visible',
+                            overflow: 'hidden',
                         }}
                     >
                         <Box
@@ -497,7 +495,7 @@ export const DashboardView = () => {
                                 flexShrink: 0,
                             }}
                         />
-                        <Box p="md" pb="lg" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                        <Box p="md" pb="md" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                             <Group justify="space-between" align="center" mb="sm" style={{ flexShrink: 0 }}>
                                 <Text fw={800} size="sm" c="dark.4">
                                     Quick Actions
