@@ -241,8 +241,6 @@ const GlobalStyles = () => (
 function AppLayoutInner({ children, searchQuery, onSearch }: { children: React.ReactNode, searchQuery?: string, onSearch?: (val: string) => void }) {
   const { collapsed } = useSidebar();
   const [mobileOpened, setMobileOpened] = useState(false);
-  const { pathname } = useLocation();
-  const isDashboardHome = pathname === '/dashboard' || pathname === '/dashboard/';
   const currentYear = new Date().getFullYear();
 
   useEffect(() => {
@@ -297,7 +295,7 @@ function AppLayoutInner({ children, searchQuery, onSearch }: { children: React.R
             backgroundColor: '#F5F5F5',
             height: '100%',
             minHeight: 0,
-            overflow: isDashboardHome ? 'hidden' : 'auto',
+            overflow: 'auto',
             display: 'flex',
             flexDirection: 'column',
           },

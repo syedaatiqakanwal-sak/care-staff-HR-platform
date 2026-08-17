@@ -301,7 +301,7 @@ export const DashboardView = () => {
                 height: '100%',
                 display: 'flex',
                 flexDirection: 'column',
-                overflow: 'hidden',
+                overflow: 'auto',
                 animation: 'fadeIn 0.5s ease-out',
             }}
         >
@@ -322,8 +322,9 @@ export const DashboardView = () => {
                     display: grid;
                     grid-template-columns: 1fr 1fr;
                     gap: 12px;
-                    flex: 1;
-                    min-height: 0;
+                    flex: 1.25 1 auto;
+                    min-height: 300px;
+                    align-items: stretch;
                 }
                 .compliance-dashboard .metric-card {
                     height: 100%;
@@ -483,9 +484,10 @@ export const DashboardView = () => {
                             border: '1px solid rgba(19, 150, 57, 0.22)',
                             boxShadow: '0 8px 24px rgba(19, 150, 57, 0.08)',
                             height: '100%',
+                            minHeight: 300,
                             display: 'flex',
                             flexDirection: 'column',
-                            overflow: 'hidden',
+                            overflow: 'visible',
                         }}
                     >
                         <Box
@@ -495,7 +497,7 @@ export const DashboardView = () => {
                                 flexShrink: 0,
                             }}
                         />
-                        <Box p="md" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                        <Box p="md" pb="lg" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                             <Group justify="space-between" align="center" mb="sm" style={{ flexShrink: 0 }}>
                                 <Text fw={800} size="sm" c="dark.4">
                                     Quick Actions
@@ -504,7 +506,7 @@ export const DashboardView = () => {
                                     8 shortcuts
                                 </Text>
                             </Group>
-                            <SimpleGrid cols={2} spacing={8} style={{ flex: 1, minHeight: 0, alignContent: 'stretch' }}>
+                            <SimpleGrid cols={2} spacing={8} verticalSpacing={8} style={{ flex: 1, alignContent: 'stretch' }}>
                                 {QUICK_ACTIONS.map((action) => {
                                     const IconComp = action.icon;
                                     return (
