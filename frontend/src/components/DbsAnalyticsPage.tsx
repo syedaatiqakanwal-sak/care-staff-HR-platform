@@ -50,8 +50,15 @@ const DbsAnalyticsPage = () => {
                 axios.get('/api/v1/documents/dbs/analytics', { headers }),
                 axios.get('/api/v1/documents/dbs/analytics/all', { headers }),
             ]);
-            setAnalytics(analyticsRes.data);
-            setRecords(recordsRes.data || []);
+            const analyticsPayload = analyticsRes.data?.data ?? analyticsRes.data;
+            const recordsPayload = recordsRes.data;
+            const recordList = Array.isArray(recordsPayload)
+                ? recordsPayload
+                : Array.isArray(recordsPayload?.data)
+                    ? recordsPayload.data
+                    : [];
+            setAnalytics(analyticsPayload && typeof analyticsPayload === 'object' ? analyticsPayload : null);
+            setRecords(recordList);
         } catch {
             setError('Failed to load DBS analytics data.');
         } finally {
@@ -83,7 +90,7 @@ const DbsAnalyticsPage = () => {
         return { label: 'Valid', color: 'green' };
     };
 
-    const filteredRecords = records.filter(r => {
+    const filteredRecords = (Array.isArray(records) ? records : []).filter(r => {
         if (!statusFilter) return true;
         const status = getExpiryStatus(r.renewalDate);
         if (statusFilter === 'expired') return status.label === 'Expired';

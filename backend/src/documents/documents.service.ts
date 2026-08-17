@@ -722,7 +722,9 @@ export class DocumentsService {
         issueDate: d.issueDate,
         renewalDate: d.renewalDate,
         lastDeclarationDate: d.lastDeclarationDate,
+        nextDeclarationDate: d.nextDeclarationDate,
         updateServiceStatus: d.updateServiceStatus,
+        enrolledDate: d.enrolledDate,
       })),
       meta: {
         page: Math.max(1, page),
