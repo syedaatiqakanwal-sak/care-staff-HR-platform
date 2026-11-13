@@ -9,7 +9,6 @@ import {
     Group,
     Stack,
     SimpleGrid,
-    Card,
     Button,
     Loader,
     Alert,
@@ -20,7 +19,6 @@ import {
     ScrollArea,
     ActionIcon,
     Tooltip,
-    SimpleGrid as MantineSimpleGrid,
 } from '@mantine/core';
 import {
     FileText,
@@ -35,6 +33,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import { notifications } from '@mantine/notifications';
+import { ReferenceSubmissionView } from './references/ReferenceSubmissionView';
 import { AppConfirmModal } from './AppConfirmModal';
 
 interface Reference {
@@ -79,17 +78,28 @@ export const ReferenceAnalyticsPage = () => {
     const [sendingReminders, setSendingReminders] = useState(false);
     const [reminderResult, setReminderResult] = useState<any>(null);
     const [remindingId, setRemindingId] = useState<string | null>(null);
-    const [confirmReminder, setConfirmReminder] = useState<Reference | null>(null);
+    const [confirmReminderRef, setConfirmReminderRef] = useState<Reference | null>(null);
 
     const MAX_REMINDERS = 4;
 
     useEffect(() => {
         loadData();
+        const timer = window.setInterval(() => {
+            if (document.visibilityState === 'visible') loadData(true);
+        }, 10000);
+        const onVisible = () => {
+            if (document.visibilityState === 'visible') loadData(true);
+        };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => {
+            window.clearInterval(timer);
+            document.removeEventListener('visibilitychange', onVisible);
+        };
     }, []);
 
-    const loadData = async () => {
+    const loadData = async (silent = false) => {
         try {
-            setLoading(true);
+            if (!silent) setLoading(true);
             const [analyticsRes, referencesRes] = await Promise.all([
                 axios.get('/api/v1/references/analytics', {
                     headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
@@ -108,13 +118,15 @@ export const ReferenceAnalyticsPage = () => {
             }
         } catch (error: any) {
             console.error('Failed to load analytics:', error);
-            notifications.show({
-                title: 'Error',
-                message: 'Failed to load reference analytics',
-                color: 'red',
-            });
+            if (!silent) {
+                notifications.show({
+                    title: 'Error',
+                    message: 'Failed to load reference analytics',
+                    color: 'red',
+                });
+            }
         } finally {
-            setLoading(false);
+            if (!silent) setLoading(false);
         }
     };
 
@@ -258,7 +270,7 @@ export const ReferenceAnalyticsPage = () => {
                 if (result.processed === 0) {
                     notifications.show({
                         title: 'No Reminders to Send',
-                        message: 'No references are currently eligible for reminders. Only pending references older than 7 days, or opened but not submitted references older than 7 days (and under the 4-reminder cap), can receive reminders.',
+                        message: 'No references are currently eligible for reminders. A reference must be pending/opened (not submitted), under the 4-reminder cap, and either 7+ days since the request (first reminder) or 7+ days since the last reminder (reminders 2–4).',
                         color: 'blue',
                         autoClose: 8000,
                     });
@@ -280,9 +292,14 @@ export const ReferenceAnalyticsPage = () => {
         }
     };
 
-    const handleSendSingleReminder = async () => {
-        if (!confirmReminder) return;
-        const ref = confirmReminder;
+    const handleSendSingleReminder = (ref: Reference) => {
+        setConfirmReminderRef(ref);
+    };
+
+    const confirmSendSingleReminder = async () => {
+        const ref = confirmReminderRef;
+        if (!ref) return;
+        setConfirmReminderRef(null);
         try {
             setRemindingId(ref.id);
             const token = localStorage.getItem('token');
@@ -294,7 +311,6 @@ export const ReferenceAnalyticsPage = () => {
                 message: `Reminder email sent to ${ref.email}.`,
                 color: 'green',
             });
-            setConfirmReminder(null);
             await loadData();
         } catch (error: any) {
             const message = error.response?.data?.message || error.message || 'Failed to send reminder';
@@ -308,37 +324,37 @@ export const ReferenceAnalyticsPage = () => {
         }
     };
 
-    // Reminder-eligible (matches backend 7-day / 4-reminder rules):
+    // Reminder-eligible — must match backend processAutomatedReminders():
     // - not submitted
-    // - under 4-reminder max
-    // - first reminder: 7+ days after createdAt (pending) or openedAt (opened)
-    // - later reminders: 7+ days since lastReminderSentAt
+    // - under 4-reminder cap
+    // - reminder 1: 7 days after createdAt (pending) or openedAt (opened)
+    // - reminders 2–4: 7 days after lastReminderSentAt
     const getReminderReferences = () => {
+        const DAY_MS = 1000 * 60 * 60 * 24;
         const now = Date.now();
-        const dayMs = 1000 * 60 * 60 * 24;
+        const daysSince = (date: string | Date) =>
+            Math.floor((now - new Date(date).getTime()) / DAY_MS);
 
-        return references.filter(ref => {
-            if ((ref.reminderCount || 0) >= MAX_REMINDERS) return false;
+        return references.filter((ref) => {
+            const reminderCount = ref.reminderCount || 0;
+            if (reminderCount >= MAX_REMINDERS) return false;
             if (ref.submittedAt || ref.status.toLowerCase() === 'submitted') return false;
 
             const normalizedStatus = ref.status.toLowerCase();
             if (normalizedStatus !== 'pending' && normalizedStatus !== 'opened') return false;
 
-            const reminderCount = ref.reminderCount || 0;
             if (reminderCount === 0) {
                 const anchor =
-                    normalizedStatus === 'opened' && ref.openedAt
-                        ? new Date(ref.openedAt).getTime()
-                        : new Date(ref.createdAt).getTime();
-                return now - anchor >= 7 * dayMs;
+                    normalizedStatus === 'opened' && ref.openedAt ? ref.openedAt : ref.createdAt;
+                return daysSince(anchor) >= 7;
             }
 
-            const lastSent = ref.lastReminderSentAt
-                ? new Date(ref.lastReminderSentAt).getTime()
-                : (normalizedStatus === 'opened' && ref.openedAt
-                    ? new Date(ref.openedAt).getTime()
-                    : new Date(ref.createdAt).getTime());
-            return now - lastSent >= 7 * dayMs;
+            if (ref.lastReminderSentAt) {
+                return daysSince(ref.lastReminderSentAt) >= 7;
+            }
+
+            // Fallback if a prior reminder lacked a timestamp
+            return daysSince(ref.createdAt) >= 7;
         });
     };
 
@@ -426,118 +442,79 @@ export const ReferenceAnalyticsPage = () => {
 
                 {/* Analytics Summary Cards */}
                 {analytics && (
-                    <SimpleGrid cols={{ base: 1, sm: 2, md: 3, lg: 6 }} spacing="md">
-                        <Card withBorder p="md" radius="md">
-                            <Group gap="xs" mb="xs">
-                                <ThemeIcon variant="light" color="blue" size="lg" radius="md">
-                                    <FileText size={20} />
-                                </ThemeIcon>
-                                <Box>
-                                    <Text size="xs" c="dimmed" fw={600}>
-                                        Total References
-                                    </Text>
-                                    <Text size="xl" fw={700}>
-                                        {analytics.totalReferences}
-                                    </Text>
-                                </Box>
-                            </Group>
-                        </Card>
-
-                        <Card withBorder p="md" radius="md">
-                            <Group gap="xs" mb="xs">
-                                <ThemeIcon variant="light" color="#267FBA" size="lg" radius="md">
-                                    <CheckCircle size={20} />
-                                </ThemeIcon>
-                                <Box>
-                                    <Text size="xs" c="dimmed" fw={600}>
-                                        Submitted
-                                    </Text>
-                                    <Text size="xl" fw={700}>
-                                        {analytics.totalSubmitted}
-                                    </Text>
-                                </Box>
-                            </Group>
-                        </Card>
-
-                        <Card withBorder p="md" radius="md">
-                            <Group gap="xs" mb="xs">
-                                <ThemeIcon variant="light" color="yellow" size="lg" radius="md">
-                                    <Clock size={20} />
-                                </ThemeIcon>
-                                <Box>
-                                    <Text size="xs" c="dimmed" fw={600}>
-                                        Pending
-                                    </Text>
-                                    <Text size="xl" fw={700}>
-                                        {analytics.pendingReferences}
-                                    </Text>
-                                </Box>
-                            </Group>
-                        </Card>
-
-                        <Card withBorder p="md" radius="md">
-                            <Group gap="xs" mb="xs">
-                                <ThemeIcon variant="light" color="blue" size="lg" radius="md">
-                                    <Eye size={20} />
-                                </ThemeIcon>
-                                <Box>
-                                    <Text size="xs" c="dimmed" fw={600}>
-                                        Opened (Not Submitted)
-                                    </Text>
-                                    <Text size="xl" fw={700}>
-                                        {analytics.openedNotSubmitted}
-                                    </Text>
-                                </Box>
-                            </Group>
-                        </Card>
-
-                        <Card withBorder p="md" radius="md">
-                            <Group gap="xs" mb="xs">
-                                <ThemeIcon variant="light" color="gray" size="lg" radius="md">
-                                    <XCircle size={20} />
-                                </ThemeIcon>
-                                <Box>
-                                    <Text size="xs" c="dimmed" fw={600}>
-                                        Not Opened
-                                    </Text>
-                                    <Text size="xl" fw={700}>
-                                        {analytics.notOpened}
-                                    </Text>
-                                </Box>
-                            </Group>
-                        </Card>
-
-                        <Card withBorder p="md" radius="md">
-                            <Group gap="xs" mb="xs">
-                                <ThemeIcon variant="light" color="orange" size="lg" radius="md">
-                                    <Mail size={20} />
-                                </ThemeIcon>
-                                <Box>
-                                    <Text size="xs" c="dimmed" fw={600}>
-                                        Reminders Sent
-                                    </Text>
-                                    <Text size="xl" fw={700}>
-                                        {analytics.reminderEmailsSent}
-                                    </Text>
-                                </Box>
-                            </Group>
-                        </Card>
-
-                        <Card withBorder p="md" radius="md">
-                            <Group gap="xs" mb="xs">
-                                <ThemeIcon variant="light" color="red" size="lg" radius="md">
-                                    <Send size={20} />
-                                </ThemeIcon>
-                                <Box>
-                                    <Text size="xs" c="dimmed" fw={600}>
-                                        Reminder Due
-                                    </Text>
-                                    <Text size="xl" fw={700}>
-                                        {reminderReferences.length}
-                                    </Text>
-                                </Box>
-                            </Group>
-                        </Card>
+                    <SimpleGrid cols={{ base: 1, sm: 2, md: 3, lg: 4 }} spacing="md">
+                        {[
+                            {
+                                label: 'Total References',
+                                value: analytics.totalReferences,
+                                color: 'blue',
+                                icon: FileText,
+                            },
+                            {
+                                label: 'Submitted',
+                                value: analytics.totalSubmitted,
+                                color: 'teal',
+                                icon: CheckCircle,
+                            },
+                            {
+                                label: 'Pending',
+                                value: analytics.pendingReferences,
+                                color: 'yellow',
+                                icon: Clock,
+                            },
+                            {
+                                label: 'Opened (Not Submitted)',
+                                value: analytics.openedNotSubmitted,
+                                color: 'indigo',
+                                icon: Eye,
+                            },
+                            {
+                                label: 'Not Opened',
+                                value: analytics.notOpened,
+                                color: 'gray',
+                                icon: XCircle,
+                            },
+                            {
+                                label: 'Reminders Sent',
+                                value: analytics.reminderEmailsSent,
+                                color: 'orange',
+                                icon: Mail,
+                            },
+                            {
+                                label: 'Reminder Due',
+                                value: reminderReferences.length,
+                                color: 'red',
+                                icon: Send,
+                            },
+                        ].map((card) => {
+                            const Icon = card.icon;
+                            return (
+                                <Paper
+                                    key={card.label}
+                                    withBorder
+                                    p="md"
+                                    radius="lg"
+                                    style={{
+                                        borderLeft: `4px solid var(--mantine-color-${card.color}-6)`,
+                                        background: 'white',
+                                    }}
+                                >
+                                    <Group justify="space-between" align="flex-start" wrap="nowrap">
+                                        <Box style={{ minWidth: 0 }}>
+                                            <Text size="xs" c="dimmed" fw={700} tt="uppercase" mb={4} lineClamp={2}>
+                                                {card.label}
+                                            </Text>
+                                            <Text size="xl" fw={900} c="dark.8" lh={1}>
+                                                {card.value}
+                                            </Text>
+                                        </Box>
+                                        <ThemeIcon variant="light" color={card.color} size="lg" radius="md">
+                                            <Icon size={18} />
+                                        </ThemeIcon>
+                                    </Group>
+                                </Paper>
+                            );
+                        })}
                     </SimpleGrid>
                 )}
 
@@ -664,7 +641,7 @@ export const ReferenceAnalyticsPage = () => {
                                                                     leftSection={<Send size={14} />}
                                                                     loading={remindingId === ref.id}
                                                                     disabled={(ref.reminderCount || 0) >= MAX_REMINDERS}
-                                                                    onClick={() => setConfirmReminder(ref)}
+                                                                    onClick={() => handleSendSingleReminder(ref)}
                                                                 >
                                                                     Send Reminder
                                                                 </Button>
@@ -687,188 +664,49 @@ export const ReferenceAnalyticsPage = () => {
                 opened={viewModalOpened}
                 onClose={() => setViewModalOpened(false)}
                 title={
-                    <Title order={3}>
-                        {selectedReference?.referenceType === 'personal' 
-                            ? 'Character Reference Form' 
+                    <Title order={3} style={{ color: '#1A1D21' }}>
+                        {selectedReference?.referenceType === 'personal'
+                            ? 'Character Reference Request Form'
                             : 'Professional Reference Form'}
                     </Title>
                 }
-                size="xl"
+                size="1000px"
                 centered
+                radius="md"
+                padding="lg"
+                styles={{
+                    header: { borderBottom: '1px solid #EEF2F6', marginBottom: 8, paddingBottom: 12 },
+                    body: { paddingTop: 8 },
+                }}
             >
                 {selectedReference && (
-                    <ScrollArea h={600}>
-                        <Stack gap="md">
-                            {/* Header Info */}
-                            <Paper p="md" withBorder>
-                                <MantineSimpleGrid cols={2} spacing="md">
-                                    <Box>
-                                        <Text size="sm" fw={600} c="dimmed" mb={4}>
-                                            Candidate Name
-                                        </Text>
-                                        <Text>{getCandidateName(selectedReference)}</Text>
-                                    </Box>
-                                    <Box>
-                                        <Text size="sm" fw={600} c="dimmed" mb={4}>
-                                            Referee Name
-                                        </Text>
-                                        <Text>{selectedReference.name}</Text>
-                                    </Box>
-                                    <Box>
-                                        <Text size="sm" fw={600} c="dimmed" mb={4}>
-                                            Referee Email
-                                        </Text>
-                                        <Text>{selectedReference.email}</Text>
-                                    </Box>
-                                    <Box>
-                                        <Text size="sm" fw={600} c="dimmed" mb={4}>
-                                            Submitted Date
-                                        </Text>
-                                        <Text>{formatDate(selectedReference.submittedAt)}</Text>
-                                    </Box>
-                                </MantineSimpleGrid>
-                            </Paper>
-
-                            {/* Submitted Form Data */}
-                            {selectedReference.submissionData ? (
-                                <Paper p="md" withBorder>
-                                    <Title order={4} mb="md">Submitted Reference Information</Title>
-                                    <Stack gap="md">
-                                        {selectedReference.submissionData.relationship && (
-                                            <Box>
-                                                <Text size="sm" fw={600} c="dimmed" mb={4}>
-                                                    Relationship to Candidate
-                                                </Text>
-                                                <Text>{selectedReference.submissionData.relationship}</Text>
-                                            </Box>
-                                        )}
-                                        {selectedReference.submissionData.yearsKnown && (
-                                            <Box>
-                                                <Text size="sm" fw={600} c="dimmed" mb={4}>
-                                                    How Long Known
-                                                </Text>
-                                                <Text>{selectedReference.submissionData.yearsKnown}</Text>
-                                            </Box>
-                                        )}
-                                        {selectedReference.submissionData.positionHeld && (
-                                            <Box>
-                                                <Text size="sm" fw={600} c="dimmed" mb={4}>
-                                                    Position(s) Held
-                                                </Text>
-                                                <Text>{selectedReference.submissionData.positionHeld}</Text>
-                                            </Box>
-                                        )}
-                                        {(selectedReference.submissionData.employmentStartDate || selectedReference.submissionData.employmentEndDate) && (
-                                            <MantineSimpleGrid cols={2} spacing="md">
-                                                {selectedReference.submissionData.employmentStartDate && (
-                                                    <Box>
-                                                        <Text size="sm" fw={600} c="dimmed" mb={4}>
-                                                            Employment Start Date
-                                                        </Text>
-                                                        <Text>{selectedReference.submissionData.employmentStartDate}</Text>
-                                                    </Box>
-                                                )}
-                                                {selectedReference.submissionData.employmentEndDate && (
-                                                    <Box>
-                                                        <Text size="sm" fw={600} c="dimmed" mb={4}>
-                                                            Employment End Date
-                                                        </Text>
-                                                        <Text>{selectedReference.submissionData.employmentEndDate}</Text>
-                                                    </Box>
-                                                )}
-                                            </MantineSimpleGrid>
-                                        )}
-                                        {selectedReference.submissionData.comments && (
-                                            <Box>
-                                                <Text size="sm" fw={600} c="dimmed" mb={4}>
-                                                    Comments
-                                                </Text>
-                                                <Text>{selectedReference.submissionData.comments}</Text>
-                                            </Box>
-                                        )}
-                                        {selectedReference.submissionData.additionalComments && (
-                                            <Box>
-                                                <Text size="sm" fw={600} c="dimmed" mb={4}>
-                                                    Additional Comments
-                                                </Text>
-                                                <Text>{selectedReference.submissionData.additionalComments}</Text>
-                                            </Box>
-                                        )}
-                                        {selectedReference.submissionData.recommendation !== null && selectedReference.submissionData.recommendation !== undefined && (
-                                            <Box>
-                                                <Text size="sm" fw={600} c="dimmed" mb={4}>
-                                                    Would You Recommend This Candidate?
-                                                </Text>
-                                                <Badge color={selectedReference.submissionData.recommendation ? 'green' : 'red'}>
-                                                    {selectedReference.submissionData.recommendation ? 'Yes' : 'No'}
-                                                </Badge>
-                                            </Box>
-                                        )}
-                                        {selectedReference.submissionData.criteriaRatings && Object.keys(selectedReference.submissionData.criteriaRatings).length > 0 && (
-                                            <Box>
-                                                <Text size="sm" fw={600} c="dimmed" mb="md">
-                                                    Criteria Ratings
-                                                </Text>
-                                                <Table>
-                                                    <Table.Thead>
-                                                        <Table.Tr>
-                                                            <Table.Th>Criteria</Table.Th>
-                                                            <Table.Th>Rating</Table.Th>
-                                                        </Table.Tr>
-                                                    </Table.Thead>
-                                                    <Table.Tbody>
-                                                        {Object.entries(selectedReference.submissionData.criteriaRatings).map(([criteria, rating]: [string, any]) => (
-                                                            <Table.Tr key={criteria}>
-                                                                <Table.Td>{criteria}</Table.Td>
-                                                                <Table.Td>
-                                                                    <Badge variant="light">{rating}</Badge>
-                                                                </Table.Td>
-                                                            </Table.Tr>
-                                                        ))}
-                                                    </Table.Tbody>
-                                                </Table>
-                                            </Box>
-                                        )}
-                                        {selectedReference.submissionData.signature && (
-                                            <Box>
-                                                <Text size="sm" fw={600} c="dimmed" mb={4}>
-                                                    Signature
-                                                </Text>
-                                                <Box p="md" style={{ border: '1px solid #dee2e6', borderRadius: '4px', backgroundColor: '#f8f9fa' }}>
-                                                    <img 
-                                                        src={selectedReference.submissionData.signature} 
-                                                        alt="Signature" 
-                                                        style={{ maxWidth: '100%', height: 'auto' }}
-                                                    />
-                                                </Box>
-                                                {selectedReference.submissionData.signatureDate && (
-                                                    <Text size="xs" c="dimmed" mt={4}>
-                                                        Signed: {selectedReference.submissionData.signatureDate}
-                                                    </Text>
-                                                )}
-                                            </Box>
-                                        )}
-                                    </Stack>
-                                </Paper>
-                            ) : (
-                                <Alert color="yellow">
-                                    No submission data available for this reference.
-                                </Alert>
-                            )}
-                        </Stack>
-                    </ScrollArea>
+                    <ScrollArea.Autosize mah="70vh" offsetScrollbars>
+                        <ReferenceSubmissionView
+                            referenceType={selectedReference.referenceType}
+                            candidateName={getCandidateName(selectedReference)}
+                            refereeName={selectedReference.name}
+                            refereeEmail={selectedReference.email}
+                            submittedAtLabel={formatDate(selectedReference.submittedAt)}
+                            submissionData={selectedReference.submissionData}
+                        />
+                    </ScrollArea.Autosize>
                 )}
             </Modal>
 
             <AppConfirmModal
-                opened={!!confirmReminder}
-                title="Send reminder"
-                message={`Send a reference reminder email to ${confirmReminder?.email ?? ''}?`}
-                confirmLabel="Send reminder"
-                confirmColor="orange"
-                loading={!!remindingId}
-                onConfirm={handleSendSingleReminder}
-                onCancel={() => setConfirmReminder(null)}
+                opened={!!confirmReminderRef}
+                options={
+                    confirmReminderRef
+                        ? {
+                              title: 'Send reminder',
+                              message: `Send a reference reminder email to ${confirmReminderRef.email}?`,
+                              confirmLabel: 'Send reminder',
+                              confirmColor: 'orange',
+                          }
+                        : null
+                }
+                onCancel={() => setConfirmReminderRef(null)}
+                onConfirm={confirmSendSingleReminder}
             />
         </Container>
     );

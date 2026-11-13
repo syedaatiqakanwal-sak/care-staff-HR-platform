@@ -1,4 +1,4 @@
-import { useState, useEffect, Fragment, useRef } from 'react';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import {
     Box,
     Group,
@@ -13,6 +13,8 @@ import {
     Stack,
     LoadingOverlay,
     FileButton,
+    Tooltip,
+    Modal,
 } from '@mantine/core';
 import { ClipboardList, Upload, Eye, Save, Plus } from 'lucide-react';
 import { notifications } from '@mantine/notifications';
@@ -58,31 +60,6 @@ const FILTER_LABELS = Object.fromEntries(
     FILTER_OPTIONS.map((opt) => [opt.value, opt.label]),
 ) as Record<string, string>;
 
-/** Normalize any date / ISO string to YYYY-MM-DD for HTML date inputs. */
-const toDateInputValue = (value: unknown): string | null => {
-    if (value == null || value === '') return null;
-    if (typeof value === 'string') {
-        const trimmed = value.trim();
-        if (!trimmed) return null;
-        const datePart = trimmed.slice(0, 10);
-        if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return datePart;
-        const parsed = new Date(trimmed);
-        if (Number.isNaN(parsed.getTime())) return null;
-        const y = parsed.getFullYear();
-        const m = String(parsed.getMonth() + 1).padStart(2, '0');
-        const day = String(parsed.getDate()).padStart(2, '0');
-        return `${y}-${m}-${day}`;
-    }
-    if (value instanceof Date) {
-        if (Number.isNaN(value.getTime())) return null;
-        const y = value.getFullYear();
-        const m = String(value.getMonth() + 1).padStart(2, '0');
-        const day = String(value.getDate()).padStart(2, '0');
-        return `${y}-${m}-${day}`;
-    }
-    return null;
-};
-
 /** Resolve filter group from field or infer from sortOrder / group name (API fallback). */
 const resolveFilterGroup = (rec: InHouseRecord): string | null => {
     if (rec.filterGroup) return rec.filterGroup;
@@ -115,6 +92,24 @@ const getSectionHeader = (rec: InHouseRecord, viewingAll: boolean): string => {
     return rec.group;
 };
 
+/** HTML date inputs require YYYY-MM-DD; API/Date values often come as ISO timestamps. */
+const toDateInputValue = (value: unknown): string | null => {
+    if (value == null || value === '') return null;
+    if (typeof value === 'string') {
+        const match = value.trim().match(/^(\d{4}-\d{2}-\d{2})/);
+        if (match) return match[1];
+        const parsed = new Date(value);
+        if (!Number.isNaN(parsed.getTime())) {
+            return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}-${String(parsed.getUTCDate()).padStart(2, '0')}`;
+        }
+        return null;
+    }
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, '0')}-${String(value.getUTCDate()).padStart(2, '0')}`;
+    }
+    return null;
+};
+
 const normalizeRecords = (
     rows: (InHouseRecord & { filter_group?: string; category_header?: string })[],
 ): InHouseRecord[] =>
@@ -138,6 +133,101 @@ const STATUS_COLORS: Record<string, string> = {
     completed: 'green',
 };
 
+type DocumentViewerState = {
+    name: string;
+    loading: boolean;
+    kind: 'pdf' | 'image' | 'html' | 'unsupported';
+    url: string | null;
+};
+
+function decodeXml(value: string): string {
+    return value
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'");
+}
+
+function escapeHtml(value: string): string {
+    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+async function readZipEntry(buffer: ArrayBuffer, entryName: string): Promise<Uint8Array | null> {
+    const view = new DataView(buffer);
+    const bytes = new Uint8Array(buffer);
+    let eocd = -1;
+    const scanFrom = Math.max(0, bytes.length - 22 - 65535);
+    for (let i = bytes.length - 22; i >= scanFrom; i--) {
+        if (view.getUint32(i, true) === 0x06054b50) {
+            eocd = i;
+            break;
+        }
+    }
+    if (eocd < 0) return null;
+    const count = view.getUint16(eocd + 10, true);
+    let offset = view.getUint32(eocd + 16, true);
+    for (let n = 0; n < count; n++) {
+        if (offset + 46 > bytes.length || view.getUint32(offset, true) !== 0x02014b50) return null;
+        const method = view.getUint16(offset + 10, true);
+        const compSize = view.getUint32(offset + 20, true);
+        const nameLen = view.getUint16(offset + 28, true);
+        const extraLen = view.getUint16(offset + 30, true);
+        const commentLen = view.getUint16(offset + 32, true);
+        const localOffset = view.getUint32(offset + 42, true);
+        const name = new TextDecoder().decode(bytes.subarray(offset + 46, offset + 46 + nameLen));
+        if (name === entryName) {
+            if (localOffset + 30 > bytes.length || view.getUint32(localOffset, true) !== 0x04034b50) return null;
+            const localNameLen = view.getUint16(localOffset + 26, true);
+            const localExtraLen = view.getUint16(localOffset + 28, true);
+            const dataStart = localOffset + 30 + localNameLen + localExtraLen;
+            const data = bytes.subarray(dataStart, dataStart + compSize);
+            if (method === 0) return data;
+            if (method === 8) {
+                const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+                return new Uint8Array(await new Response(stream).arrayBuffer());
+            }
+            return null;
+        }
+        offset += 46 + nameLen + extraLen + commentLen;
+    }
+    return null;
+}
+
+async function docxToHtml(buffer: ArrayBuffer): Promise<string> {
+    const xmlBytes = await readZipEntry(buffer, 'word/document.xml');
+    if (!xmlBytes) return '';
+    const xml = new TextDecoder().decode(xmlBytes);
+    const token = /<w:t\b[^>]*>([^<]*)<\/w:t>|<w:br\b[^>]*\/?>|<w:tab\b[^>]*\/?>/g;
+    const html: string[] = [];
+    for (const chunk of xml.split(/<w:p\b/).slice(1)) {
+        const end = chunk.indexOf('</w:p>');
+        const body = end >= 0 ? chunk.slice(0, end) : chunk;
+        token.lastIndex = 0;
+        let text = '';
+        let match: RegExpExecArray | null;
+        while ((match = token.exec(body))) {
+            if (match[1] != null) text += match[1];
+            else if (match[0].startsWith('<w:br')) text += '\n';
+            else text += '\t';
+        }
+        const plain = decodeXml(text).replace(/\u00a0/g, ' ');
+        if (!plain.trim()) continue;
+        html.push(`<p>${escapeHtml(plain).replace(/\n/g, '<br>')}</p>`);
+    }
+    return html.join('');
+}
+
+function documentKind(name: string, rawType: string): 'pdf' | 'image' | 'docx' | 'other' {
+    const ext = String(name || '').split('.').pop()?.toLowerCase() || '';
+    const type = String(rawType || '').split(';')[0].trim().toLowerCase();
+    if (type === 'application/pdf' || ext === 'pdf') return 'pdf';
+    if (type.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(ext)) return 'image';
+    if (ext === 'docx' || type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx';
+    return 'other';
+}
+
+
 interface InHouseTrainingTabProps {
     profile: any;
     canEdit: boolean;
@@ -145,6 +235,8 @@ interface InHouseTrainingTabProps {
 
 export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps) => {
     const [records, setRecords] = useState<InHouseRecord[]>([]);
+    const recordsRef = useRef<InHouseRecord[]>([]);
+    recordsRef.current = records;
     const [activeFilters, setActiveFilters] = useState<string[]>(['all']);
 
     const toggleFilter = (value: string) => {
@@ -167,14 +259,10 @@ export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps
     const [initializing, setInitializing] = useState(false);
     const [savingId, setSavingId] = useState<string | null>(null);
     const [uploadingId, setUploadingId] = useState<string | null>(null);
-    const recordsRef = useRef<InHouseRecord[]>([]);
+    const [viewer, setViewer] = useState<DocumentViewerState | null>(null);
 
     const targetId = profile?.user?.id || profile?.id;
     const authHeader = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
-
-    useEffect(() => {
-        recordsRef.current = records;
-    }, [records]);
 
     const fetchRecords = async () => {
         if (!targetId) return;
@@ -234,19 +322,20 @@ export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps
         );
     };
 
-    const handleSaveRow = async (record: InHouseRecord) => {
+    const handleSaveRow = async (recordId: string) => {
         if (!targetId) return;
-        const enrollmentDate = toDateInputValue(record.enrollmentDate);
-        const completionDate = toDateInputValue(record.completionDate);
-        const status = record.status || null;
+        const record = recordsRef.current.find((r) => r.id === recordId);
+        if (!record) return;
         try {
             setSavingId(record.id);
+            const enrollmentDate = toDateInputValue(record.enrollmentDate);
+            const completionDate = toDateInputValue(record.completionDate);
             const res = await axios.patch(
                 `/api/v1/staff/${targetId}/inhouse-training/${record.id}`,
                 {
                     enrollmentDate,
                     completionDate,
-                    status,
+                    status: record.status || null,
                 },
                 { headers: authHeader() },
             );
@@ -258,11 +347,10 @@ export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps
                             ? {
                                   ...r,
                                   ...updated,
-                                  enrollmentDate:
-                                      toDateInputValue(updated.enrollmentDate) ?? enrollmentDate,
-                                  completionDate:
-                                      toDateInputValue(updated.completionDate) ?? completionDate,
-                                  status: updated.status ?? status,
+                                  enrollmentDate: toDateInputValue(updated.enrollmentDate) ?? enrollmentDate,
+                                  completionDate: toDateInputValue(updated.completionDate) ?? completionDate,
+                                  filterGroup: updated.filterGroup ?? r.filterGroup,
+                                  categoryHeader: updated.categoryHeader ?? r.categoryHeader,
                               }
                             : r,
                     ),
@@ -287,42 +375,41 @@ export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps
 
     const handleUpload = async (recordId: string, file: File | null) => {
         if (!file || !targetId) return;
-        const latest =
-            recordsRef.current.find((r) => r.id === recordId) ||
-            records.find((r) => r.id === recordId);
-        if (!latest) return;
-        const enrollmentDate = toDateInputValue(latest.enrollmentDate);
-        const completionDate = toDateInputValue(latest.completionDate);
-        const status = latest.status || null;
+        // Always use latest form values (avoids stale closure when FileButton opens)
+        const record = recordsRef.current.find((r) => r.id === recordId);
+        if (!record) return;
         try {
-            setUploadingId(recordId);
+            setUploadingId(record.id);
+            const enrollmentDate = toDateInputValue(record.enrollmentDate);
+            const completionDate = toDateInputValue(record.completionDate);
             const formData = new FormData();
             formData.append('file', file);
             if (enrollmentDate) formData.append('enrollmentDate', enrollmentDate);
             if (completionDate) formData.append('completionDate', completionDate);
-            if (status) formData.append('status', status);
+            if (record.status) formData.append('status', record.status);
             const res = await axios.post(
-                `/api/v1/staff/${targetId}/inhouse-training/${recordId}/upload`,
+                `/api/v1/staff/${targetId}/inhouse-training/${record.id}/upload`,
                 formData,
                 { headers: { ...authHeader(), 'Content-Type': 'multipart/form-data' } },
             );
             const updated = res.data?.record;
             if (updated) {
                 setRecords((prev) =>
-                    prev.map((r) => {
-                        if (r.id !== updated.id) return r;
-                        return {
-                            ...r,
-                            ...updated,
-                            enrollmentDate:
-                                toDateInputValue(updated.enrollmentDate) ??
-                                toDateInputValue(r.enrollmentDate),
-                            completionDate:
-                                toDateInputValue(updated.completionDate) ??
-                                toDateInputValue(r.completionDate),
-                            status: updated.status ?? r.status,
-                        };
-                    }),
+                    prev.map((r) =>
+                        r.id === updated.id
+                            ? {
+                                  ...r,
+                                  ...updated,
+                                  enrollmentDate:
+                                      toDateInputValue(updated.enrollmentDate) ?? enrollmentDate ?? r.enrollmentDate,
+                                  completionDate:
+                                      toDateInputValue(updated.completionDate) ?? completionDate ?? r.completionDate,
+                                  status: updated.status ?? record.status ?? r.status,
+                                  filterGroup: updated.filterGroup ?? r.filterGroup,
+                                  categoryHeader: updated.categoryHeader ?? r.categoryHeader,
+                              }
+                            : r,
+                    ),
                 );
             }
             notifications.show({
@@ -342,31 +429,46 @@ export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps
         }
     };
 
+    const closeViewer = () => {
+        setViewer((current) => {
+            if (current?.url) window.URL.revokeObjectURL(current.url);
+            return null;
+        });
+    };
+
     const handleViewDocument = async (record: InHouseRecord) => {
         if (!targetId || !record.documentPath) return;
+        const name = record.documentName || 'Document';
+        setViewer({ name, loading: true, kind: 'html', url: null });
         try {
             const res = await axios.get(
                 `/api/v1/staff/${targetId}/inhouse-training/${record.id}/document`,
                 { headers: authHeader(), responseType: 'blob' },
             );
-            const contentType =
-                (res.headers['content-type'] as string) ||
-                (res.data instanceof Blob && res.data.type) ||
-                'application/octet-stream';
-            const blob = new Blob([res.data], { type: contentType.split(';')[0].trim() });
-            const url = window.URL.createObjectURL(blob);
-            const win = window.open(url, '_blank');
-            if (!win) {
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = record.documentName || 'document';
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
+            const rawType = String(res.headers['content-type'] || '');
+            const blob: Blob = res.data instanceof Blob ? res.data : new Blob([res.data]);
+            const kind = documentKind(name, rawType);
+            if (kind === 'pdf' || kind === 'image') {
+                const mime = kind === 'pdf'
+                    ? 'application/pdf'
+                    : rawType.split(';')[0].trim().startsWith('image/')
+                      ? rawType.split(';')[0].trim()
+                      : blob.type || 'image/jpeg';
+                const url = window.URL.createObjectURL(new Blob([blob], { type: mime }));
+                setViewer({ name, loading: false, kind, url });
+                return;
             }
-            setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+            if (kind === 'docx') {
+                const html = await docxToHtml(await blob.arrayBuffer());
+                const page = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#fff;color:#1a1a1a;font:16px/1.6 "Segoe UI",Arial,sans-serif}body{padding:32px 40px}p{margin:0 0 12px}</style></head><body>${html || '<p>This Word document has no readable text.</p>'}</body></html>`;
+                const url = window.URL.createObjectURL(new Blob([page], { type: 'text/html' }));
+                setViewer({ name, loading: false, kind: 'html', url });
+                return;
+            }
+            setViewer({ name, loading: false, kind: 'unsupported', url: null });
         } catch (error) {
             console.error('Failed to open document', error);
+            setViewer(null);
             notifications.show({
                 title: 'Error',
                 message: 'Could not open the document.',
@@ -374,6 +476,7 @@ export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps
             });
         }
     };
+
 
     const filteredRecords = (activeFilters.includes('all')
         ? records
@@ -579,15 +682,17 @@ export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps
                                                 <Table.Td>
                                                     <Group gap="xs" wrap="nowrap">
                                                         {record.documentPath && (
-                                                            <Button
-                                                                size="xs"
-                                                                variant="light"
-                                                                color="green"
-                                                                leftSection={<Eye size={14} />}
-                                                                onClick={() => handleViewDocument(record)}
-                                                            >
-                                                                View
-                                                            </Button>
+                                                            <Tooltip label={record.documentName || 'View document'}>
+                                                                <Button
+                                                                    size="xs"
+                                                                    variant="light"
+                                                                    color="green"
+                                                                    leftSection={<Eye size={14} />}
+                                                                    onClick={() => handleViewDocument(record)}
+                                                                >
+                                                                    View
+                                                                </Button>
+                                                            </Tooltip>
                                                         )}
                                                         {canEdit && (
                                                             <FileButton
@@ -620,7 +725,7 @@ export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps
                                                             color="green"
                                                             leftSection={<Save size={14} />}
                                                             loading={savingId === record.id}
-                                                            onClick={() => handleSaveRow(record)}
+                                                            onClick={() => handleSaveRow(record.id)}
                                                         >
                                                             Save
                                                         </Button>
@@ -635,6 +740,35 @@ export const InHouseTrainingTab = ({ profile, canEdit }: InHouseTrainingTabProps
                     </Table.ScrollContainer>
                 </Paper>
             )}
+            <Modal
+                opened={!!viewer}
+                onClose={closeViewer}
+                title={viewer?.name || 'Document'}
+                size="xl"
+                centered
+                zIndex={400}
+                styles={{ body: { padding: 0, height: '75vh', background: '#F4F6F8' } }}
+            >
+                {viewer?.loading ? (
+                    <Box style={{ height: '75vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Text c="dimmed">Opening document...</Text>
+                    </Box>
+                ) : viewer?.kind === 'image' && viewer.url ? (
+                    <Box style={{ height: '75vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                        <img src={viewer.url} alt={viewer.name} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                    </Box>
+                ) : viewer?.url && (viewer.kind === 'pdf' || viewer.kind === 'html') ? (
+                    <iframe
+                        title={viewer.name}
+                        src={viewer.url}
+                        style={{ width: '100%', height: '75vh', border: 'none', background: '#fff' }}
+                    />
+                ) : (
+                    <Box style={{ height: '75vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+                        <Text c="dimmed" ta="center">This file cannot be shown in the browser.</Text>
+                    </Box>
+                )}
+            </Modal>
         </Box>
     );
 };

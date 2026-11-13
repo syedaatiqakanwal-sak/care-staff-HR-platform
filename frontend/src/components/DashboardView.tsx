@@ -36,11 +36,13 @@ import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { notifications } from '@mantine/notifications';
 import { DocumentUploadForm } from './documents/DocumentUploadForm';
+import api from '../utils/api';
 
 const BRAND_GREEN = '#139639';
 const BRAND_BLUE = '#267FBA';
 
 type HrStats = {
+    totalUsers: number;
     totalActive: number;
     newStarters: number;
     staffOnShadow: number;
@@ -66,17 +68,18 @@ type MetricTile = {
 };
 
 const METRIC_TILES: MetricTile[] = [
+    { key: 'total', label: 'Total Staff', field: 'totalUsers', filter: '', icon: Users, gradient: `linear-gradient(145deg, ${BRAND_BLUE} 0%, #0e4f78 100%)`, shadow: 'rgba(38, 127, 186, 0.28)' },
     { key: 'active', label: 'Total Active', field: 'totalActive', filter: 'active', icon: UserCheck, gradient: `linear-gradient(145deg, ${BRAND_GREEN} 0%, #0e7a2d 100%)`, shadow: 'rgba(19, 150, 57, 0.28)' },
-    { key: 'new', label: 'New Starters', field: 'newStarters', filter: 'new_starters', icon: Star, gradient: `linear-gradient(145deg, ${BRAND_BLUE} 0%, #1a5f8a 100%)`, shadow: 'rgba(38, 127, 186, 0.28)' },
-    { key: 'shadow', label: 'On Shadow', field: 'staffOnShadow', filter: 'on_shadow', icon: Eye, gradient: `linear-gradient(145deg, ${BRAND_GREEN} 0%, ${BRAND_BLUE} 100%)`, shadow: 'rgba(19, 150, 57, 0.22)' },
-    { key: 'dbs', label: 'DBS Expiring', field: 'dbsExpiringSoon', filter: 'dbs_expiring', icon: Shield, gradient: `linear-gradient(145deg, #0e7a2d 0%, ${BRAND_GREEN} 100%)`, shadow: 'rgba(19, 150, 57, 0.28)' },
-    { key: 'dbs-declaration', label: 'DBS Declaration Due', field: 'dbsDeclarationDue', filter: 'dbs_declaration_due', icon: Shield, gradient: `linear-gradient(145deg, ${BRAND_BLUE} 0%, #1d6a9e 100%)`, shadow: 'rgba(38, 127, 186, 0.28)' },
-    { key: 'share-code', label: 'Share Code Expiring', field: 'shareCodeExpiring', filter: 'share_code_expiring', icon: Shield, gradient: `linear-gradient(145deg, ${BRAND_GREEN} 0%, #0a5c24 100%)`, shadow: 'rgba(19, 150, 57, 0.25)' },
-    { key: 'visa', label: 'Visa Expiring', field: 'visaExpiringSoon', filter: 'visa_expiring', icon: Plane, gradient: `linear-gradient(145deg, ${BRAND_BLUE} 0%, #133d72 100%)`, shadow: 'rgba(38, 127, 186, 0.28)' },
-    { key: 'training', label: 'Training Due', field: 'trainingDue', filter: 'training_due', icon: GraduationCap, gradient: `linear-gradient(145deg, ${BRAND_BLUE} 0%, #1a5f8a 100%)`, shadow: 'rgba(38, 127, 186, 0.28)' },
-    { key: 'reviews', label: 'Reviews Due', field: 'reviewsDue', filter: 'reviews_due', icon: ClipboardList, gradient: `linear-gradient(145deg, ${BRAND_GREEN} 0%, #0a5c24 100%)`, shadow: 'rgba(19, 150, 57, 0.25)' },
-    { key: 'supervisions', label: 'Supervisions Due', field: 'supervisionsDue', filter: 'supervisions_due', icon: Users, gradient: `linear-gradient(145deg, ${BRAND_GREEN} 0%, ${BRAND_BLUE} 100%)`, shadow: 'rgba(38, 127, 186, 0.22)' },
-    { key: 'appraisals', label: 'Appraisals Due', field: 'appraisalsDue', filter: 'appraisals_due', icon: Calendar, gradient: `linear-gradient(145deg, ${BRAND_BLUE} 0%, #0e7a2d 100%)`, shadow: 'rgba(19, 150, 57, 0.22)' },
+    { key: 'new', label: 'New Starters', field: 'newStarters', filter: 'new_starters', icon: Star, gradient: `linear-gradient(145deg, ${BRAND_BLUE} 0%, #1d6a9e 100%)`, shadow: 'rgba(38, 127, 186, 0.28)' },
+    { key: 'shadow', label: 'On Shadow', field: 'staffOnShadow', filter: 'on_shadow', icon: Eye, gradient: `linear-gradient(145deg, #1a9b4a 0%, ${BRAND_BLUE} 100%)`, shadow: 'rgba(19, 150, 57, 0.24)' },
+    { key: 'dbs', label: 'DBS Expiring', field: 'dbsExpiringSoon', filter: 'dbs_expiring', icon: Shield, gradient: `linear-gradient(145deg, ${BRAND_BLUE} 0%, #155f8f 100%)`, shadow: 'rgba(38, 127, 186, 0.28)' },
+    { key: 'dbs-declaration', label: 'DBS Declaration Due', field: 'dbsDeclarationDue', filter: 'dbs_declaration_due', icon: Shield, gradient: `linear-gradient(145deg, ${BRAND_GREEN} 0%, #0a5c24 100%)`, shadow: 'rgba(19, 150, 57, 0.28)' },
+    { key: 'share-code', label: 'Share Code Expiring', field: 'shareCodeExpiring', filter: 'share_code_expiring', icon: Shield, gradient: `linear-gradient(145deg, #2f89c4 0%, ${BRAND_BLUE} 100%)`, shadow: 'rgba(38, 127, 186, 0.26)' },
+    { key: 'visa', label: 'Visa Expiring', field: 'visaExpiringSoon', filter: 'visa_expiring', icon: Plane, gradient: `linear-gradient(145deg, #18a34a 0%, ${BRAND_GREEN} 100%)`, shadow: 'rgba(19, 150, 57, 0.26)' },
+    { key: 'training', label: 'Training Due', field: 'trainingDue', filter: 'training_due', icon: GraduationCap, gradient: `linear-gradient(145deg, ${BRAND_BLUE} 0%, ${BRAND_GREEN} 100%)`, shadow: 'rgba(38, 127, 186, 0.24)' },
+    { key: 'reviews', label: 'Reviews Due', field: 'reviewsDue', filter: 'reviews_due', icon: ClipboardList, gradient: `linear-gradient(145deg, ${BRAND_GREEN} 0%, #167a3a 100%)`, shadow: 'rgba(19, 150, 57, 0.28)' },
+    { key: 'supervisions', label: 'Supervisions Due', field: 'supervisionsDue', filter: 'supervisions_due', icon: Users, gradient: `linear-gradient(145deg, ${BRAND_BLUE} 0%, #1a628f 100%)`, shadow: 'rgba(38, 127, 186, 0.28)' },
+    { key: 'appraisals', label: 'Appraisals Due', field: 'appraisalsDue', filter: 'appraisals_due', icon: Calendar, gradient: `linear-gradient(145deg, ${BRAND_GREEN} 0%, ${BRAND_BLUE} 100%)`, shadow: 'rgba(19, 150, 57, 0.24)' },
 ];
 
 const QUICK_ACTIONS = [
@@ -95,8 +98,17 @@ type StaffOption = {
     label: string;
 };
 
+type RawStaffProfile = {
+    user?: { id?: string };
+    firstName?: string;
+    lastName?: string;
+    ilccsNumber?: string;
+    lcaNumber?: string;
+};
+
 export const DashboardView = () => {
     const [data, setData] = useState<HrStats>({
+        totalUsers: 0,
         totalActive: 0,
         newStarters: 0,
         staffOnShadow: 0,
@@ -113,7 +125,6 @@ export const DashboardView = () => {
     const [loading, setLoading] = useState(true);
     const [staffOptions, setStaffOptions] = useState<StaffOption[]>([]);
     const [staffLoading, setStaffLoading] = useState(false);
-    const token = localStorage.getItem('token');
     const navigate = useNavigate();
 
     const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
@@ -138,9 +149,7 @@ export const DashboardView = () => {
     useEffect(() => {
         const fetchDashboardData = async () => {
             try {
-                const response = await axios.get('/api/v1/dashboard/hr-stats', {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
+                const response = await api.get('/api/v1/dashboard/hr-stats');
                 setData(response.data);
             } catch (error: unknown) {
                 console.error('Failed to fetch HR dashboard stats', error);
@@ -149,17 +158,19 @@ export const DashboardView = () => {
             }
         };
         fetchDashboardData();
-    }, [token]);
+    }, []);
 
     const loadStaffOptions = async () => {
         if (staffOptions.length > 0 || staffLoading) return;
         setStaffLoading(true);
         try {
-            const response = await axios.get('/api/v1/staff', {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            const options: StaffOption[] = (response.data || [])
-                .map((p: { user?: { id?: string }; firstName?: string; lastName?: string; ilccsNumber?: string; lcaNumber?: string }) => {
+            // Quick-action pickers just need a name list, so a single large page is enough
+            // without pulling profile pictures or paging through the whole staff table.
+            const response = await api.get('/api/v1/staff', { params: { page: 1, limit: 200 } });
+            const payload = response.data;
+            const rows: RawStaffProfile[] = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : [];
+            const options: StaffOption[] = rows
+                .map((p: RawStaffProfile) => {
                     const userId = p.user?.id;
                     if (!userId) return null;
                     const fullName = [p.firstName, p.lastName].filter(Boolean).join(' ').trim() || p.firstName || 'Staff';
@@ -231,17 +242,13 @@ export const DashboardView = () => {
         const staffName = selected?.label?.split(' (')[0] || 'Staff member';
         setSubmittingSchedule(true);
         try {
-            await axios.post(
-                `/api/v1/staff/${scheduleStaffId}/review-forms`,
-                {
-                    formType: scheduleType,
-                    formSubType: scheduleSubType,
-                    staffName,
-                    dateOfReview: scheduleDate,
-                    documentationComments: scheduleNotes || '',
-                },
-                { headers: { Authorization: `Bearer ${token}` } },
-            );
+            await api.post(`/api/v1/staff/${scheduleStaffId}/review-forms`, {
+                formType: scheduleType,
+                formSubType: scheduleSubType,
+                staffName,
+                dateOfReview: scheduleDate,
+                documentationComments: scheduleNotes || '',
+            });
             notifications.show({ title: 'Saved', message: `${scheduleType} scheduled successfully`, color: 'green' });
             setScheduleModalOpen(false);
         } catch (error: unknown) {
@@ -263,8 +270,7 @@ export const DashboardView = () => {
                 complianceMode === 'organisation'
                     ? '/api/v1/reports/hr/compliance/organisation'
                     : `/api/v1/reports/hr/compliance/staff/${complianceStaffId}`;
-            const res = await axios.get(url, {
-                headers: { Authorization: `Bearer ${token}` },
+            const res = await api.get(url, {
                 responseType: 'blob',
             });
             const fileUrl = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
@@ -296,13 +302,10 @@ export const DashboardView = () => {
         <Box
             className="compliance-dashboard"
             style={{
-                flex: 1,
-                minHeight: 0,
+                minHeight: '100%',
                 display: 'flex',
                 flexDirection: 'column',
-                overflow: 'auto',
-                paddingBottom: 16,
-                animation: 'fadeIn 0.5s ease-out',
+                animation: 'fadeIn 0.45s ease-out',
             }}
         >
             <style>{`
@@ -310,152 +313,156 @@ export const DashboardView = () => {
                     from { opacity: 0; transform: translateY(12px); }
                     to { opacity: 1; transform: translateY(0); }
                 }
+                .compliance-dashboard .metric-tile {
+                    min-height: 92px;
+                }
+                .compliance-dashboard .metric-tile .mantine-Paper-root {
+                    min-height: 92px;
+                }
+                .compliance-dashboard .metric-tile:hover .mantine-Paper-root {
+                    transform: translateY(-1px);
+                }
                 .compliance-dashboard .metrics-grid {
-                    display: grid;
-                    grid-template-columns: repeat(5, minmax(0, 1fr));
-                    gap: 10px;
-                    flex: 0 0 auto;
+                    align-content: start;
                 }
-                .compliance-dashboard .lower-row {
-                    display: grid;
-                    grid-template-columns: 1fr 1fr;
-                    gap: 12px;
-                    flex: 0 0 auto;
-                    align-items: stretch;
-                }
-                .compliance-dashboard .metric-card {
-                    min-height: 96px;
-                    height: 100%;
-                    overflow: hidden;
-                    display: flex;
-                    flex-direction: column;
-                    justify-content: space-between;
-                }
-                .compliance-dashboard .mantine-Paper-root::before,
-                .compliance-dashboard .mantine-Paper-root::after {
-                    display: none;
-                }
-                .compliance-dashboard .quick-action-row:hover {
-                    transform: translateY(-2px);
-                    box-shadow: 0 6px 16px rgba(19, 150, 57, 0.12);
-                }
-                @media (max-width: 1200px) {
-                    .compliance-dashboard .metrics-grid {
-                        grid-template-columns: repeat(3, minmax(0, 1fr));
-                    }
-                }
-                @media (max-width: 768px) {
-                    .compliance-dashboard .metrics-grid {
-                        grid-template-columns: repeat(2, minmax(0, 1fr));
-                    }
-                    .compliance-dashboard .lower-row {
-                        grid-template-columns: 1fr;
-                    }
+                .compliance-dashboard .lower-grid {
+                    align-content: start;
                 }
             `}</style>
             <Container
                 size="xl"
                 p={0}
-                pb={8}
                 style={{
                     width: '100%',
-                    maxWidth: '100%',
                     display: 'flex',
                     flexDirection: 'column',
+                    gap: 12,
                 }}
             >
-                <Group justify="space-between" align="center" mb={10} style={{ flexShrink: 0 }}>
-                    <Box>
+                <Group justify="space-between" align="flex-start" wrap="wrap" style={{ flexShrink: 0 }}>
+                    <Box style={{ minWidth: 0 }}>
                         <Group align="center" gap="xs" mb={2}>
-                            <ThemeIcon variant="light" size="sm" radius="md" color="brandBlue.6">
+                            <ThemeIcon variant="light" size="sm" radius="md" color="brandGreen.6">
                                 <Users size={14} />
                             </ThemeIcon>
-                            <Text fw={700} c="brandBlue.6" tt="uppercase" size="xs" style={{ letterSpacing: '0.5px' }}>
+                            <Text fw={700} c="brandGreen.6" tt="uppercase" size="xs" style={{ letterSpacing: '0.5px' }}>
                                 HR Command Centre
                             </Text>
                         </Group>
-                        <Title order={1} size={26} fw={900} c="dark.4" style={{ letterSpacing: '-0.4px', lineHeight: 1.15 }}>
+                        <Title order={1} size={24} fw={900} c="dark.4" style={{ letterSpacing: '-0.4px', lineHeight: 1.15 }}>
                             Compliance Dashboard
                         </Title>
+                        <Text c="dimmed" mt={2} size="xs" maw={620} lineClamp={1}>
+                            Workforce compliance at a glance. Click a metric to open the staff directory with that filter applied.
+                        </Text>
                     </Box>
-                    <Button component={Link} to="/dashboard/reports" variant="light" color="brandBlue.6" leftSection={<FileBarChart size={16} />}>
+                    <Button
+                        component={Link}
+                        to="/dashboard/reports"
+                        variant="light"
+                        color="brandGreen.6"
+                        size="xs"
+                        leftSection={<FileBarChart size={14} />}
+                        style={{ flexShrink: 0 }}
+                    >
                         All Reports
                     </Button>
                 </Group>
 
-                <Box className="metrics-grid" mb={12}>
+                <SimpleGrid
+                    className="metrics-grid"
+                    cols={{ base: 2, sm: 3, md: 4, lg: 6 }}
+                    spacing={10}
+                >
                     {METRIC_TILES.map((tile) => {
                         const Icon = tile.icon;
                         const value = Number(data[tile.field] ?? 0);
                         return (
                             <UnstyledButton
                                 key={tile.key}
+                                className="metric-tile"
                                 onClick={() => navigate(`/dashboard/staff?filter=${tile.filter}`)}
-                                style={{ width: '100%', height: '100%', minHeight: 96 }}
+                                style={{ width: '100%', height: '100%', minHeight: 0 }}
                             >
                                 <Paper
-                                    className="metric-card"
-                                    p="sm"
-                                    radius="lg"
+                                    px="md"
+                                    py="sm"
+                                    radius="md"
+                                    h="100%"
                                     style={{
                                         background: tile.gradient,
-                                        color: 'white',
-                                        boxShadow: `0 8px 24px ${tile.shadow}`,
+                                        color: '#ffffff',
+                                        boxShadow: `0 4px 14px ${tile.shadow}`,
                                         transition: 'transform 0.15s ease',
-                                        border: 'none',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        justifyContent: 'space-between',
+                                        minHeight: 88,
                                     }}
                                 >
-                                    <Group justify="space-between" align="flex-start" mb={4} wrap="nowrap">
-                                        <Text size="xs" fw={700} tt="uppercase" c="white" style={{ lineHeight: 1.25 }}>
+                                    <Group justify="space-between" align="flex-start" gap={4} wrap="nowrap">
+                                        <Text
+                                            size="xs"
+                                            fw={800}
+                                            tt="uppercase"
+                                            c="white"
+                                            lineClamp={2}
+                                            style={{ lineHeight: 1.2, opacity: 0.95 }}
+                                        >
                                             {tile.label}
                                         </Text>
                                         <ThemeIcon
-                                            size={26}
-                                            radius="md"
+                                            size={22}
+                                            radius="sm"
                                             color="white"
                                             variant="white"
-                                            style={{
-                                                color: BRAND_GREEN,
-                                                backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                                                flexShrink: 0,
-                                            }}
+                                            style={{ color: BRAND_GREEN, flexShrink: 0 }}
                                         >
                                             <Icon size={13} />
                                         </ThemeIcon>
                                     </Group>
-                                    <Title order={2} size={24} fw={900} c="white" style={{ lineHeight: 1, flexShrink: 0 }}>
+                                    <Title
+                                        order={2}
+                                        size={28}
+                                        fw={900}
+                                        c="white"
+                                        style={{ lineHeight: 1 }}
+                                    >
                                         {loading ? '—' : value}
                                     </Title>
                                 </Paper>
                             </UnstyledButton>
                         );
                     })}
-                </Box>
+                </SimpleGrid>
 
-                <Box className="lower-row">
+                <SimpleGrid
+                    className="lower-grid"
+                    cols={{ base: 1, md: 2 }}
+                    spacing={12}
+                >
                     <Paper
-                        p="md"
-                        radius="xl"
+                        p="lg"
+                        radius="lg"
+                        h="100%"
                         style={{
-                            background: 'linear-gradient(145deg, #4AA3D8 0%, #267FBA 48%, #1a5f8a 100%)',
+                            background: `linear-gradient(145deg, #4AA3D8 0%, ${BRAND_BLUE} 48%, #1a5f8a 100%)`,
                             color: 'white',
-                            boxShadow: '0 10px 32px rgba(38, 127, 186, 0.28)',
-                            border: 'none',
-                            minHeight: 280,
-                            height: '100%',
+                            boxShadow: '0 10px 40px rgba(38, 127, 186, 0.3)',
                             display: 'flex',
                             alignItems: 'center',
+                            minHeight: 0,
                         }}
                     >
-                        <Group justify="space-between" align="center" w="100%" wrap="nowrap">
-                            <Stack gap={4} style={{ minWidth: 0 }}>
-                                <Text size="xs" fw={700} tt="uppercase" c="white" style={{ opacity: 0.9, letterSpacing: '0.06em' }}>
+                        <Group justify="space-between" align="center" wrap="nowrap" gap="md" w="100%">
+                            <Stack gap={6} style={{ minWidth: 0 }}>
+                                <Text size="xs" fw={700} tt="uppercase" opacity={0.8}>
                                     Staff Compliance
                                 </Text>
-                                <Title order={2} size={28} fw={900} c="white">
+                                <Title order={2} size={26} fw={900} style={{ lineHeight: 1.1 }}>
                                     {complianceLabel}
                                 </Title>
-                                <Text size="xs" c="white" style={{ opacity: 0.9 }}>
+                                <Text size="sm" opacity={0.9} maw={340}>
                                     Weighted score (DBS, visa, training, references, policies)
                                 </Text>
                             </Stack>
@@ -469,87 +476,106 @@ export const DashboardView = () => {
                                         {data.staffCompliancePercentage}%
                                     </Text>
                                 }
-                                rootColor="rgba(255, 255, 255, 0.22)"
+                                rootColor="rgba(255, 255, 255, 0.2)"
                             />
                         </Group>
                     </Paper>
 
                     <Paper
-                        p={0}
-                        radius="xl"
+                        p="md"
+                        radius="lg"
+                        h="100%"
+                        withBorder
                         style={{
                             background: '#ffffff',
-                            border: '1px solid rgba(19, 150, 57, 0.22)',
-                            boxShadow: '0 8px 24px rgba(19, 150, 57, 0.08)',
-                            height: '100%',
-                            minHeight: 280,
+                            borderColor: 'rgba(19, 150, 57, 0.18)',
+                            boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)',
                             display: 'flex',
                             flexDirection: 'column',
+                            minHeight: 0,
+                            position: 'relative',
                             overflow: 'hidden',
                         }}
                     >
                         <Box
                             style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                right: 0,
                                 height: 4,
                                 background: `linear-gradient(90deg, ${BRAND_GREEN} 0%, ${BRAND_BLUE} 100%)`,
-                                flexShrink: 0,
                             }}
                         />
-                        <Box p="md" pb="md" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                            <Group justify="space-between" align="center" mb="sm" style={{ flexShrink: 0 }}>
-                                <Text fw={800} size="sm" c="dark.4">
-                                    Quick Actions
-                                </Text>
-                                <Text size="xs" c="dimmed" fw={600}>
-                                    8 shortcuts
-                                </Text>
-                            </Group>
-                            <SimpleGrid cols={2} spacing={8} verticalSpacing={8} style={{ flex: 1, alignContent: 'stretch' }}>
-                                {QUICK_ACTIONS.map((action) => {
-                                    const IconComp = action.icon;
-                                    return (
-                                        <UnstyledButton
-                                            key={action.key}
-                                            className="quick-action-row"
-                                            onClick={() => void handleQuickAction(action.key, action.to)}
+                        <Group justify="space-between" align="center" mb="sm" mt={2} style={{ flexShrink: 0 }}>
+                            <Text fw={800} size="sm" c="dark.4">
+                                Quick Actions
+                            </Text>
+                            <Text size="xs" c="dimmed" fw={600}>
+                                {QUICK_ACTIONS.length} shortcuts
+                            </Text>
+                        </Group>
+                        <SimpleGrid cols={{ base: 1, xs: 2 }} spacing={8} style={{ flex: 1, minHeight: 0, alignContent: 'stretch' }}>
+                            {QUICK_ACTIONS.map((action) => {
+                                const Icon = action.icon;
+                                return (
+                                    <UnstyledButton
+                                        key={action.label}
+                                        onClick={() => void handleQuickAction(action.key, action.to)}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 10,
+                                            width: '100%',
+                                            height: '100%',
+                                            minHeight: 0,
+                                            padding: '10px 12px',
+                                            borderRadius: 12,
+                                            background: 'linear-gradient(135deg, rgba(19,150,57,0.06) 0%, rgba(38,127,186,0.06) 100%)',
+                                            border: '1px solid rgba(19, 150, 57, 0.12)',
+                                            transition: 'background 0.15s ease, border-color 0.15s ease, transform 0.15s ease',
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            e.currentTarget.style.background = 'linear-gradient(135deg, rgba(19,150,57,0.12) 0%, rgba(38,127,186,0.1) 100%)';
+                                            e.currentTarget.style.borderColor = 'rgba(19, 150, 57, 0.28)';
+                                            e.currentTarget.style.transform = 'translateY(-1px)';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            e.currentTarget.style.background = 'linear-gradient(135deg, rgba(19,150,57,0.06) 0%, rgba(38,127,186,0.06) 100%)';
+                                            e.currentTarget.style.borderColor = 'rgba(19, 150, 57, 0.12)';
+                                            e.currentTarget.style.transform = 'translateY(0)';
+                                        }}
+                                    >
+                                        <Box
                                             style={{
-                                                display: 'flex',
+                                                width: 30,
+                                                height: 30,
+                                                borderRadius: 8,
+                                                flexShrink: 0,
+                                                display: 'inline-flex',
                                                 alignItems: 'center',
-                                                gap: 10,
-                                                width: '100%',
-                                                height: '100%',
-                                                minHeight: 40,
-                                                padding: '8px 10px',
-                                                borderRadius: 10,
-                                                background:
-                                                    action.key.includes('reference') || action.key.includes('compliance') || action.key.includes('upload')
-                                                        ? 'rgba(38, 127, 186, 0.08)'
-                                                        : 'rgba(19, 150, 57, 0.08)',
-                                                border: '1px solid rgba(19, 150, 57, 0.1)',
-                                                transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                                                justifyContent: 'center',
+                                                background: `linear-gradient(145deg, ${BRAND_GREEN} 0%, ${BRAND_BLUE} 100%)`,
+                                                color: '#ffffff',
+                                                boxShadow: '0 2px 6px rgba(19, 150, 57, 0.2)',
                                             }}
                                         >
-                                            <ThemeIcon
-                                                size={30}
-                                                radius="md"
-                                                style={{
-                                                    background: `linear-gradient(135deg, ${BRAND_GREEN} 0%, ${BRAND_BLUE} 100%)`,
-                                                    color: '#ffffff',
-                                                    flexShrink: 0,
-                                                }}
-                                            >
-                                                <IconComp size={14} color="#ffffff" />
-                                            </ThemeIcon>
-                                            <Text size="xs" fw={700} c="dark.4" style={{ lineHeight: 1.25, whiteSpace: 'normal' }}>
-                                                {action.label}
-                                            </Text>
-                                        </UnstyledButton>
-                                    );
-                                })}
-                            </SimpleGrid>
-                        </Box>
+                                            <Icon size={14} strokeWidth={2.2} />
+                                        </Box>
+                                        <Text
+                                            size="xs"
+                                            fw={700}
+                                            c="dark.4"
+                                            style={{ lineHeight: 1.25, whiteSpace: 'normal' }}
+                                        >
+                                            {action.label}
+                                        </Text>
+                                    </UnstyledButton>
+                                );
+                            })}
+                        </SimpleGrid>
                     </Paper>
-                </Box>
+                </SimpleGrid>
             </Container>
 
             <Modal
@@ -584,13 +610,20 @@ export const DashboardView = () => {
                                       { value: '2nd Month', label: '2nd Month Review' },
                                       { value: '3rd Month', label: '3rd Month Review' },
                                       { value: '4th Month', label: '4th Month Review' },
+                                      { value: '6 Month', label: '6 Month Review' },
                                       { value: '8 Month', label: '8 Month Review' },
+                                      { value: '9 Month', label: '9 Month Review' },
                                       { value: '10 Month', label: '10 Month Review' },
+                                      { value: 'General Employment Progress Review', label: 'General Employment Progress Review' },
                                   ]
                                 : scheduleType === 'appraisal'
                                   ? [
-                                        { value: '1st Year Appraisal', label: '1st Year Appraisal' },
-                                        { value: 'Second Year Appraisal', label: 'Second Year Appraisal' },
+                                        { value: '1st Year Appraisal', label: 'Annual Appraisal Performance Form 1' },
+                                        { value: 'Second Year Appraisal', label: 'Annual Appraisal Performance Form 2' },
+                                        { value: 'Appraisal Form 3', label: 'Annual Appraisal Performance Form 3 - Objectives' },
+                                        { value: 'Appraisal Form 3 Self Review', label: 'Annual Appraisal Performance Form 3 - Self Review' },
+                                        { value: 'Appraisal Form 4', label: 'Annual Appraisal Performance Form 4 - Objectives' },
+                                        { value: 'Appraisal Form 4 Self Review', label: 'Annual Appraisal Performance Form 4 - Self Review' },
                                     ]
                                   : [
                                         { value: '1st Year 6th Month', label: '1st Year 6th Month Supervision' },

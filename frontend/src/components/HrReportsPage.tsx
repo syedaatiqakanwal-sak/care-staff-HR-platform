@@ -80,6 +80,13 @@ const REPORTS = [
     emptyMessage: 'No appraisals overdue — reviews are on track!',
   },
   {
+    id: 'review-overdue',
+    title: 'Review Due Report',
+    description: 'Staff without a review in the last 60 days.',
+    icon: FileText,
+    emptyMessage: 'No reviews overdue — progress reviews are on track!',
+  },
+  {
     id: 'staff-turnover',
     title: 'Staff Turnover Report',
     description: 'Leavers and employment status changes.',
@@ -160,6 +167,16 @@ const COLUMNS_BY_REPORT: Record<ReportId, ColumnDef[]> = {
     { key: 'name', label: 'Name' },
     { key: 'lcacs', label: 'Staff Number' },
     { key: 'lastAppraisalDate', label: 'Last Appraisal Date' },
+    {
+      key: 'daysOverdue',
+      label: 'Days Overdue',
+      render: (row) => overdueBadge(row.daysOverdue),
+    },
+  ],
+  'review-overdue': [
+    { key: 'name', label: 'Name' },
+    { key: 'lcacs', label: 'Staff Number' },
+    { key: 'lastReviewDate', label: 'Last Review Date' },
     {
       key: 'daysOverdue',
       label: 'Days Overdue',
@@ -319,7 +336,7 @@ export function HrReportsPage() {
     } catch (e) {
       console.error('Report download failed', e);
       notifications.show({
-        title: 'Report failed',
+        title: 'Error',
         message: 'Failed to generate report. Please try again.',
         color: 'red',
       });
@@ -406,7 +423,7 @@ export function HrReportsPage() {
         </Text>
         <Group gap="md" mb="xl">
           <Badge variant="light" color="brandGreen.6" size="lg" radius="sm">
-            8 report types
+            9 report types
           </Badge>
           <Text size="sm" c="dimmed">
             Last generated: {lastGenerated || '—'}
@@ -519,7 +536,7 @@ export function HrReportsPage() {
               </Stack>
             ) : (
               <>
-                <ScrollArea>
+                <Table.ScrollContainer minWidth={900}>
                   <Table striped highlightOnHover withTableBorder withColumnBorders>
                     <Table.Thead>
                       <Table.Tr>
@@ -559,7 +576,7 @@ export function HrReportsPage() {
                       ))}
                     </Table.Tbody>
                   </Table>
-                </ScrollArea>
+                </Table.ScrollContainer>
                 <Text size="sm" c="dimmed" mt="md" fw={600}>
                   {preview.count} staff member{preview.count === 1 ? '' : 's'} found
                 </Text>

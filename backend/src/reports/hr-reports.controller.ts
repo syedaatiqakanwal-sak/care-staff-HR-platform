@@ -62,6 +62,11 @@ export class HrReportsController {
     return this.hrReportsService.previewAppraisalDue();
   }
 
+  @Get('review-overdue/preview')
+  async reviewOverduePreview() {
+    return this.hrReportsService.previewReviewOverdue();
+  }
+
   @Get('staff-turnover/preview')
   async staffTurnoverPreview() {
     return this.hrReportsService.previewStaffTurnover();
@@ -106,6 +111,12 @@ export class HrReportsController {
   async appraisalDue(@Res() res: Response) {
     const buf = await this.hrReportsService.generateAppraisalDueReport();
     await this.sendPdf(res, 'appraisal-due-report.pdf', buf);
+  }
+
+  @Get('review-overdue')
+  async reviewOverdue(@Res() res: Response) {
+    const buf = await this.hrReportsService.generateReviewOverdueReport();
+    await this.sendPdf(res, 'review-overdue-report.pdf', buf);
   }
 
   @Get('staff-turnover')

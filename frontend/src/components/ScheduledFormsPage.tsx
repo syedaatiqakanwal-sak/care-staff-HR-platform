@@ -1,290 +1,271 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
-  Badge,
-  Box,
-  Button,
-  Center,
-  Group,
-  Loader,
-  Paper,
-  SimpleGrid,
-  Table,
-  Text,
-  Title,
+    Badge,
+    Box,
+    Button,
+    Center,
+    Group,
+    Loader,
+    Paper,
+    SimpleGrid,
+    Table,
+    Text,
+    Title,
+    UnstyledButton,
+    Alert,
 } from '@mantine/core';
 import { Calendar, ClipboardList, RefreshCw, Users } from 'lucide-react';
-import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import api from '../utils/api';
 
 const BRAND_GREEN = '#139639';
 const BRAND_BLUE = '#267FBA';
 
-type ScheduleStatus = 'upcoming' | 'due_today' | 'overdue';
-
 type ScheduledFormRecord = {
-  id: string;
-  staffName: string;
-  formType: string;
-  formSubType: string;
-  dateOfReview: string;
-  status: ScheduleStatus;
-  userId: string | null;
+    id: string;
+    formType: string;
+    formSubType: string;
+    staffName: string;
+    staffProfileId: string | null;
+    userId: string | null;
+    dateOfReview: string;
+    status: 'upcoming' | 'due_today' | 'overdue';
+    notes: string | null;
 };
 
-type ScheduledFormsResponse = {
-  counts: {
-    appraisals: number;
-    supervisions: number;
-    reviews: number;
-    dueToday: number;
-    totalUpcoming: number;
-  };
-  records: ScheduledFormRecord[];
+type ScheduledFormsSummary = {
+    counts: {
+        reviews: number;
+        appraisals: number;
+        supervisions: number;
+        dueToday: number;
+        totalUpcoming: number;
+    };
+    records: ScheduledFormRecord[];
 };
 
-const statusColor: Record<ScheduleStatus, string> = {
-  upcoming: 'blue',
-  due_today: 'orange',
-  overdue: 'red',
-};
+const ScheduledFormsPage = () => {
+    const [summary, setSummary] = useState<ScheduledFormsSummary | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [filter, setFilter] = useState<'all' | 'appraisal' | 'supervision' | 'review' | 'due_today'>('all');
 
-const statusLabel: Record<ScheduleStatus, string> = {
-  upcoming: 'Upcoming',
-  due_today: 'Due today',
-  overdue: 'Overdue',
-};
+    const load = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const res = await api.get('/api/v1/dashboard/scheduled-forms');
+            setSummary(res.data);
+        } catch {
+            setError('Failed to load scheduled appraisals, reviews and supervisions.');
+        } finally {
+            setLoading(false);
+        }
+    }, []);
 
-const formTypeLabel = (formType: string) => {
-  const t = (formType || '').toLowerCase();
-  if (t === 'appraisal') return 'Appraisal';
-  if (t === 'supervision') return 'Supervision';
-  if (t === 'review') return 'Review';
-  return formType || '—';
-};
+    useEffect(() => {
+        void load();
+    }, [load]);
 
-export function ScheduledFormsPage() {
-  const navigate = useNavigate();
-  const [data, setData] = useState<ScheduledFormsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+    const records = useMemo(() => {
+        const rows = summary?.records ?? [];
+        if (filter === 'all') return rows;
+        if (filter === 'due_today') return rows.filter((row) => row.status === 'due_today');
+        return rows.filter((row) => row.formType === filter);
+    }, [summary, filter]);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const token = localStorage.getItem('token');
-      const res = await axios.get<ScheduledFormsResponse>(
-        '/api/v1/dashboard/scheduled-forms',
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      setData(res.data);
-    } catch {
-      setError('Could not load scheduled forms.');
-      setData(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    const chooseFilter = (next: typeof filter) => {
+        setFilter((current) => (current === next ? 'all' : next));
+    };
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return '—';
-    const d = new Date(`${dateStr.slice(0, 10)}T12:00:00`);
-    if (Number.isNaN(d.getTime())) return dateStr;
-    return d.toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
+    const cardStyle = (active: boolean, color: string) => ({
+        cursor: 'pointer',
+        outline: active ? `2px solid ${color}` : 'none',
+        outlineOffset: 2,
     });
-  };
 
-  if (loading && !data) {
     return (
-      <Center h={400}>
-        <Loader color="green" />
-      </Center>
-    );
-  }
+        <Box p={{ base: 'md', sm: 'lg', md: 'xl' }} style={{ width: '100%' }}>
+            <Group justify="space-between" mb="lg" align="flex-start" wrap="wrap">
+                <Box>
+                    <Title order={2}>Scheduled appraisals & supervisions</Title>
+                    <Text c="dimmed" size="sm">
+                        Staff booked for a review, appraisal or supervision — notifications fire when the date arrives
+                    </Text>
+                </Box>
+                <Button
+                    leftSection={<RefreshCw size={16} />}
+                    variant="light"
+                    color="green"
+                    loading={loading}
+                    onClick={() => void load()}
+                >
+                    Refresh
+                </Button>
+            </Group>
 
-  const counts = data?.counts;
-  const records = data?.records ?? [];
+            {error && (
+                <Alert color="red" mb="md">
+                    {error}
+                </Alert>
+            )}
 
-  return (
-    <Box w="100%" maw="100%" py="md" px={0}>
-      <Group justify="space-between" align="flex-start" mb="lg" wrap="wrap">
-        <Box>
-          <Title order={2} c={BRAND_GREEN}>
-            Schedules
-          </Title>
-          <Text c="dimmed" size="sm" mt={4}>
-            Upcoming appraisals, reviews, and supervisions across staff
-          </Text>
+            <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md" mb="lg">
+                <Paper withBorder p="md" radius="md" onClick={() => chooseFilter('appraisal')} style={cardStyle(filter === 'appraisal', BRAND_GREEN)}>
+                    <Group gap="sm">
+                        <Calendar size={22} color={BRAND_GREEN} />
+                        <Box>
+                            <Text size="xs" c="dimmed" fw={700} tt="uppercase">
+                                Appraisals
+                            </Text>
+                            <Title order={3}>{loading ? '—' : summary?.counts.appraisals ?? 0}</Title>
+                        </Box>
+                    </Group>
+                </Paper>
+                <Paper withBorder p="md" radius="md" onClick={() => chooseFilter('supervision')} style={cardStyle(filter === 'supervision', BRAND_BLUE)}>
+                    <Group gap="sm">
+                        <Users size={22} color={BRAND_BLUE} />
+                        <Box>
+                            <Text size="xs" c="dimmed" fw={700} tt="uppercase">
+                                Supervisions
+                            </Text>
+                            <Title order={3}>{loading ? '—' : summary?.counts.supervisions ?? 0}</Title>
+                        </Box>
+                    </Group>
+                </Paper>
+                <Paper withBorder p="md" radius="md" onClick={() => chooseFilter('review')} style={cardStyle(filter === 'review', '#64748b')}>
+                    <Group gap="sm">
+                        <ClipboardList size={22} color="#64748b" />
+                        <Box>
+                            <Text size="xs" c="dimmed" fw={700} tt="uppercase">
+                                Reviews
+                            </Text>
+                            <Title order={3}>{loading ? '—' : summary?.counts.reviews ?? 0}</Title>
+                        </Box>
+                    </Group>
+                </Paper>
+                <Paper withBorder p="md" radius="md" onClick={() => chooseFilter('due_today')} style={cardStyle(filter === 'due_today', '#ea580c')}>
+                    <Group gap="sm">
+                        <Calendar size={22} color="#ea580c" />
+                        <Box>
+                            <Text size="xs" c="dimmed" fw={700} tt="uppercase">
+                                Due today
+                            </Text>
+                            <Title order={3} c="orange.7">
+                                {loading ? '—' : summary?.counts.dueToday ?? 0}
+                            </Title>
+                        </Box>
+                    </Group>
+                </Paper>
+            </SimpleGrid>
+
+            <Paper withBorder p="md" radius="md">
+                <Text fw={800} mb="md">
+                    {filter === 'all'
+                        ? 'Schedule details'
+                        : filter === 'due_today'
+                          ? 'Due today'
+                          : filter === 'appraisal'
+                            ? 'Appraisals'
+                            : filter === 'supervision'
+                              ? 'Supervisions'
+                              : 'Reviews'}
+                </Text>
+                {loading ? (
+                    <Center py="xl">
+                        <Loader color="green" />
+                    </Center>
+                ) : !records.length ? (
+                    <Text c="dimmed" ta="center" py="xl" size="sm">
+                        {summary?.records?.length
+                            ? 'Nothing matches this card. Click it again to show every scheduled item.'
+                            : 'No scheduled items yet. Use Schedule Appraisal / Review / Supervision from the Compliance dashboard Quick Actions.'}
+                    </Text>
+                ) : (
+                    <Table.ScrollContainer minWidth={700}>
+                        <Table striped highlightOnHover verticalSpacing="sm" horizontalSpacing="md">
+                            <Table.Thead>
+                                <Table.Tr>
+                                    <Table.Th>Staff</Table.Th>
+                                    <Table.Th>Type</Table.Th>
+                                    <Table.Th>Subtype</Table.Th>
+                                    <Table.Th>Date</Table.Th>
+                                    <Table.Th>Status</Table.Th>
+                                </Table.Tr>
+                            </Table.Thead>
+                            <Table.Tbody>
+                                {records.map((row) => (
+                                    <Table.Tr key={row.id}>
+                                        <Table.Td>
+                                            {row.userId ? (
+                                                <UnstyledButton
+                                                    component={Link}
+                                                    to={`/dashboard/staff/${row.userId}`}
+                                                    style={{ fontWeight: 700, fontSize: 13, color: BRAND_BLUE }}
+                                                >
+                                                    {row.staffName}
+                                                </UnstyledButton>
+                                            ) : (
+                                                <Text size="sm" fw={700}>
+                                                    {row.staffName}
+                                                </Text>
+                                            )}
+                                        </Table.Td>
+                                        <Table.Td>
+                                            <Badge
+                                                size="sm"
+                                                variant="light"
+                                                color={
+                                                    row.formType === 'appraisal'
+                                                        ? 'green'
+                                                        : row.formType === 'supervision'
+                                                          ? 'blue'
+                                                          : 'gray'
+                                                }
+                                            >
+                                                {row.formType}
+                                            </Badge>
+                                        </Table.Td>
+                                        <Table.Td>
+                                            <Text size="sm">{row.formSubType}</Text>
+                                        </Table.Td>
+                                        <Table.Td>
+                                            <Text size="sm" fw={600}>
+                                                {new Date(row.dateOfReview).toLocaleDateString('en-GB', {
+                                                    day: '2-digit',
+                                                    month: 'short',
+                                                    year: 'numeric',
+                                                })}
+                                            </Text>
+                                        </Table.Td>
+                                        <Table.Td>
+                                            <Badge
+                                                size="sm"
+                                                color={
+                                                    row.status === 'due_today'
+                                                        ? 'orange'
+                                                        : row.status === 'overdue'
+                                                          ? 'red'
+                                                          : 'teal'
+                                                }
+                                                variant="light"
+                                            >
+                                                {row.status === 'due_today'
+                                                    ? 'Due today'
+                                                    : row.status === 'overdue'
+                                                      ? 'Overdue'
+                                                      : 'Upcoming'}
+                                            </Badge>
+                                        </Table.Td>
+                                    </Table.Tr>
+                                ))}
+                            </Table.Tbody>
+                        </Table>
+                    </Table.ScrollContainer>
+                )}
+            </Paper>
         </Box>
-        <Button
-          leftSection={<RefreshCw size={16} />}
-          variant="light"
-          color="green"
-          loading={loading}
-          onClick={fetchData}
-        >
-          Refresh
-        </Button>
-      </Group>
-
-      {error && (
-        <Alert color="red" mb="md">
-          {error}
-        </Alert>
-      )}
-
-      <SimpleGrid cols={{ base: 2, sm: 3, md: 5 }} spacing="md" mb="lg">
-        <Paper
-          p="md"
-          radius="md"
-          style={{ borderLeft: `4px solid ${BRAND_BLUE}`, background: 'white' }}
-        >
-          <Group gap="xs" mb={4}>
-            <ClipboardList size={16} color={BRAND_BLUE} />
-            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-              Appraisals
-            </Text>
-          </Group>
-          <Text size="xl" fw={800} c={BRAND_BLUE}>
-            {counts?.appraisals ?? 0}
-          </Text>
-        </Paper>
-        <Paper
-          p="md"
-          radius="md"
-          style={{ borderLeft: `4px solid ${BRAND_GREEN}`, background: 'white' }}
-        >
-          <Group gap="xs" mb={4}>
-            <Users size={16} color={BRAND_GREEN} />
-            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-              Supervisions
-            </Text>
-          </Group>
-          <Text size="xl" fw={800} c={BRAND_GREEN}>
-            {counts?.supervisions ?? 0}
-          </Text>
-        </Paper>
-        <Paper
-          p="md"
-          radius="md"
-          style={{ borderLeft: '4px solid #6366f1', background: 'white' }}
-        >
-          <Group gap="xs" mb={4}>
-            <ClipboardList size={16} color="#6366f1" />
-            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-              Reviews
-            </Text>
-          </Group>
-          <Text size="xl" fw={800}>
-            {counts?.reviews ?? 0}
-          </Text>
-        </Paper>
-        <Paper
-          p="md"
-          radius="md"
-          style={{ borderLeft: '4px solid #d97706', background: 'white' }}
-        >
-          <Group gap="xs" mb={4}>
-            <Calendar size={16} color="#d97706" />
-            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-              Due today
-            </Text>
-          </Group>
-          <Text size="xl" fw={800} c="#d97706">
-            {counts?.dueToday ?? 0}
-          </Text>
-        </Paper>
-        <Paper
-          p="md"
-          radius="md"
-          style={{ borderLeft: `4px solid ${BRAND_BLUE}`, background: 'white' }}
-        >
-          <Group gap="xs" mb={4}>
-            <Calendar size={16} color={BRAND_BLUE} />
-            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-              Upcoming
-            </Text>
-          </Group>
-          <Text size="xl" fw={800} c={BRAND_BLUE}>
-            {counts?.totalUpcoming ?? 0}
-          </Text>
-        </Paper>
-      </SimpleGrid>
-
-      <Paper p="lg" radius="md" withBorder style={{ width: '100%' }}>
-        <Title order={4} mb="md" c={BRAND_GREEN}>
-          Schedule details
-        </Title>
-        {records.length === 0 ? (
-          <Text c="dimmed" fs="italic" py="md">
-            No scheduled forms yet. Use Quick Actions on the Compliance dashboard to schedule a
-            review, supervision, or appraisal.
-          </Text>
-        ) : (
-          <Table.ScrollContainer minWidth={800}>
-            <Table striped highlightOnHover verticalSpacing="sm">
-              <Table.Thead>
-                <Table.Tr style={{ background: `${BRAND_GREEN}12` }}>
-                  <Table.Th>Staff</Table.Th>
-                  <Table.Th>Type</Table.Th>
-                  <Table.Th>Subtype</Table.Th>
-                  <Table.Th>Date</Table.Th>
-                  <Table.Th>Status</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {records.map((row) => (
-                  <Table.Tr key={row.id}>
-                    <Table.Td>
-                      {row.userId ? (
-                        <Text
-                          size="sm"
-                          fw={600}
-                          c={BRAND_BLUE}
-                          style={{ cursor: 'pointer', textDecoration: 'underline' }}
-                          onClick={() => navigate(`/dashboard/staff/${row.userId}`)}
-                        >
-                          {row.staffName}
-                        </Text>
-                      ) : (
-                        <Text size="sm" fw={600}>
-                          {row.staffName}
-                        </Text>
-                      )}
-                    </Table.Td>
-                    <Table.Td>
-                      <Badge variant="light" color="blue">
-                        {formTypeLabel(row.formType)}
-                      </Badge>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm">{row.formSubType || '—'}</Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm">{formatDate(row.dateOfReview)}</Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Badge color={statusColor[row.status] || 'gray'} variant="light">
-                        {statusLabel[row.status] || row.status}
-                      </Badge>
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </Table.ScrollContainer>
-        )}
-      </Paper>
-    </Box>
-  );
-}
+    );
+};
 
 export default ScheduledFormsPage;

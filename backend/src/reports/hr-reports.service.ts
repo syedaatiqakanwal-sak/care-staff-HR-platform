@@ -172,6 +172,21 @@ export class HrReportsService {
     `);
   }
 
+  private async queryReviewOverdueRows() {
+    return this.dataSource.query(`
+      SELECT sp."userId", sp."firstName", sp."lastName",
+             COALESCE(sp."lcaNumber", sp."ilccsNumber") AS lcacs,
+             MAX(rf."dateOfReview")::text AS "lastReviewDate"
+      FROM staff_profiles sp
+      JOIN users u ON u.id = sp."userId" AND u.role = 'STAFF'
+      LEFT JOIN review_forms rf ON rf."staffId" = sp.id AND rf."formType" = 'review'
+      WHERE u."createdAt" < NOW() - INTERVAL '60 days'
+      GROUP BY sp.id, sp."userId", sp."firstName", sp."lastName", sp."lcaNumber", sp."ilccsNumber"
+      HAVING MAX(rf."dateOfReview") IS NULL OR MAX(rf."dateOfReview") < CURRENT_DATE - INTERVAL '60 days'
+      ORDER BY "lastReviewDate" NULLS FIRST
+    `);
+  }
+
   private async queryStaffTurnoverRows() {
     return this.dataSource.query(`
       SELECT sp."userId", sp."firstName", sp."lastName",
@@ -383,6 +398,23 @@ export class HrReportsService {
     };
   }
 
+  async previewReviewOverdue(): Promise<HrReportPreviewResult> {
+    const rows = await this.queryReviewOverdueRows();
+    return {
+      count: rows.length,
+      rows: rows.map((r: Record<string, unknown>) => ({
+        userId: r.userId,
+        name: this.staffName(r as { firstName?: string; lastName?: string }),
+        lcacs: r.lcacs || '-',
+        lastReviewDate: r.lastReviewDate || 'Never',
+        daysOverdue: this.daysOverdue(
+          r.lastReviewDate ? String(r.lastReviewDate) : null,
+          60,
+        ),
+      })),
+    };
+  }
+
   async previewStaffTurnover(): Promise<HrReportPreviewResult> {
     const rows = await this.queryStaffTurnoverRows();
     return {
@@ -499,6 +531,19 @@ export class HrReportsService {
         this.staffName(r),
         r.lcacs || '-',
         r.lastAppraisalDate || 'Never',
+      ]),
+    );
+  }
+
+  async generateReviewOverdueReport(): Promise<Buffer> {
+    const rows = await this.queryReviewOverdueRows();
+    return this.createListPdf(
+      'Review Due Report',
+      ['Name', 'ILCCS', 'Last Review'],
+      rows.map((r: Record<string, string>) => [
+        this.staffName(r),
+        r.lcacs || '-',
+        r.lastReviewDate || 'Never',
       ]),
     );
   }
@@ -646,44 +691,41 @@ export class HrReportsService {
   }
 
   async getRtwAnalytics() {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const in30Days = new Date(today);
-    in30Days.setDate(today.getDate() + 30);
-    const in90Days = new Date(today);
-    in90Days.setDate(today.getDate() + 90);
-
-    const allStaff = await this.dataSource.getRepository(StaffProfile).find();
-
-    const total = allStaff.length;
-    const ukNationals = allStaff.filter((s) => s.isUkNational === true).length;
-    const eeaNationals = allStaff.filter((s) => s.isEeaNational === true).length;
-    const rtwCompleted = allStaff.filter((s) => s.rightToWorkCheckCompleted === true).length;
-    const rtwNotCompleted = allStaff.filter((s) => !s.rightToWorkCheckCompleted).length;
-    const shareCodeExpiring30 = allStaff.filter((s) => {
-      if (!s.visaExpiryDate) return false;
-      const exp = new Date(s.visaExpiryDate);
-      return exp >= today && exp <= in30Days;
-    }).length;
-    const shareCodeExpiring90 = allStaff.filter((s) => {
-      if (!s.visaExpiryDate) return false;
-      const exp = new Date(s.visaExpiryDate);
-      return exp >= today && exp <= in90Days;
-    }).length;
-    const shareCodeExpired = allStaff.filter((s) => {
-      if (!s.visaExpiryDate) return false;
-      return new Date(s.visaExpiryDate) < today;
-    }).length;
+    const [row] = await this.dataSource.query(
+      `
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE "isUkNational" = true)::int AS "ukNationals",
+        COUNT(*) FILTER (WHERE "isEeaNational" = true)::int AS "eeaNationals",
+        COUNT(*) FILTER (WHERE "right_to_work_check_completed" = true)::int AS "rtwCompleted",
+        COUNT(*) FILTER (WHERE "right_to_work_check_completed" IS DISTINCT FROM true)::int AS "rtwNotCompleted",
+        COUNT(*) FILTER (
+          WHERE "visaExpiryDate" IS NOT NULL
+            AND "visaExpiryDate"::date >= CURRENT_DATE
+            AND "visaExpiryDate"::date <= CURRENT_DATE + 30
+        )::int AS "shareCodeExpiring30",
+        COUNT(*) FILTER (
+          WHERE "visaExpiryDate" IS NOT NULL
+            AND "visaExpiryDate"::date >= CURRENT_DATE
+            AND "visaExpiryDate"::date <= CURRENT_DATE + 90
+        )::int AS "shareCodeExpiring90",
+        COUNT(*) FILTER (
+          WHERE "visaExpiryDate" IS NOT NULL
+            AND "visaExpiryDate"::date < CURRENT_DATE
+        )::int AS "shareCodeExpired"
+      FROM staff_profiles
+      `,
+    );
 
     return {
-      total,
-      ukNationals,
-      eeaNationals,
-      rtwCompleted,
-      rtwNotCompleted,
-      shareCodeExpiring30,
-      shareCodeExpiring90,
-      shareCodeExpired,
+      total: Number(row?.total ?? 0),
+      ukNationals: Number(row?.ukNationals ?? 0),
+      eeaNationals: Number(row?.eeaNationals ?? 0),
+      rtwCompleted: Number(row?.rtwCompleted ?? 0),
+      rtwNotCompleted: Number(row?.rtwNotCompleted ?? 0),
+      shareCodeExpiring30: Number(row?.shareCodeExpiring30 ?? 0),
+      shareCodeExpiring90: Number(row?.shareCodeExpiring90 ?? 0),
+      shareCodeExpired: Number(row?.shareCodeExpired ?? 0),
     };
   }
 
