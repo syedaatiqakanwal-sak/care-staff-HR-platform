@@ -39,17 +39,18 @@ export const ApiTokensPage = () => {
     const [createModalOpen, setCreateModalOpen] = useState(false);
     const [newTokenModalOpen, setNewTokenModalOpen] = useState(false);
     const [newToken, setNewToken] = useState<string>('');
-    const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
-    const [deleting, setDeleting] = useState(false);
     const [creating, setCreating] = useState(false);
     const [tokenName, setTokenName] = useState('');
     const [selectedScopes, setSelectedScopes] = useState<string[]>([]);
     const [expiresInDays, setExpiresInDays] = useState<string>('');
+    const [deletingId, setDeletingId] = useState<string | null>(null);
+    const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
     const availableScopes = [
         { value: 'enrollment', label: 'Enrollment' },
         { value: 'plans', label: 'Plans' },
         { value: 'reminders', label: 'Reminders' },
+        { value: 'rest', label: 'Full REST API' },
     ];
 
     useEffect(() => {
@@ -130,12 +131,19 @@ export const ApiTokensPage = () => {
         }
     };
 
-    const handleDeleteToken = async () => {
-        if (!deleteTargetId) return;
-        setDeleting(true);
+    const handleDeleteToken = (id: string) => {
+        if (deletingId) return;
+        setConfirmDeleteId(id);
+    };
+
+    const confirmDeleteToken = async () => {
+        const id = confirmDeleteId;
+        if (!id || deletingId) return;
+        setConfirmDeleteId(null);
+        setDeletingId(id);
         try {
             const token = localStorage.getItem('token');
-            await axios.delete(`/api/v1/api/manage/tokens/${deleteTargetId}`, {
+            await axios.delete(`/api/v1/api/manage/tokens/${id}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             notifications.show({
@@ -143,7 +151,6 @@ export const ApiTokensPage = () => {
                 message: 'Token deleted successfully',
                 color: '#267FBA',
             });
-            setDeleteTargetId(null);
             fetchTokens();
         } catch (error: any) {
             notifications.show({
@@ -152,7 +159,7 @@ export const ApiTokensPage = () => {
                 color: 'red',
             });
         } finally {
-            setDeleting(false);
+            setDeletingId(null);
         }
     };
 
@@ -205,6 +212,7 @@ export const ApiTokensPage = () => {
                     </Stack>
                 </Paper>
             ) : (
+                <Table.ScrollContainer minWidth={800}>
                 <Table striped highlightOnHover>
                     <Table.Thead>
                         <Table.Tr>
@@ -259,7 +267,9 @@ export const ApiTokensPage = () => {
                                         <ActionIcon
                                             color="red"
                                             variant="light"
-                                            onClick={() => setDeleteTargetId(token.id)}
+                                            loading={deletingId === token.id}
+                                            disabled={deletingId !== null && deletingId !== token.id}
+                                            onClick={() => handleDeleteToken(token.id)}
                                         >
                                             <Trash2 size={16} />
                                         </ActionIcon>
@@ -269,6 +279,7 @@ export const ApiTokensPage = () => {
                         ))}
                     </Table.Tbody>
                 </Table>
+                </Table.ScrollContainer>
             )}
 
             {/* Create Token Modal */}
@@ -395,14 +406,15 @@ export const ApiTokensPage = () => {
             </Modal>
 
             <AppConfirmModal
-                opened={!!deleteTargetId}
-                title="Delete API token"
-                message="Are you sure you want to delete this token? This action cannot be undone."
-                confirmLabel="Delete"
-                confirmColor="red"
-                loading={deleting}
-                onConfirm={handleDeleteToken}
-                onCancel={() => setDeleteTargetId(null)}
+                opened={!!confirmDeleteId}
+                options={{
+                    title: 'Delete API token',
+                    message: 'Are you sure you want to delete this token? This action cannot be undone.',
+                    confirmLabel: 'Delete',
+                    confirmColor: 'red',
+                }}
+                onCancel={() => setConfirmDeleteId(null)}
+                onConfirm={confirmDeleteToken}
             />
         </Paper>
     );

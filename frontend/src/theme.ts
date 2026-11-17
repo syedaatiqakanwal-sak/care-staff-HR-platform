@@ -7,6 +7,7 @@ export const theme: MantineThemeOverride = createTheme({
             '#e6f5eb', '#c2e8d1', '#9ddbb6', '#79ce9b', '#54c180',
             '#139639', '#118233', '#0e7a2d', '#0b6224', '#084a1b'
         ],
+        // Alias used across the app for the primary green (same palette as brandBlue)
         brandGreen: [
             '#e6f5eb', '#c2e8d1', '#9ddbb6', '#79ce9b', '#54c180',
             '#139639', '#118233', '#0e7a2d', '#0b6224', '#084a1b'

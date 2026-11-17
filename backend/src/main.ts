@@ -38,10 +38,18 @@ async function bootstrap() {
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   });
   
-  // Request size limits (10MB)
+  // Keep JSON bodies small; large uploads use multipart (Multer), not JSON
   const expressApp = app.getHttpAdapter().getInstance();
-  expressApp.use(express.json({ limit: '10mb' }));
-  expressApp.use(express.urlencoded({ limit: '10mb', extended: true }));
+  expressApp.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '1mb' }));
+  expressApp.use(express.urlencoded({ limit: process.env.JSON_BODY_LIMIT || '1mb', extended: true }));
+
+  // Prevent unhandled rejections/exceptions from silently taking down the process without a log
+  process.on('unhandledRejection', (reason) => {
+    console.error('[unhandledRejection]', reason);
+  });
+  process.on('uncaughtException', (err) => {
+    console.error('[uncaughtException]', err);
+  });
 
   await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
 }

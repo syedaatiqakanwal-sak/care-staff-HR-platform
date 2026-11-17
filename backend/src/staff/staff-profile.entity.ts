@@ -58,6 +58,9 @@ export class StaffProfile {
     @Column({ type: 'varchar', length: 50, nullable: true, default: null })
     passportNumber: string | null;
 
+    @Column({ type: 'varchar', length: 255, nullable: true, default: null })
+    passportIssuingAuthority: string | null;
+
     @Column({ type: 'date', nullable: true, default: null })
     passportExpiry: Date | null;
 
@@ -118,6 +121,33 @@ export class StaffProfile {
 
     @Column({ name: 'right_to_work_check_expiry_date', type: 'date', nullable: true })
     rightToWorkCheckExpiryDate: Date | null;
+
+    @Column({ name: 'further_is_uk_national', type: 'boolean', nullable: true, default: null })
+    furtherIsUkNational: boolean | null;
+
+    @Column({ name: 'further_is_eea_national', type: 'boolean', nullable: true, default: null })
+    furtherIsEeaNational: boolean | null;
+
+    @Column({ name: 'further_visa_type', type: 'varchar', length: 100, nullable: true, default: null })
+    furtherVisaType: string | null;
+
+    @Column({ name: 'further_visa_or_brp_number', type: 'varchar', length: 100, nullable: true, default: null })
+    furtherVisaOrBrpNumber: string | null;
+
+    @Column({ name: 'further_visa_expiry_date', type: 'date', nullable: true })
+    furtherVisaExpiryDate: Date | null;
+
+    @Column({ name: 'further_share_code_generated_date', type: 'date', nullable: true })
+    furtherShareCodeGeneratedDate: Date | null;
+
+    @Column({ name: 'further_right_to_work_check_completed', type: 'boolean', default: false })
+    furtherRightToWorkCheckCompleted: boolean;
+
+    @Column({ name: 'further_right_to_work_check_date', type: 'date', nullable: true })
+    furtherRightToWorkCheckDate: Date | null;
+
+    @Column({ name: 'further_right_to_work_check_expiry_date', type: 'date', nullable: true })
+    furtherRightToWorkCheckExpiryDate: Date | null;
 
     @Column({ name: 'address_gap_notified_at', type: 'timestamp', nullable: true })
     addressGapNotifiedAt: Date | null;

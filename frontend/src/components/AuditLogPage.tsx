@@ -163,6 +163,7 @@ export function AuditLogPage() {
             <TextInput label="To" type="date" value={to} onChange={(e) => setTo(e.currentTarget.value)} />
             <Button
               color="brandBlue"
+              loading={loading}
               onClick={() => {
                 setPage(1);
                 fetchLogs();
@@ -187,6 +188,7 @@ export function AuditLogPage() {
               <Text size="sm" c="dimmed" mb="sm">
                 {total} total entries
               </Text>
+              <Table.ScrollContainer minWidth={800}>
               <Table striped highlightOnHover fz="sm">
                 <Table.Thead>
                   <Table.Tr>
@@ -230,6 +232,7 @@ export function AuditLogPage() {
                   ))}
                 </Table.Tbody>
               </Table>
+              </Table.ScrollContainer>
               {totalPages > 1 && (
                 <Group justify="center" mt="md">
                   <Pagination value={page} onChange={setPage} total={totalPages} />

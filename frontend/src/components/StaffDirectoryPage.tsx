@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     Avatar,
     Badge,
@@ -18,11 +18,12 @@ import {
     Title,
 } from '@mantine/core';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { notifications } from '@mantine/notifications';
 import axios from 'axios';
 import { ChevronRight, Search, UserPlus, Users } from 'lucide-react';
-import { notifications } from '@mantine/notifications';
 import { AddStaffModal } from './AddStaffModal';
 import { useRole } from '../hooks/useRole';
+import api from '../utils/api';
 
 const BRAND_GREEN = '#139639';
 const BRAND_BLUE = '#267FBA';
@@ -62,6 +63,18 @@ type StaffMember = {
     isActive: boolean;
 };
 
+type RawStaffProfile = {
+    user?: { id: string; email: string; isActive?: boolean };
+    firstName: string;
+    lastName: string;
+    middleName?: string;
+    department?: string;
+    ilccsNumber?: string;
+    lcaNumber?: string;
+    profilePicture?: string | null;
+    employmentStatus?: string;
+};
+
 function staffDisplayName(s: StaffMember) {
     return [s.firstName, s.lastName].filter(Boolean).join(' ').trim() || (s.firstName || '').trim() || 'Staff';
 }
@@ -92,41 +105,56 @@ export const StaffDirectoryPage = ({ searchQuery = '' }: { searchQuery?: string 
     const [deleteTarget, setDeleteTarget] = useState<StaffMember | null>(null);
     const [deleting, setDeleting] = useState(false);
 
-    const token = localStorage.getItem('token');
     const { canMutate, isAdmin } = useRole();
+
+    // Tracks staff ids we've already requested a profile picture for (or are ineligible),
+    // so re-renders don't keep re-issuing the same picture request.
+    const fetchedPictureIdsRef = useRef<Set<string>>(new Set());
+    // All object URLs ever created, revoked only on unmount to avoid invalidating
+    // images that are still being displayed.
+    const pictureObjectUrlsRef = useRef<string[]>([]);
 
     useEffect(() => {
         const t = setTimeout(() => setDebouncedSearch(localSearch.trim()), 300);
         return () => clearTimeout(t);
     }, [localSearch]);
 
-    // Sync local search from header query so header search works from any page
+    // Keep page search box in sync when the header search drives navigation/filtering.
     useEffect(() => {
-        if (searchQuery !== undefined && searchQuery !== localSearch) {
-            setLocalSearch(searchQuery);
+        const q = searchQuery.trim();
+        if (q && q !== localSearch.trim()) {
+            setLocalSearch(q);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- only sync when header query changes
     }, [searchQuery]);
 
     const fetchStaff = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await axios.get('/api/v1/staff', {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            const rows: StaffMember[] = (res.data || [])
+            const limit = 200;
+            const res = await api.get('/api/v1/staff', { params: { page: 1, limit } });
+            const payload = res.data;
+            const isPaginated = payload && typeof payload === 'object' && Array.isArray(payload.data);
+            // Tolerate the legacy bare-array response shape as well as the new { data, meta } shape.
+            let rawRows: RawStaffProfile[] = isPaginated ? payload.data : Array.isArray(payload) ? payload : [];
+            const totalPages = isPaginated ? Number(payload.meta?.totalPages) || 1 : 1;
+
+            if (isPaginated && totalPages > 1) {
+                const remainingPages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
+                const batches = await Promise.all(
+                    remainingPages.map((page) =>
+                        api
+                            .get('/api/v1/staff', { params: { page, limit } })
+                            .then((r) => (Array.isArray(r.data?.data) ? r.data.data : [])),
+                    ),
+                );
+                batches.forEach((b) => {
+                    rawRows = rawRows.concat(b);
+                });
+            }
+
+            const rows: StaffMember[] = rawRows
                 .map(
-                    (p: {
-                        user?: { id: string; email: string; isActive?: boolean };
-                        firstName: string;
-                        lastName: string;
-                        middleName?: string;
-                        department?: string;
-                        ilccsNumber?: string;
-                        lcaNumber?: string;
-                        profilePicture?: string | null;
-                        employmentStatus?: string;
-                    }) => ({
+                    (p: RawStaffProfile) => ({
                         id: p.user?.id ?? '',
                         firstName: p.firstName,
                         lastName: p.lastName,
@@ -135,55 +163,41 @@ export const StaffDirectoryPage = ({ searchQuery = '' }: { searchQuery?: string 
                         department: p.department,
                         ilccsNumber: p.ilccsNumber,
                         lcaNumber: p.lcaNumber,
-                        profilePicture: (() => {
-                            if (!p.user?.id || !p.profilePicture) return null;
-                            const basename = String(p.profilePicture).replace(/\\/g, '/').split('/').pop() || '';
-                            return `/api/v1/staff/${p.user.id}/profile-picture?v=${encodeURIComponent(basename)}`;
-                        })(),
+                        // Only request the profile-picture endpoint when the DB actually has a stored profilePicture path.
+                        // Otherwise the backend correctly returns 404 and the browser logs become noisy.
+                        profilePicture: p.profilePicture && p.user?.id
+                            ? `/api/v1/staff/${p.user.id}/profile-picture?v=${encodeURIComponent(
+                                  String(p.profilePicture).split('/').pop() || String(Date.now()),
+                              )}`
+                            : null,
                         employmentStatus: p.employmentStatus,
                         isActive: p.user?.isActive !== false,
                     }),
                 )
                 .filter((r: StaffMember) => r.id);
             setStaff(rows);
-
-            const urls: Record<string, string> = {};
-            await Promise.all(
-                rows.map(async (member) => {
-                    if (!member.profilePicture) return;
-                    try {
-                        const imgRes = await axios.get(member.profilePicture, {
-                            headers: {
-                                Authorization: `Bearer ${token}`,
-                                'Cache-Control': 'no-cache',
-                                Pragma: 'no-cache',
-                            },
-                            responseType: 'blob',
-                        });
-                        urls[member.id] = URL.createObjectURL(imgRes.data);
-                    } catch {
-                        /* ignore */
-                    }
-                }),
-            );
-            setProfilePictureUrls(urls);
+            // New staff list means previous picture fetches/urls are no longer relevant.
+            fetchedPictureIdsRef.current = new Set();
+            setProfilePictureUrls({});
         } catch (err) {
             console.error('Failed to load staff list', err);
             setStaff([]);
         } finally {
             setLoading(false);
         }
-    }, [token]);
+    }, []);
 
     useEffect(() => {
         fetchStaff();
     }, [fetchStaff]);
 
+    // Revoke all created object URLs only when the component unmounts.
     useEffect(() => {
+        const urlsRef = pictureObjectUrlsRef;
         return () => {
-            Object.values(profilePictureUrls).forEach((url) => URL.revokeObjectURL(url));
+            urlsRef.current.forEach((url) => URL.revokeObjectURL(url));
         };
-    }, [profilePictureUrls]);
+    }, []);
 
     useEffect(() => {
         setModalOpen(addOpen);
@@ -197,9 +211,7 @@ export const StaffDirectoryPage = ({ searchQuery = '' }: { searchQuery?: string 
         let cancelled = false;
         (async () => {
             try {
-                const res = await axios.get('/api/v1/dashboard/hr-stats', {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
+                const res = await api.get('/api/v1/dashboard/hr-stats');
                 const ids = new Set<string>(
                     (res.data?.users || [])
                         .filter((u: { filters?: string[] }) =>
@@ -215,7 +227,7 @@ export const StaffDirectoryPage = ({ searchQuery = '' }: { searchQuery?: string 
         return () => {
             cancelled = true;
         };
-    }, [listFilter, token]);
+    }, [listFilter]);
 
     const counts = useMemo(() => {
         const total = staff.length;
@@ -245,6 +257,57 @@ export const StaffDirectoryPage = ({ searchQuery = '' }: { searchQuery?: string 
     const visibleStaff = filteredStaff.slice(0, visibleCount);
     const hasMore = visibleCount < filteredStaff.length;
 
+    // Only fetch profile pictures for the rows currently visible on screen, with a small
+    // concurrency cap, instead of an unbounded Promise.all across the whole staff list.
+    useEffect(() => {
+        const toFetch = visibleStaff.filter(
+            (m) => m.profilePicture && !fetchedPictureIdsRef.current.has(m.id),
+        );
+        if (toFetch.length === 0) return;
+        toFetch.forEach((m) => fetchedPictureIdsRef.current.add(m.id));
+
+        let cancelled = false;
+        const CONCURRENCY = 4;
+
+        (async () => {
+            for (let i = 0; i < toFetch.length; i += CONCURRENCY) {
+                if (cancelled) return;
+                const batch = toFetch.slice(i, i + CONCURRENCY);
+                const results = await Promise.all(
+                    batch.map(async (member) => {
+                        try {
+                            const imgRes = await api.get(member.profilePicture as string, {
+                                responseType: 'blob',
+                                headers: {
+                                    'Cache-Control': 'no-cache',
+                                    Pragma: 'no-cache',
+                                },
+                            });
+                            return { id: member.id, url: URL.createObjectURL(imgRes.data) };
+                        } catch {
+                            return null;
+                        }
+                    }),
+                );
+                if (cancelled) return;
+                setProfilePictureUrls((prev) => {
+                    const next = { ...prev };
+                    results.forEach((r) => {
+                        if (r) {
+                            next[r.id] = r.url;
+                            pictureObjectUrlsRef.current.push(r.url);
+                        }
+                    });
+                    return next;
+                });
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [visibleStaff]);
+
     const closeModal = () => {
         setModalOpen(false);
         if (searchParams.get('add')) {
@@ -271,16 +334,14 @@ export const StaffDirectoryPage = ({ searchQuery = '' }: { searchQuery?: string 
         if (!deleteTarget) return;
         setDeleting(true);
         try {
-            await axios.delete(`/api/v1/staff/${deleteTarget.id}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            await api.delete(`/api/v1/staff/${deleteTarget.id}`);
             setStaff((prev) => prev.filter((s) => s.id !== deleteTarget.id));
             setDeleteTarget(null);
         } catch (err: unknown) {
             const msg = axios.isAxiosError(err) ? err.response?.data?.message : 'Failed to delete user';
             notifications.show({
-                title: 'Delete failed',
-                message: String(msg || 'Failed to delete user'),
+                title: 'Error',
+                message: (Array.isArray(msg) ? msg.join(' ') : msg) || 'Failed to delete user',
                 color: 'red',
             });
         } finally {
@@ -289,7 +350,7 @@ export const StaffDirectoryPage = ({ searchQuery = '' }: { searchQuery?: string 
     };
 
     return (
-        <Box p="md">
+        <Box p="md" pb={24}>
             <Container size="xl" p={0}>
                 <Group justify="space-between" align="flex-end" mb="lg" wrap="wrap">
                     <Box>
@@ -436,7 +497,7 @@ export const StaffDirectoryPage = ({ searchQuery = '' }: { searchQuery?: string 
                                             bg="rgba(0,0,0,0.12)"
                                             style={{ borderTop: '1px solid rgba(255,255,255,0.12)' }}
                                         >
-                                            <Group gap="xs" grow preventGrowOverflow={false}>
+                                            <Stack gap="xs">
                                                 <Button
                                                     component={Link}
                                                     to={`/dashboard/staff/${member.id}`}
@@ -473,7 +534,7 @@ export const StaffDirectoryPage = ({ searchQuery = '' }: { searchQuery?: string 
                                                         Delete
                                                     </Button>
                                                 )}
-                                            </Group>
+                                            </Stack>
                                         </Box>
                                     </Paper>
                                 );

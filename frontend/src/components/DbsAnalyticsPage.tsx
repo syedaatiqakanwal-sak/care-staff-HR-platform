@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
     Container, Paper, Title, Text, Table, Badge,
     Card, SimpleGrid, Button, Group, Box, Loader,
-    Center, Alert, Select
+    Center, Alert, Select, Pagination
 } from '@mantine/core';
 import {
     Shield, CheckCircle, Clock, AlertTriangle,
@@ -33,14 +33,18 @@ interface DbsRecord {
     enrolledDate: string | null;
 }
 
+const RECORDS_PAGE_SIZE = 100;
+
 const DbsAnalyticsPage = () => {
     const [analytics, setAnalytics] = useState<DbsAnalytics | null>(null);
     const [records, setRecords] = useState<DbsRecord[]>([]);
+    const [recordsPage, setRecordsPage] = useState(1);
+    const [recordsTotalPages, setRecordsTotalPages] = useState(1);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [statusFilter, setStatusFilter] = useState<string | null>(null);
 
-    const fetchData = useCallback(async () => {
+    const fetchData = useCallback(async (page = 1) => {
         setLoading(true);
         setError(null);
         try {
@@ -48,17 +52,22 @@ const DbsAnalyticsPage = () => {
             const headers = { Authorization: `Bearer ${token}` };
             const [analyticsRes, recordsRes] = await Promise.all([
                 axios.get('/api/v1/documents/dbs/analytics', { headers }),
-                axios.get('/api/v1/documents/dbs/analytics/all', { headers }),
+                axios.get('/api/v1/documents/dbs/analytics/all', {
+                    headers,
+                    params: { page, limit: RECORDS_PAGE_SIZE },
+                }),
             ]);
-            const analyticsPayload = analyticsRes.data?.data ?? analyticsRes.data;
-            const recordsPayload = recordsRes.data;
-            const recordList = Array.isArray(recordsPayload)
-                ? recordsPayload
-                : Array.isArray(recordsPayload?.data)
-                    ? recordsPayload.data
-                    : [];
-            setAnalytics(analyticsPayload && typeof analyticsPayload === 'object' ? analyticsPayload : null);
-            setRecords(recordList);
+            setAnalytics(analyticsRes.data);
+            // Backend returns { data, meta } for paginated records; tolerate a legacy bare array too.
+            const payload = recordsRes.data;
+            if (payload && Array.isArray(payload.data)) {
+                setRecords(payload.data);
+                setRecordsTotalPages(Math.max(1, Number(payload.meta?.totalPages) || 1));
+            } else {
+                setRecords(Array.isArray(payload) ? payload : []);
+                setRecordsTotalPages(1);
+            }
+            setRecordsPage(page);
         } catch {
             setError('Failed to load DBS analytics data.');
         } finally {
@@ -67,7 +76,7 @@ const DbsAnalyticsPage = () => {
     }, []);
 
     useEffect(() => {
-        fetchData();
+        fetchData(1);
     }, [fetchData]);
 
     const formatDate = (dateStr: string | null) => {
@@ -90,7 +99,7 @@ const DbsAnalyticsPage = () => {
         return { label: 'Valid', color: 'green' };
     };
 
-    const filteredRecords = (Array.isArray(records) ? records : []).filter(r => {
+    const filteredRecords = records.filter(r => {
         if (!statusFilter) return true;
         const status = getExpiryStatus(r.renewalDate);
         if (statusFilter === 'expired') return status.label === 'Expired';
@@ -122,7 +131,7 @@ const DbsAnalyticsPage = () => {
                     leftSection={<RefreshCw size={16} />}
                     variant="light"
                     color="green"
-                    onClick={fetchData}
+                    onClick={() => fetchData(recordsPage)}
                 >
                     Refresh
                 </Button>
@@ -133,7 +142,7 @@ const DbsAnalyticsPage = () => {
             )}
 
             {analytics && (
-                <SimpleGrid cols={3} spacing="md" mb="lg">
+                <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md" mb="lg">
                     <Card withBorder p="md" radius="md">
                         <Group>
                             <FileCheck size={24} color="#2e7d32" />
@@ -212,10 +221,11 @@ const DbsAnalyticsPage = () => {
                             { value: 'enrolled', label: 'Update Service Enrolled' },
                             { value: 'valid', label: 'Valid' },
                         ]}
-                        w={220}
+                        w={{ base: '100%', sm: 220 }}
                     />
                 </Group>
 
+                <Table.ScrollContainer minWidth={900}>
                 <Table striped highlightOnHover>
                     <Table.Thead>
                         <Table.Tr>
@@ -285,6 +295,16 @@ const DbsAnalyticsPage = () => {
                         )}
                     </Table.Tbody>
                 </Table>
+                </Table.ScrollContainer>
+                {recordsTotalPages > 1 && (
+                    <Group justify="center" mt="md">
+                        <Pagination
+                            value={recordsPage}
+                            onChange={(p) => fetchData(p)}
+                            total={recordsTotalPages}
+                        />
+                    </Group>
+                )}
             </Paper>
         </Container>
     );

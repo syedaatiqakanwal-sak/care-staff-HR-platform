@@ -7,7 +7,6 @@ import {
   Loader,
   Paper,
   Progress,
-  ScrollArea,
   SimpleGrid,
   Stack,
   Table,
@@ -38,6 +37,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
 const BRAND_GREEN = '#139639';
+const ROWS_PAGE_SIZE = 100;
 
 type PeriodKey = 'week' | 'month' | 'year';
 
@@ -380,6 +380,7 @@ export function HrAnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [sortAsc, setSortAsc] = useState(true);
+  const [visibleRowCount, setVisibleRowCount] = useState(ROWS_PAGE_SIZE);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -422,6 +423,14 @@ export function HrAnalyticsPage() {
     });
     return copy;
   }, [searchedRows, sortAsc]);
+
+  useEffect(() => {
+    setVisibleRowCount(ROWS_PAGE_SIZE);
+  }, [search, sortAsc, period]);
+
+  // Cap the number of DOM rows rendered at once; the full list is still available for CSV export.
+  const visibleRows = sortedRows.slice(0, visibleRowCount);
+  const hasMoreRows = visibleRowCount < sortedRows.length;
 
   const employmentSlices = analytics?.employmentStatusBreakdown ?? [];
   const employmentTotal = employmentSlices.reduce((sum, s) => sum + s.count, 0);
@@ -684,7 +693,7 @@ export function HrAnalyticsPage() {
               </Text>
             </Stack>
           ) : (
-            <ScrollArea>
+            <Table.ScrollContainer minWidth={1100}>
               <Table striped highlightOnHover withTableBorder withColumnBorders>
                 <Table.Thead>
                   <Table.Tr>
@@ -701,7 +710,7 @@ export function HrAnalyticsPage() {
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
-                  {sortedRows.map((row) => (
+                  {visibleRows.map((row) => (
                     <Table.Tr key={row.userId}>
                       <Table.Td fw={600}>{row.name}</Table.Td>
                       <Table.Td>{row.lcacs}</Table.Td>
@@ -740,7 +749,18 @@ export function HrAnalyticsPage() {
                   ))}
                 </Table.Tbody>
               </Table>
-            </ScrollArea>
+            </Table.ScrollContainer>
+          )}
+          {hasMoreRows && (
+            <Group justify="center" mt="md">
+              <Button
+                variant="light"
+                color="brandGreen.6"
+                onClick={() => setVisibleRowCount((c) => c + ROWS_PAGE_SIZE)}
+              >
+                Show more ({sortedRows.length - visibleRowCount} remaining)
+              </Button>
+            </Group>
           )}
         </Paper>
       </Container>

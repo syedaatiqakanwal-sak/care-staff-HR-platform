@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { LeaveRecord } from './leave-record.entity';
 import { AttendanceRecord } from './attendance-record.entity';
 import { StaffProfile } from '../staff/staff-profile.entity';
@@ -15,7 +15,6 @@ import {
   CreateLeaveRequestDto,
   UpdateAttendanceDto,
 } from './dto/attendance.dto';
-import { LeaveType } from './leave-type.enum';
 import { LeaveStatus } from './leave-status.enum';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/audit-action.enum';
@@ -24,9 +23,10 @@ import { AuditAction } from '../audit/audit-action.enum';
  * Annual leave balance policy (documented):
  * -----------------------------------------
  * - Entitlement is stored on staff_profiles.annualLeaveAllowanceDays (HR-configurable, default 28).
- * - Used days are computed from leave_records: sum of inclusive calendar days for
- *   leaveType = ANNUAL, status = APPROVED, where startDate falls in the current calendar year.
- * - remainingDays = allowanceDays - usedDays (minimum 0 for display).
+ * - Used days are every approved leave request whose start date is in the current calendar year.
+ * - Sick, unpaid, and emergency leave count the same as annual leave once approved.
+ * - remainingDays = allowanceDays - usedDays (minimum 0).
+ * - availableToBook = remainingDays minus leave that is still requested.
  * We store allowance on the profile rather than deriving it from tenure alone so HR can set
  * contractual entitlement per employee.
  */
@@ -50,36 +50,52 @@ export class AttendanceService {
     return Math.max(0, diff);
   }
 
-  async getLeaveBalance(staffProfileId: string) {
-    const profile = await this.staffRepo.findOne({ where: { id: staffProfileId } });
+  private async getLeaveBalanceWithManager(
+    staffProfileId: string,
+    manager?: EntityManager,
+  ) {
+    const staffRepo = manager ? manager.getRepository(StaffProfile) : this.staffRepo;
+    const profile = await staffRepo.findOne({ where: { id: staffProfileId } });
     if (!profile) {
       throw new NotFoundException('Staff profile not found');
     }
 
     const allowanceDays = profile.annualLeaveAllowanceDays ?? 28;
     const year = new Date().getFullYear();
+    const runQuery = (sql: string, params?: unknown[]) =>
+      manager ? manager.query(sql, params) : this.leaveRepo.query(sql, params);
 
-    const [row] = await this.leaveRepo.query(
+    const [row] = (await runQuery(
       `
-      SELECT COALESCE(SUM(("endDate" - "startDate") + 1), 0)::int AS used_days
+      SELECT
+        COALESCE(SUM(CASE WHEN status = 'APPROVED'
+          THEN ("endDate" - "startDate") + 1 ELSE 0 END), 0)::int AS used_days,
+        COALESCE(SUM(CASE WHEN status = 'REQUESTED'
+          THEN ("endDate" - "startDate") + 1 ELSE 0 END), 0)::int AS pending_days
       FROM leave_records
       WHERE "staffId" = $1
-        AND "leaveType" = 'ANNUAL'
-        AND status = 'APPROVED'
         AND EXTRACT(YEAR FROM "startDate") = $2
       `,
       [staffProfileId, year],
-    );
+    )) as Array<{ used_days: number; pending_days: number }>;
 
     const usedDays = Number(row?.used_days ?? 0);
+    const pendingDays = Number(row?.pending_days ?? 0);
     const remainingDays = Math.max(0, allowanceDays - usedDays);
+    const availableToBook = Math.max(0, remainingDays - pendingDays);
 
     return {
       allowanceDays,
       usedDays,
+      pendingDays,
       remainingDays,
+      availableToBook,
       year,
     };
+  }
+
+  async getLeaveBalance(staffProfileId: string) {
+    return this.getLeaveBalanceWithManager(staffProfileId);
   }
 
   private serializeLeave(record: LeaveRecord) {
@@ -151,24 +167,35 @@ export class AttendanceService {
     }
 
     const requestedDays = this.daysInclusive(dto.startDate, dto.endDate);
-    if (dto.leaveType === LeaveType.ANNUAL) {
-      const balance = await this.getLeaveBalance(profile.id);
-      if (requestedDays > balance.remainingDays) {
+
+    const saved = await this.leaveRepo.manager.transaction(async (tx) => {
+      // Serialize leave creates/approves for this staff to prevent over-booking
+      await tx.getRepository(StaffProfile)
+        .createQueryBuilder('sp')
+        .setLock('pessimistic_write')
+        .where('sp.id = :id', { id: profile.id })
+        .getOne();
+
+      const balance = await this.getLeaveBalanceWithManager(profile.id, tx);
+      const bookable = Math.max(0, balance.remainingDays - balance.pendingDays);
+      if (requestedDays > bookable) {
         throw new BadRequestException(
-          `Insufficient annual leave balance (${balance.remainingDays} days remaining)`,
+          `Insufficient leave balance (${bookable} days remaining after pending requests)`,
         );
       }
-    }
 
-    const record = this.leaveRepo.create({
-      staffId: profile.id,
-      leaveType: dto.leaveType,
-      startDate: dto.startDate,
-      endDate: dto.endDate,
-      reason: dto.reason?.trim() || null,
-      status: LeaveStatus.REQUESTED,
+      const leaveRepo = tx.getRepository(LeaveRecord);
+      const record = leaveRepo.create({
+        staffId: profile.id,
+        leaveType: dto.leaveType,
+        startDate: dto.startDate,
+        endDate: dto.endDate,
+        reason: dto.reason?.trim() || null,
+        status: LeaveStatus.REQUESTED,
+      });
+      return leaveRepo.save(record);
     });
-    const saved = await this.leaveRepo.save(record);
+
     return this.serializeLeave(saved);
   }
 
@@ -191,30 +218,56 @@ export class AttendanceService {
     ipAddress?: string,
   ) {
     this.access.assertCanApproveLeave(requestUser);
-    const record = await this.leaveRepo.findOne({
-      where: { id: leaveId },
-      relations: ['staff'],
-    });
-    if (!record) {
-      throw new NotFoundException('Leave request not found');
-    }
-    if (record.status !== LeaveStatus.REQUESTED) {
-      throw new BadRequestException('Leave request is not pending approval');
-    }
 
-    if (record.leaveType === LeaveType.ANNUAL) {
-      const balance = await this.getLeaveBalance(record.staffId);
+    const saved = await this.leaveRepo.manager.transaction(async (tx) => {
+      const leaveRepo = tx.getRepository(LeaveRecord);
+      const record = await leaveRepo
+        .createQueryBuilder('leave')
+        .setLock('pessimistic_write')
+        .where('leave.id = :id', { id: leaveId })
+        .getOne();
+      if (!record) {
+        throw new NotFoundException('Leave request not found');
+      }
+      if (record.status !== LeaveStatus.REQUESTED) {
+        throw new BadRequestException('Leave request is not pending approval');
+      }
+
+      // Serialize balance checks per staff member to prevent over-allocation
+      await tx.getRepository(StaffProfile)
+        .createQueryBuilder('sp')
+        .setLock('pessimistic_write')
+        .where('sp.id = :id', { id: record.staffId })
+        .getOne();
+
+      const balance = await this.getLeaveBalanceWithManager(record.staffId, tx);
       const days = this.daysInclusive(record.startDate, record.endDate);
       if (days > balance.remainingDays) {
         throw new BadRequestException(
-          `Cannot approve: only ${balance.remainingDays} annual leave days remaining`,
+          `Cannot approve: only ${balance.remainingDays} leave days remaining`,
         );
       }
+
+      const result = await leaveRepo
+        .createQueryBuilder()
+        .update(LeaveRecord)
+        .set({ status: LeaveStatus.APPROVED, approvedBy: requestUser.userId })
+        .where('id = :id AND status = :status', {
+          id: leaveId,
+          status: LeaveStatus.REQUESTED,
+        })
+        .execute();
+      if (!result.affected) {
+        throw new BadRequestException('Leave request is not pending approval');
+      }
+
+      return leaveRepo.findOne({ where: { id: leaveId }, relations: ['staff'] });
+    });
+
+    if (!saved) {
+      throw new NotFoundException('Leave request not found');
     }
 
-    record.status = LeaveStatus.APPROVED;
-    record.approvedBy = requestUser.userId;
-    const saved = await this.leaveRepo.save(record);
     await this.audit.log({
       userId: requestUser.userId,
       userRole: requestUser.role,
@@ -233,16 +286,32 @@ export class AttendanceService {
     ipAddress?: string,
   ) {
     this.access.assertCanApproveLeave(requestUser);
-    const record = await this.leaveRepo.findOne({ where: { id: leaveId } });
-    if (!record) {
+
+    const saved = await this.leaveRepo.manager.transaction(async (tx) => {
+      const leaveRepo = tx.getRepository(LeaveRecord);
+      const result = await leaveRepo
+        .createQueryBuilder()
+        .update(LeaveRecord)
+        .set({ status: LeaveStatus.REJECTED, approvedBy: requestUser.userId })
+        .where('id = :id AND status = :status', {
+          id: leaveId,
+          status: LeaveStatus.REQUESTED,
+        })
+        .execute();
+      if (!result.affected) {
+        const existing = await leaveRepo.findOne({ where: { id: leaveId } });
+        if (!existing) {
+          throw new NotFoundException('Leave request not found');
+        }
+        throw new BadRequestException('Leave request is not pending approval');
+      }
+      return leaveRepo.findOne({ where: { id: leaveId } });
+    });
+
+    if (!saved) {
       throw new NotFoundException('Leave request not found');
     }
-    if (record.status !== LeaveStatus.REQUESTED) {
-      throw new BadRequestException('Leave request is not pending approval');
-    }
-    record.status = LeaveStatus.REJECTED;
-    record.approvedBy = requestUser.userId;
-    const saved = await this.leaveRepo.save(record);
+
     await this.audit.log({
       userId: requestUser.userId,
       userRole: requestUser.role,
@@ -277,23 +346,29 @@ export class AttendanceService {
     this.access.assertCanManageAttendance(requestUser);
     const profile = await this.access.resolveProfileByUserId(targetUserId);
 
-    let record = await this.attendanceRepo.findOne({
+    const notes = dto.notes?.trim() || null;
+    const returnToWorkCompleted = dto.returnToWorkCompleted ?? false;
+
+    // Atomic upsert against UNIQUE(staffId, date) — safe under concurrent writes
+    await this.attendanceRepo.query(
+      `
+      INSERT INTO attendance_records ("staffId", date, status, notes, "returnToWorkCompleted")
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT ("staffId", date) DO UPDATE SET
+        status = EXCLUDED.status,
+        notes = COALESCE(EXCLUDED.notes, attendance_records.notes),
+        "returnToWorkCompleted" = EXCLUDED."returnToWorkCompleted",
+        "updatedAt" = NOW()
+      `,
+      [profile.id, dto.date, dto.status, notes, returnToWorkCompleted],
+    );
+
+    const saved = await this.attendanceRepo.findOne({
       where: { staffId: profile.id, date: dto.date },
     });
-    if (record) {
-      record.status = dto.status;
-      record.notes = dto.notes?.trim() ?? record.notes;
-      record.returnToWorkCompleted = dto.returnToWorkCompleted ?? record.returnToWorkCompleted;
-    } else {
-      record = this.attendanceRepo.create({
-        staffId: profile.id,
-        date: dto.date,
-        status: dto.status,
-        notes: dto.notes?.trim() || null,
-        returnToWorkCompleted: dto.returnToWorkCompleted ?? false,
-      });
+    if (!saved) {
+      throw new NotFoundException('Attendance record not found after upsert');
     }
-    const saved = await this.attendanceRepo.save(record);
     return this.serializeAttendance(saved);
   }
 

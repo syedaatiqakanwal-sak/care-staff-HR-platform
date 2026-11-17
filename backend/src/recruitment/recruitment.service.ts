@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { RecruitmentRecord } from './recruitment-record.entity';
 import { StaffProfile } from '../staff/staff-profile.entity';
 import { EmploymentStatus } from '../staff/employment-status.enum';
@@ -18,6 +18,10 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function isUniqueViolation(err: unknown): boolean {
+  return err instanceof QueryFailedError && (err as any).code === '23505';
+}
+
 @Injectable()
 export class RecruitmentService {
   constructor(
@@ -32,8 +36,15 @@ export class RecruitmentService {
       where: { staffId: staffProfileId },
     });
     if (!record) {
-      record = this.recruitmentRepo.create({ staffId: staffProfileId });
-      record = await this.recruitmentRepo.save(record);
+      try {
+        record = this.recruitmentRepo.create({ staffId: staffProfileId });
+        record = await this.recruitmentRepo.save(record);
+      } catch (err) {
+        // Concurrent first-create: unique(staffId) won by peer — re-fetch
+        if (!isUniqueViolation(err)) throw err;
+        record = await this.recruitmentRepo.findOne({ where: { staffId: staffProfileId } });
+        if (!record) throw new ConflictException('Could not create recruitment record');
+      }
     }
     return record;
   }
@@ -49,7 +60,14 @@ export class RecruitmentService {
 
     let record = await this.recruitmentRepo.findOne({ where: { staffId: staffProfileId } });
     if (!record) {
-      record = this.recruitmentRepo.create({ staffId: staffProfileId });
+      try {
+        record = this.recruitmentRepo.create({ staffId: staffProfileId });
+        record = await this.recruitmentRepo.save(record);
+      } catch (err) {
+        if (!isUniqueViolation(err)) throw err;
+        record = await this.recruitmentRepo.findOne({ where: { staffId: staffProfileId } });
+        if (!record) throw new ConflictException('Could not create recruitment record');
+      }
     }
 
     Object.assign(record, dto);

@@ -58,18 +58,15 @@ export class CreateDbsRecordDto {
   dbsCertificateNumber?: string;
 
   @IsOptional()
-  @IsString()
-  @MaxLength(32)
+  @IsDateString()
   enrolledDate?: string;
 
   @IsOptional()
-  @IsString()
-  @MaxLength(32)
+  @IsDateString()
   dateForNextChecking?: string;
 
   @IsOptional()
-  @IsString()
-  @MaxLength(32)
+  @IsDateString()
   nextCheckDueDate?: string;
 }
 
@@ -105,18 +102,15 @@ export class UpdateDbsRecordDto {
   dbsCertificateNumber?: string | null;
 
   @IsOptional()
-  @IsString()
-  @MaxLength(32)
+  @IsDateString()
   enrolledDate?: string | null;
 
   @IsOptional()
-  @IsString()
-  @MaxLength(32)
+  @IsDateString()
   dateForNextChecking?: string | null;
 
   @IsOptional()
-  @IsString()
-  @MaxLength(32)
+  @IsDateString()
   nextCheckDueDate?: string | null;
 }
 

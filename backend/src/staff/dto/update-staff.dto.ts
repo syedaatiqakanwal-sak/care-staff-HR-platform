@@ -1,6 +1,20 @@
-import { IsString, IsOptional, IsEmail, IsDate, IsEnum, IsInt, Min, IsBoolean } from 'class-validator';
-import { Type } from 'class-transformer';
+import {
+    IsString,
+    IsOptional,
+    IsEmail,
+    IsEnum,
+    IsInt,
+    Min,
+    IsBoolean,
+    IsDateString,
+    ValidateIf,
+} from 'class-validator';
+import { Transform } from 'class-transformer';
 import { EmploymentStatus } from '../employment-status.enum';
+
+/** JSON/HTML forms send date strings; treat empty as null. */
+const EmptyDateToNull = () =>
+    Transform(({ value }) => (value === '' || value === undefined ? null : value));
 
 export class UpdateStaffDto {
     @IsOptional()
@@ -64,15 +78,34 @@ export class UpdateStaffDto {
     passportNumber?: string | null;
 
     @IsOptional()
-    @IsDate()
-    @Type(() => Date)
-    passportExpiry?: Date | null;
+    @IsString()
+    passportIssuingAuthority?: string | null;
 
     @IsOptional()
+    @EmptyDateToNull()
+    @ValidateIf((_, v) => v !== null && v !== undefined)
+    @IsDateString({}, { message: 'passportExpiry must be a valid date (YYYY-MM-DD)' })
+    passportExpiry?: string | null;
+
+    @IsOptional()
+    @Transform(({ value }) => {
+        if (value === '' || value === null || value === undefined) return null;
+        if (value === true || value === 'true' || value === 1 || value === '1') return true;
+        if (value === false || value === 'false' || value === 0 || value === '0') return false;
+        return value;
+    })
+    @ValidateIf((_, v) => v !== null && v !== undefined)
     @IsBoolean()
     isUkNational?: boolean | null;
 
     @IsOptional()
+    @Transform(({ value }) => {
+        if (value === '' || value === null || value === undefined) return null;
+        if (value === true || value === 'true' || value === 1 || value === '1') return true;
+        if (value === false || value === 'false' || value === 0 || value === '0') return false;
+        return value;
+    })
+    @ValidateIf((_, v) => v !== null && v !== undefined)
     @IsBoolean()
     isEeaNational?: boolean | null;
 
@@ -105,29 +138,34 @@ export class UpdateStaffDto {
     currentNationality?: string;
 
     @IsOptional()
-    @IsDate()
-    @Type(() => Date)
-    startDate?: Date | null;
+    @EmptyDateToNull()
+    @ValidateIf((_, v) => v !== null && v !== undefined)
+    @IsDateString({}, { message: 'startDate must be a valid date (YYYY-MM-DD)' })
+    startDate?: string | null;
 
     @IsOptional()
-    @IsDate()
-    @Type(() => Date)
-    inductionDate?: Date;
+    @EmptyDateToNull()
+    @ValidateIf((_, v) => v !== null && v !== undefined)
+    @IsDateString({}, { message: 'inductionDate must be a valid date (YYYY-MM-DD)' })
+    inductionDate?: string | null;
 
     @IsOptional()
-    @IsDate()
-    @Type(() => Date)
-    rapidInductionDate?: Date;
+    @EmptyDateToNull()
+    @ValidateIf((_, v) => v !== null && v !== undefined)
+    @IsDateString({}, { message: 'rapidInductionDate must be a valid date (YYYY-MM-DD)' })
+    rapidInductionDate?: string | null;
 
     @IsOptional()
-    @IsDate()
-    @Type(() => Date)
-    dateOfBirth?: Date;
+    @EmptyDateToNull()
+    @ValidateIf((_, v) => v !== null && v !== undefined)
+    @IsDateString({}, { message: 'dateOfBirth must be a valid date (YYYY-MM-DD)' })
+    dateOfBirth?: string | null;
 
     @IsOptional()
-    @IsDate()
-    @Type(() => Date)
-    visaExpiryDate?: Date | null;
+    @EmptyDateToNull()
+    @ValidateIf((_, v) => v !== null && v !== undefined)
+    @IsDateString({}, { message: 'visaExpiryDate must be a valid date (YYYY-MM-DD)' })
+    visaExpiryDate?: string | null;
 
     @IsOptional()
     @IsString()
@@ -138,25 +176,99 @@ export class UpdateStaffDto {
     rightToWorkStatus?: string | null;
 
     @IsOptional()
-    @IsDate()
-    @Type(() => Date)
-    shareCodeGeneratedDate?: Date | null;
+    @EmptyDateToNull()
+    @ValidateIf((_, v) => v !== null && v !== undefined)
+    @IsDateString({}, { message: 'shareCodeGeneratedDate must be a valid date (YYYY-MM-DD)' })
+    shareCodeGeneratedDate?: string | null;
 
     @IsOptional()
+    @Transform(({ value }) => {
+        if (value === true || value === 'true' || value === 1 || value === '1') return true;
+        if (value === false || value === 'false' || value === 0 || value === '0') return false;
+        return Boolean(value);
+    })
     @IsBoolean()
     rightToWorkCheckCompleted?: boolean;
 
     @IsOptional()
-    @IsDate()
-    @Type(() => Date)
-    rightToWorkCheckDate?: Date | null;
+    @EmptyDateToNull()
+    @ValidateIf((_, v) => v !== null && v !== undefined)
+    @IsDateString({}, { message: 'rightToWorkCheckDate must be a valid date (YYYY-MM-DD)' })
+    rightToWorkCheckDate?: string | null;
 
     @IsOptional()
-    @IsDate()
-    @Type(() => Date)
-    rightToWorkCheckExpiryDate?: Date | null;
+    @EmptyDateToNull()
+    @ValidateIf((_, v) => v !== null && v !== undefined)
+    @IsDateString({}, { message: 'rightToWorkCheckExpiryDate must be a valid date (YYYY-MM-DD)' })
+    rightToWorkCheckExpiryDate?: string | null;
 
     @IsOptional()
+    @Transform(({ value }) => {
+        if (value === '' || value === null || value === undefined) return null;
+        if (value === true || value === 'true' || value === 1 || value === '1') return true;
+        if (value === false || value === 'false' || value === 0 || value === '0') return false;
+        return value;
+    })
+    @ValidateIf((_, v) => v !== null && v !== undefined)
+    @IsBoolean()
+    furtherIsUkNational?: boolean | null;
+
+    @IsOptional()
+    @Transform(({ value }) => {
+        if (value === '' || value === null || value === undefined) return null;
+        if (value === true || value === 'true' || value === 1 || value === '1') return true;
+        if (value === false || value === 'false' || value === 0 || value === '0') return false;
+        return value;
+    })
+    @ValidateIf((_, v) => v !== null && v !== undefined)
+    @IsBoolean()
+    furtherIsEeaNational?: boolean | null;
+
+    @IsOptional()
+    @IsString()
+    furtherVisaType?: string | null;
+
+    @IsOptional()
+    @IsString()
+    furtherVisaOrBrpNumber?: string | null;
+
+    @IsOptional()
+    @EmptyDateToNull()
+    @ValidateIf((_, v) => v !== null && v !== undefined)
+    @IsDateString({}, { message: 'furtherVisaExpiryDate must be a valid date (YYYY-MM-DD)' })
+    furtherVisaExpiryDate?: string | null;
+
+    @IsOptional()
+    @EmptyDateToNull()
+    @ValidateIf((_, v) => v !== null && v !== undefined)
+    @IsDateString({}, { message: 'furtherShareCodeGeneratedDate must be a valid date (YYYY-MM-DD)' })
+    furtherShareCodeGeneratedDate?: string | null;
+
+    @IsOptional()
+    @Transform(({ value }) => {
+        if (value === true || value === 'true' || value === 1 || value === '1') return true;
+        if (value === false || value === 'false' || value === 0 || value === '0') return false;
+        return Boolean(value);
+    })
+    @IsBoolean()
+    furtherRightToWorkCheckCompleted?: boolean;
+
+    @IsOptional()
+    @EmptyDateToNull()
+    @ValidateIf((_, v) => v !== null && v !== undefined)
+    @IsDateString({}, { message: 'furtherRightToWorkCheckDate must be a valid date (YYYY-MM-DD)' })
+    furtherRightToWorkCheckDate?: string | null;
+
+    @IsOptional()
+    @EmptyDateToNull()
+    @ValidateIf((_, v) => v !== null && v !== undefined)
+    @IsDateString({}, { message: 'furtherRightToWorkCheckExpiryDate must be a valid date (YYYY-MM-DD)' })
+    furtherRightToWorkCheckExpiryDate?: string | null;
+
+    @IsOptional()
+    @Transform(({ value }) =>
+        value === '' || value === null || value === undefined ? undefined : Number(value),
+    )
     @IsInt()
     @Min(0)
     annualLeaveAllowanceDays?: number;

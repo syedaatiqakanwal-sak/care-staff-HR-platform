@@ -21,6 +21,7 @@ import axios from 'axios';
 import { Download, Upload } from 'lucide-react';
 import { useStaffDocuments } from '../../hooks/useStaffDocuments';
 import { ExpiryBadge } from '../documents/ExpiryBadge';
+import { DocumentViewButton } from '../documents/DocumentViewButton';
 import { isManagementRole, canMutate } from '../../utils/roles';
 import { useState, useEffect } from 'react';
 import type { StaffDocumentDto } from '../../types/documents';
@@ -233,7 +234,7 @@ export function DbsTab({ profile }: DbsTabProps) {
           />
           {updateServiceStatus && (
             <Box mt={12}>
-              <SimpleGrid cols={2} spacing="md">
+              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                 <Box>
                   <Text size="sm" fw={500} mb={4}>
                     DBS Certificate Number
@@ -249,60 +250,33 @@ export function DbsTab({ profile }: DbsTabProps) {
                   <Text size="sm" fw={500} mb={4}>
                     Enrolled Date
                   </Text>
-                  <input
+                  <TextInput
                     type="date"
                     value={enrolledDate}
-                    onChange={(e) => setEnrolledDate(e.target.value)}
+                    onChange={(e) => setEnrolledDate(e.currentTarget.value)}
                     disabled={!canEdit}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      border: '1px solid #ced4da',
-                      borderRadius: '4px',
-                      fontSize: '14px',
-                      color: enrolledDate ? '#000' : '#adb5bd',
-                      backgroundColor: !canEdit ? '#f8f9fa' : '#fff',
-                    }}
                   />
                 </Box>
                 <Box>
                   <Text size="sm" fw={500} mb={4}>
                     Date for Next Checking
                   </Text>
-                  <input
+                  <TextInput
                     type="date"
                     value={dateForNextChecking}
-                    onChange={(e) => setDateForNextChecking(e.target.value)}
+                    onChange={(e) => setDateForNextChecking(e.currentTarget.value)}
                     disabled={!canEdit}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      border: '1px solid #ced4da',
-                      borderRadius: '4px',
-                      fontSize: '14px',
-                      color: dateForNextChecking ? '#000' : '#adb5bd',
-                      backgroundColor: !canEdit ? '#f8f9fa' : '#fff',
-                    }}
                   />
                 </Box>
                 <Box>
                   <Text size="sm" fw={500} mb={4}>
                     Next Check Due Date
                   </Text>
-                  <input
+                  <TextInput
                     type="date"
                     value={nextCheckDueDate}
-                    onChange={(e) => setNextCheckDueDate(e.target.value)}
+                    onChange={(e) => setNextCheckDueDate(e.currentTarget.value)}
                     disabled={!canEdit}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      border: '1px solid #ced4da',
-                      borderRadius: '4px',
-                      fontSize: '14px',
-                      color: nextCheckDueDate ? '#000' : '#adb5bd',
-                      backgroundColor: !canEdit ? '#f8f9fa' : '#fff',
-                    }}
                   />
                 </Box>
               </SimpleGrid>
@@ -362,6 +336,7 @@ export function DbsTab({ profile }: DbsTabProps) {
                   <Text size="sm" truncate style={{ flex: 1 }}>
                     {doc.fileName}
                   </Text>
+                  <DocumentViewButton documentId={doc.id} fileName={doc.fileName} />
                   <ActionIcon
                     variant="light"
                     color="brandBlue"

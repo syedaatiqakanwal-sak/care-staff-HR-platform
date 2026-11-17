@@ -28,10 +28,7 @@ export class ReadOnlyGuard implements CanActivate {
             return true;
         }
 
-        if (request.user?.isApiToken) {
-            return true;
-        }
-
+        // Respect owner readOnly for API tokens as well (no blanket exemption)
         if (request.user?.readOnly === true) {
             throw new ForbiddenException('Read-only account cannot modify data');
         }

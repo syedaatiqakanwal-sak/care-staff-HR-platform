@@ -1,49 +1,21 @@
-import { Group, ActionIcon, Indicator, Avatar, Box, Text, Divider, TextInput, Menu, UnstyledButton } from '@mantine/core';
-import { Bell, Search, Settings, User, LogOut, ShieldCheck, Mail, Calendar } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Group, ActionIcon, Indicator, Avatar, Box, Text, Divider, TextInput, Menu, UnstyledButton, ScrollArea } from '@mantine/core';
+import { Bell, Search, Settings, User, LogOut, ShieldCheck, Mail } from 'lucide-react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 
 import { useState, useEffect } from 'react';
-import axios from 'axios';
-
-const isDbsDeclarationNotification = (n: { title?: string; metadata?: { kind?: string } }) =>
-    n.metadata?.kind === 'dbs_declaration_due' || n.title === 'DBS declaration due';
-
-const isAddressGapNotification = (n: { title?: string; metadata?: { kind?: string } }) =>
-    n.metadata?.kind === 'address_history_gap' || n.title === 'Address history gap detected';
-
-const isScheduleNotification = (metadata?: { kind?: string; link?: string }) =>
-    metadata?.kind === 'schedule_created' ||
-    metadata?.kind === 'schedule_due_today' ||
-    metadata?.link === '/dashboard/schedules';
-
-const staffProfileNavUserId = (metadata?: { kind?: string; userId?: string }) => {
-    if (!metadata?.userId) return null;
-    if (metadata.kind === 'dbs_declaration_due' || metadata.kind === 'address_history_gap') {
-        return metadata.userId;
-    }
-    return null;
-};
+import api from '../utils/api';
 
 export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onSearch?: (val: string) => void }) => {
     const navigate = useNavigate();
+    const location = useLocation();
     const [notifications, setNotifications] = useState<any[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
-
-    const handleSearchChange = (val: string) => {
-        onSearch?.(val);
-        // Ensure staff directory is visible when searching from other pages
-        if (val.trim() && !window.location.pathname.startsWith('/dashboard/staff')) {
-            navigate('/dashboard/staff');
-        }
-    };
 
     const fetchNotifications = async () => {
         try {
             const token = localStorage.getItem('token');
             if (!token) return;
-            const res = await axios.get('/api/v1/notifications', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const res = await api.get('/api/v1/notifications');
             const fetched = res.data;
             setNotifications(fetched);
             setUnreadCount(fetched.filter((n: any) => !n.isRead).length);
@@ -52,7 +24,7 @@ export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onS
         }
     };
 
-    // Polling every 5 minutes — no toast popups (avoids re-showing on AppLayout remount)
+    // Poll quietly — no toast popups (bell dropdown only)
     useEffect(() => {
         fetchNotifications();
         const interval = setInterval(fetchNotifications, 300000);
@@ -61,26 +33,23 @@ export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onS
 
     const handleMarkRead = async (id: string, metadata?: any) => {
         try {
-            const token = localStorage.getItem('token');
-            await axios.patch(`/api/v1/notifications/${id}/read`, {}, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await api.patch(`/api/v1/notifications/${id}/read`, {});
             // Update local state
             setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
             setUnreadCount(prev => Math.max(0, prev - 1));
 
             // Interaction logic
-            if (isScheduleNotification(metadata)) {
-                navigate('/dashboard/schedules');
-                return;
-            }
-            const profileUserId = staffProfileNavUserId(metadata);
-            if (profileUserId) {
-                navigate(`/dashboard/staff/${profileUserId}`);
-                return;
-            }
             if (metadata?.certificateId) {
+                // Navigate to certificates or trigger download?
+                // For now, let's navigate to dashboard/certificates (if that route existed) or just alert
+                // Actually the user just wants to know "download it".
+                // I'll assume navigating to the My Certificates page is best if it exists, or just root.
+                // Assuming /dashboard loads My Certificates by default for staff.
                 navigate('/dashboard');
+            } else if (metadata?.userId && (metadata?.kind === 'address_history_gap' || metadata?.kind === 'dbs_declaration_due')) {
+                navigate(`/dashboard/staff/${metadata.userId}`);
+            } else if (metadata?.kind === 'schedule_due' || metadata?.kind === 'schedule_created') {
+                navigate('/dashboard/schedules');
             }
         } catch (error) {
             console.error('Failed to mark read');
@@ -119,7 +88,21 @@ export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onS
                 radius="xl"
                 leftSection={<Search size={14} color="white" />}
                 value={searchQuery}
-                onChange={(e) => handleSearchChange(e.currentTarget.value)}
+                onChange={(e) => {
+                    const val = e.currentTarget.value;
+                    onSearch?.(val);
+                    // Staff results only render on the Staff Directory — open it when searching from elsewhere.
+                    if (val.trim() && location.pathname !== '/dashboard/staff') {
+                        navigate('/dashboard/staff');
+                    }
+                }}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (searchQuery || '').trim()) {
+                        if (location.pathname !== '/dashboard/staff') {
+                            navigate('/dashboard/staff');
+                        }
+                    }
+                }}
                 style={{ flex: 1, maxWidth: 700, margin: '0 auto' }}
                 styles={{
                     input: {
@@ -145,6 +128,7 @@ export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onS
 
                     <Menu.Dropdown p="xs">
                         <Menu.Label>Recent Notifications</Menu.Label>
+                        <ScrollArea.Autosize mah="60vh" type="auto" offsetScrollbars style={{ overscrollBehavior: 'contain' }}>
                         {notifications.length === 0 ? (
                             <Text size="sm" c="dimmed" p="md" ta="center">No new notifications</Text>
                         ) : (
@@ -152,12 +136,7 @@ export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onS
                                 <Menu.Item
                                     key={notif.id}
                                     leftSection={
-                                        notif.metadata?.certificateId ? <ShieldCheck size={16} color="#139639" />
-                                            : isScheduleNotification(notif.metadata)
-                                                ? <Calendar size={16} color="#267FBA" />
-                                            : isDbsDeclarationNotification(notif) || isAddressGapNotification(notif)
-                                                ? <ShieldCheck size={16} color="#139639" />
-                                                : <Mail size={16} />
+                                        notif.metadata?.certificateId ? <ShieldCheck size={16} color="#139639" /> : <Mail size={16} />
                                     }
                                     style={{ backgroundColor: notif.isRead ? 'transparent' : 'rgba(19, 150, 57, 0.1)' }}
                                     onClick={() => handleMarkRead(notif.id, notif.metadata)}
@@ -167,6 +146,7 @@ export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onS
                                 </Menu.Item>
                             ))
                         )}
+                        </ScrollArea.Autosize>
                     </Menu.Dropdown>
                 </Menu>
 
@@ -227,3 +207,4 @@ export const TopHeader = ({ searchQuery, onSearch }: { searchQuery?: string, onS
         </Group>
     );
 };
+

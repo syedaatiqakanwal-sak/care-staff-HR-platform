@@ -188,9 +188,34 @@ export class CertificatesController {
             throw new InternalServerErrorException('Certificate file missing and generation failed');
         }
 
-        const disposition = options.inline ? 'inline' : 'attachment';
         const fileName = `${cert.courseName.replace(/\s/g, '_')}_Certificate.pdf`;
-        const headers: Record<string, string> = {
+        const disposition = options.inline ? 'inline' : 'attachment';
+
+        if (served.kind === 'r2') {
+            // Proxy R2 bytes so authenticated blob viewers work (redirect breaks CORS).
+            const { buffer, contentType } = await this.r2.getObjectBuffer(served.r2Key);
+            const mime =
+                contentType && contentType !== 'application/octet-stream'
+                    ? contentType
+                    : 'application/pdf';
+            const headers: Record<string, string> = {
+                'Content-Type': mime,
+                'Content-Disposition': `${disposition}; filename="${fileName}"`,
+            };
+            if (options.secureStream) {
+                headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, private';
+                headers['Pragma'] = 'no-cache';
+                headers['Expires'] = '0';
+            } else {
+                headers['Cache-Control'] = 'private, max-age=60';
+            }
+            res.set(headers);
+            return res.send(buffer);
+        }
+
+        const file = createReadStream(served.absPath);
+
+        const headers: any = {
             'Content-Type': 'application/pdf',
             'Content-Disposition': `${disposition}; filename="${fileName}"`,
         };
@@ -201,15 +226,6 @@ export class CertificatesController {
             headers['Expires'] = '0';
         }
 
-        if (served.kind === 'r2') {
-            const { buffer, contentType } = await this.r2.getObjectBuffer(served.r2Key);
-            headers['Content-Type'] = contentType || 'application/pdf';
-            headers['Content-Length'] = String(buffer.length);
-            res.set(headers);
-            return res.send(buffer);
-        }
-
-        const file = createReadStream(served.absPath);
         res.set(headers);
 
         file.on('error', (err) => {

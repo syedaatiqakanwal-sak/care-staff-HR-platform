@@ -139,22 +139,24 @@ export class R2FilesService {
     return getSignedUrl(client, command, { expiresIn: expiresInSeconds });
   }
 
-  /** Fetch object bytes from R2 for server-side proxy (avoids browser CORS on presigned redirects). */
-  async getObjectBuffer(
-    r2Key: string,
-  ): Promise<{ buffer: Buffer; contentType?: string }> {
+  /** Download an R2 object as a Buffer (for proxying through authenticated API routes). */
+  async getObjectBuffer(r2Key: string): Promise<{ buffer: Buffer; contentType: string }> {
     const client = this.getClient();
     const bucket = this.getBucket();
     const result = await client.send(
-      new GetObjectCommand({ Bucket: bucket, Key: r2Key }),
+      new GetObjectCommand({
+        Bucket: bucket,
+        Key: r2Key,
+      }),
     );
-    if (!result.Body) {
-      throw new ServiceUnavailableException(`R2 object body empty: ${r2Key}`);
+    const body = result.Body;
+    if (!body) {
+      throw new ServiceUnavailableException(`Empty R2 object: ${r2Key}`);
     }
-    const bytes = await result.Body.transformToByteArray();
+    const bytes = await body.transformToByteArray();
     return {
       buffer: Buffer.from(bytes),
-      contentType: result.ContentType || undefined,
+      contentType: result.ContentType || 'application/octet-stream',
     };
   }
 

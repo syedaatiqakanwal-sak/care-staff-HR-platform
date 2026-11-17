@@ -3,25 +3,27 @@ import { Cron } from '@nestjs/schedule';
 import { StaffService } from './staff.service';
 
 /**
- * Daily due-today notifications for scheduled reviews / appraisals / supervisions.
- * Cron: 08:05 Europe/London. Processing is idempotent via notification dedupe keys.
+ * Daily check: create in-app notifications when a scheduled
+ * review / appraisal / supervision date arrives.
  */
 @Injectable()
 export class ReviewScheduleScheduler {
-  private readonly logger = new Logger(ReviewScheduleScheduler.name);
+    private readonly logger = new Logger(ReviewScheduleScheduler.name);
 
-  constructor(private readonly staffService: StaffService) {}
+    constructor(private readonly staffService: StaffService) {}
 
-  @Cron('5 8 * * *', { timeZone: 'Europe/London' })
-  async handleDueScheduleNotifications() {
-    this.logger.log('Review schedule due-notification cron fired (Europe/London 08:05)');
-    try {
-      const result = await this.staffService.processDueScheduleNotifications();
-      this.logger.log(`Due schedule notifications created=${result.created}`);
-    } catch (err: any) {
-      this.logger.error(
-        `Due schedule notification cron error: ${err?.message || err}`,
-      );
+    @Cron('5 8 * * *', { timeZone: 'Europe/London' })
+    async handleDueSchedules() {
+        this.logger.log('Processing due schedule notifications...');
+        try {
+            const result = await this.staffService.processDueScheduleNotifications();
+            this.logger.log(`Due schedule notifications created: ${result.notified}`);
+        } catch (err) {
+            this.logger.error(
+                `Due schedule notification processing failed: ${
+                    err instanceof Error ? err.message : String(err)
+                }`,
+            );
+        }
     }
-  }
 }

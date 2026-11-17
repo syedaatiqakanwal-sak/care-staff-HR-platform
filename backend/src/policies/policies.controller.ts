@@ -55,8 +55,8 @@ export class PolicyReadingController {
 
   @Get('admin')
   @Roles(...DASHBOARD_ROLES)
-  admin() {
-    return this.policiesService.adminSessions();
+  admin(@Query('page') page?: string, @Query('limit') limit?: string) {
+    return this.policiesService.adminSessions({ page, limit });
   }
 
   @Get('admin/grouped')

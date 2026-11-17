@@ -5,11 +5,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository } from 'typeorm';
 import { PolicyReadingSession, PolicyReadingStatus } from './policy-reading-session.entity';
 import { StaffService } from '../staff/staff.service';
 import { Policy } from './policy.entity';
 import { PolicyNotification } from './policy-notification.entity';
+import { parsePagination, paginatedResult, PaginationQuery } from '../common/pagination';
 
 const MIN_SESSION_SECONDS = 30;
 
@@ -46,31 +47,28 @@ export class PoliciesService {
     const now = new Date();
     const today = toDateOnlyString(now);
 
-    // Cancel any other IN_PROGRESS sessions for this staff member (to prevent multiple active sessions)
-    // But allow multiple COMPLETED sessions for the same policy on the same day
-    const otherInProgress = await this.sessionsRepo.find({
-      where: { staffId: staff.id, status: PolicyReadingStatus.IN_PROGRESS },
-    });
-    if (otherInProgress.length > 0) {
-      await this.sessionsRepo.delete({
-        id: In(otherInProgress.map(s => s.id)),
+    return this.sessionsRepo.manager.transaction(async (tx) => {
+      const sessionsRepo = tx.getRepository(PolicyReadingSession);
+      // Cancel other IN_PROGRESS sessions atomically with create
+      await sessionsRepo.delete({
+        staffId: staff.id,
+        status: PolicyReadingStatus.IN_PROGRESS,
       });
-    }
 
-    // Always create a NEW session - each policy opening is a separate session
-    const session = this.sessionsRepo.create({
-      staffId: staff.id,
-      policyId: policy.id,
-      policyVersion: policy.version,
-      startTime: now,
-      endTime: null,
-      totalDurationSeconds: null,
-      date: today,
-      day: toWeekday(now),
-      status: PolicyReadingStatus.IN_PROGRESS,
+      const session = sessionsRepo.create({
+        staffId: staff.id,
+        policyId: policy.id,
+        policyVersion: policy.version,
+        startTime: now,
+        endTime: null,
+        totalDurationSeconds: null,
+        date: today,
+        day: toWeekday(now),
+        status: PolicyReadingStatus.IN_PROGRESS,
+      });
+
+      return sessionsRepo.save(session);
     });
-
-    return this.sessionsRepo.save(session);
   }
 
   async finishReading(userId: string, sessionId: string) {
@@ -177,12 +175,15 @@ export class PoliciesService {
     });
   }
 
-  async adminSessions() {
-    // Fetch all sessions with relations - return each session individually
-    return this.sessionsRepo.find({
+  async adminSessions(query: PaginationQuery = {}) {
+    const { page, limit, skip } = parsePagination(query, { limit: 50 });
+    const [data, total] = await this.sessionsRepo.findAndCount({
       order: { startTime: 'DESC' },
       relations: { staff: { user: true }, policy: true } as any,
+      skip,
+      take: limit,
     });
+    return paginatedResult(data, total, page, limit);
   }
 
   async adminGetById(id: string) {

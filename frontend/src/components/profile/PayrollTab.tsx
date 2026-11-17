@@ -18,6 +18,7 @@ import {
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { Lock, Upload, Download } from 'lucide-react';
+import { DocumentViewButton } from '../documents/DocumentViewButton';
 import axios from 'axios';
 import { useCallback, useEffect, useState } from 'react';
 import { isPayrollRole, canMutate } from '../../utils/roles';
@@ -274,8 +275,20 @@ export function PayrollTab({ profile }: PayrollTabProps) {
                 </Button>
               )}
             </FileButton>
-            <Button loading={uploading} variant="filled" color="brandGreen" onClick={uploadDoc}
-              styles={{ root: { backgroundColor: '#139639', color: '#fff' }, label: { color: '#fff' } }}>
+            <Button
+              loading={uploading}
+              color="brandGreen"
+              variant="filled"
+              onClick={uploadDoc}
+              styles={{
+                root: {
+                  backgroundColor: '#139639',
+                  color: '#ffffff',
+                  border: 'none',
+                  '&:hover': { backgroundColor: '#0e7a2d' },
+                },
+              }}
+            >
               Upload
             </Button>
           </Group>
@@ -285,6 +298,7 @@ export function PayrollTab({ profile }: PayrollTabProps) {
             No payroll documents uploaded.
           </Text>
         ) : (
+          <Table.ScrollContainer minWidth={560}>
           <Table striped>
             <Table.Thead>
               <Table.Tr>
@@ -301,6 +315,8 @@ export function PayrollTab({ profile }: PayrollTabProps) {
                   <Table.Td>{doc.fileName}</Table.Td>
                   <Table.Td>{new Date(doc.createdAt).toLocaleDateString('en-GB')}</Table.Td>
                   <Table.Td>
+                    <Group gap="xs" justify="flex-end">
+                    <DocumentViewButton documentId={doc.id} fileName={doc.fileName} variant="button" />
                     <Button
                       size="xs"
                       variant="light"
@@ -309,11 +325,13 @@ export function PayrollTab({ profile }: PayrollTabProps) {
                     >
                       Download
                     </Button>
+                    </Group>
                   </Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>
           </Table>
+          </Table.ScrollContainer>
         )}
       </Paper>
     </Stack>

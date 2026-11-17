@@ -7,11 +7,13 @@ import {
   ManyToOne,
   JoinColumn,
   Index,
+  Unique,
 } from 'typeorm';
 import { StaffProfile } from '../staff/staff-profile.entity';
 import { AttendanceStatus } from './attendance-status.enum';
 
 @Entity('attendance_records')
+@Unique('attendance_records_staff_date_unique', ['staffId', 'date'])
 export class AttendanceRecord {
   @PrimaryGeneratedColumn('uuid')
   id: string;

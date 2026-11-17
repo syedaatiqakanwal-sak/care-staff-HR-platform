@@ -3,12 +3,11 @@ import {
     UnstyledButton,
     Group,
     Text,
-    ThemeIcon,
-    rem,
     Box,
     Badge,
     ActionIcon,
     Tooltip,
+    Divider,
 } from '@mantine/core';
 import {
     Users,
@@ -24,10 +23,10 @@ import {
     BarChart3,
     Shield,
     Globe,
-    Database,
     PanelLeftClose,
-    PanelLeftOpen,
-    Calendar,
+    PanelLeft,
+    Database,
+    CalendarCheck,
     type LucideIcon,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -47,9 +46,10 @@ import { useSidebar } from '../contexts/SidebarContext';
 
 const ICON_SIZE = 20;
 const BRAND_GREEN = '#139639';
-const INACTIVE_TEXT = '#4B5563';
+const INACTIVE_TEXT = '#374151';
 const SECTION_LABEL_COLOR = '#9CA3AF';
 const ACTIVE_GRADIENT = 'linear-gradient(90deg, #0e7a2d 0%, #139639 50%, #ffffff 100%)';
+const ACTIVE_SHADOW = '0 6px 16px rgba(19, 150, 57, 0.22)';
 
 type NavItem = {
     link: string;
@@ -76,17 +76,17 @@ const NAV_SECTIONS: NavSection[] = [
         title: 'LEARNING',
         items: [
             { link: '/courses', label: 'Courses', icon: BookOpen },
-            // Policies nav hidden for HR frontend (routes/APIs retained)
+            // Policies temporarily hidden from HR sidebar — re-enable when needed:
             // { link: '/dashboard/policies', label: 'Policies', icon: FileText },
         ],
     },
     {
         title: 'HR',
         items: [
-            { link: '/dashboard/schedules', label: 'Schedules', icon: Calendar },
             { link: '/dashboard/references/analytics', label: 'Reference', icon: ClipboardCheck },
             { link: '/dashboard/dbs/analytics', label: 'DBS', icon: Shield },
             { link: '/dashboard/rtw/analytics', label: 'Right to Work', icon: Globe },
+            { link: '/dashboard/schedules', label: 'Schedules', icon: CalendarCheck },
             { link: '/dashboard/reports', label: 'Reports', icon: FileBarChart },
             { link: '/dashboard/reports/analytics', label: 'Analytics', icon: BarChart3 },
         ],
@@ -108,6 +108,51 @@ const sidebarStyles = `
   }
   .no-scrollbar::-webkit-scrollbar {
     display: none;
+  }
+
+  .sidebar-nav-item {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    position: relative;
+    border-radius: 12px;
+    transition: background 0.2s ease, box-shadow 0.2s ease, color 0.2s ease, transform 0.15s ease;
+  }
+
+  .sidebar-nav-item:hover:not([data-active="true"]) {
+    background: #F3F4F6 !important;
+  }
+
+  .sidebar-nav-item[data-active="true"] {
+    background: ${ACTIVE_GRADIENT} !important;
+    box-shadow: ${ACTIVE_SHADOW};
+    color: #ffffff !important;
+  }
+
+  .sidebar-nav-item[data-active="true"] svg {
+    color: #ffffff !important;
+    stroke: #ffffff !important;
+    filter: drop-shadow(0 1px 1px rgba(14, 122, 45, 0.35));
+  }
+
+  .sidebar-nav-item[data-active="true"] .mantine-Text-root {
+    color: #ffffff !important;
+    text-shadow: 0 1px 2px rgba(14, 122, 45, 0.45);
+  }
+
+  .sidebar-signout {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    border-radius: 14px;
+    background: #F8FAFC;
+    border: 1px solid #EEF2F7;
+    transition: background 0.2s ease, border-color 0.2s ease;
+  }
+
+  .sidebar-signout:hover {
+    background: #FEF2F2;
+    border-color: #FECACA;
   }
 `;
 
@@ -136,6 +181,8 @@ function isNavItemActive(link: string, pathname: string, search: string): boolea
 }
 
 function shouldShowNavItem(item: NavItem, dashboardUser: boolean, strictAdmin: boolean): boolean {
+    // Policies hidden from HR frontend for now
+    if (item.label === 'Policies') return false;
     if (
         (item.label === 'Compliance' ||
             item.label === 'Staff' ||
@@ -165,8 +212,8 @@ export function Sidebar({ onLinkClick, hideHeader = false }: { onLinkClick?: () 
     const token = localStorage.getItem('token');
     const dashboardUser = hasDashboardAccess();
     const strictAdmin = isStrictAdmin();
-    const portalTitle = isStaffPortalRole() ? 'Staff Portal' : 'Admin Portal';
-    const portalSubtitle = roleLabel();
+    const portalTitle = dashboardUser ? 'Admin Portal' : 'Staff Portal';
+    const portalSubtitle = roleLabel() === 'Admin' ? 'Administrator' : roleLabel();
 
     const [unreadPolicyCount, setUnreadPolicyCount] = useState(0);
 
@@ -219,41 +266,21 @@ export function Sidebar({ onLinkClick, hideHeader = false }: { onLinkClick?: () 
         return (
             <Tooltip key={item.label} label={item.label} position="right" disabled={!collapsed}>
                 <UnstyledButton
+                    className="sidebar-nav-item"
+                    data-active={isActive}
                     onClick={() => handleNavigate(item.link)}
                     style={{
-                        display: 'block',
-                        width: '100%',
-                        boxSizing: 'border-box',
-                        position: 'relative',
-                        padding: collapsed ? `${rem(10)} ${rem(8)}` : `${rem(10)} ${rem(12)}`,
-                        borderRadius: rem(12),
-                        transition: 'background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease',
+                        padding: collapsed ? '11px 8px' : '11px 14px',
                         color: isActive ? '#ffffff' : INACTIVE_TEXT,
-                        background: isActive ? ACTIVE_GRADIENT : 'transparent',
                         fontWeight: isActive ? 700 : 600,
-                        boxShadow: isActive ? '0 4px 12px rgba(19, 150, 57, 0.18)' : 'none',
-                        textShadow: isActive ? '0 1px 2px rgba(0, 0, 0, 0.25)' : 'none',
-                    }}
-                    onMouseEnter={(e) => {
-                        if (!isActive) {
-                            e.currentTarget.style.backgroundColor = '#F3F4F6';
-                        }
-                    }}
-                    onMouseLeave={(e) => {
-                        if (!isActive) {
-                            e.currentTarget.style.backgroundColor = 'transparent';
-                        }
                     }}
                 >
-                    <Group justify={collapsed ? 'center' : 'flex-start'} wrap="nowrap" gap={10}>
+                    <Group justify={collapsed ? 'center' : 'flex-start'} wrap="nowrap" gap={12}>
                         <Icon
                             size={ICON_SIZE}
-                            strokeWidth={2}
+                            strokeWidth={isActive ? 2.25 : 1.9}
                             color={isActive ? '#ffffff' : INACTIVE_TEXT}
-                            style={{
-                                flexShrink: 0,
-                                filter: isActive ? 'drop-shadow(0 1px 1px rgba(0,0,0,0.2))' : 'none',
-                            }}
+                            style={{ flexShrink: 0 }}
                         />
                         {!collapsed && (
                             <Group gap={8} wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
@@ -290,7 +317,8 @@ export function Sidebar({ onLinkClick, hideHeader = false }: { onLinkClick?: () 
         <>
             <style>{sidebarStyles}</style>
             <Box
-                p="md"
+                px={collapsed ? 'sm' : 'md'}
+                py="md"
                 h="100%"
                 miw={0}
                 w="100%"
@@ -303,7 +331,7 @@ export function Sidebar({ onLinkClick, hideHeader = false }: { onLinkClick?: () 
                     backgroundColor: '#ffffff',
                     position: 'relative',
                     overflow: 'hidden',
-                    boxShadow: '4px 0 18px rgba(15, 23, 42, 0.06)',
+                    boxShadow: '4px 0 18px rgba(15, 23, 42, 0.04)',
                 }}
             >
                 {!hideHeader && (
@@ -311,16 +339,24 @@ export function Sidebar({ onLinkClick, hideHeader = false }: { onLinkClick?: () 
                         justify={collapsed ? 'center' : 'space-between'}
                         align="flex-start"
                         wrap="nowrap"
-                        mb="md"
-                        gap="xs"
+                        mb="lg"
+                        gap="sm"
                         style={{ flexShrink: 0 }}
                     >
                         {!collapsed && (
-                            <Box style={{ minWidth: 0, flex: 1 }}>
-                                <Text fw={800} size="md" style={{ color: BRAND_GREEN, lineHeight: 1.2 }}>
+                            <Box style={{ minWidth: 0 }}>
+                                <Text
+                                    fw={800}
+                                    size="lg"
+                                    style={{
+                                        color: BRAND_GREEN,
+                                        lineHeight: 1.15,
+                                        letterSpacing: '-0.02em',
+                                    }}
+                                >
                                     {portalTitle}
                                 </Text>
-                                <Text size="xs" c="dimmed" fw={600} mt={4}>
+                                <Text size="sm" c="#9CA3AF" fw={500} mt={2}>
                                     {portalSubtitle}
                                 </Text>
                             </Box>
@@ -332,34 +368,32 @@ export function Sidebar({ onLinkClick, hideHeader = false }: { onLinkClick?: () 
                             <ActionIcon
                                 aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                                 onClick={toggle}
+                                radius="xl"
                                 variant="subtle"
                                 color="gray"
-                                radius="md"
                                 style={{
+                                    width: 34,
+                                    height: 34,
+                                    minWidth: 34,
+                                    minHeight: 34,
+                                    backgroundColor: '#F3F4F6',
+                                    color: '#6B7280',
+                                    border: '1px solid #E5E7EB',
                                     flexShrink: 0,
-                                    color: INACTIVE_TEXT,
                                 }}
                             >
                                 {collapsed ? (
-                                    <PanelLeftOpen size={18} strokeWidth={2} />
+                                    <PanelLeft size={16} strokeWidth={2} />
                                 ) : (
-                                    <PanelLeftClose size={18} strokeWidth={2} />
+                                    <PanelLeftClose size={16} strokeWidth={2} />
                                 )}
                             </ActionIcon>
                         </Tooltip>
                     </Group>
                 )}
 
-                {collapsed && !hideHeader && (
-                    <Box mb="sm" style={{ textAlign: 'center', flexShrink: 0 }}>
-                        <Text fw={800} size="xs" style={{ color: BRAND_GREEN, letterSpacing: '0.04em' }}>
-                            {isStaffPortalRole() ? 'SP' : 'AP'}
-                        </Text>
-                    </Box>
-                )}
-
                 <Stack
-                    gap={collapsed ? 'xs' : 'lg'}
+                    gap={collapsed ? 10 : 18}
                     style={{
                         flex: 1,
                         minHeight: 0,
@@ -369,7 +403,7 @@ export function Sidebar({ onLinkClick, hideHeader = false }: { onLinkClick?: () 
                     }}
                     className="no-scrollbar"
                 >
-                    {visibleSections.map((section, sectionIndex) => (
+                    {visibleSections.map((section) => (
                         <Box key={section.title}>
                             {!collapsed && (
                                 <Text
@@ -377,24 +411,24 @@ export function Sidebar({ onLinkClick, hideHeader = false }: { onLinkClick?: () 
                                     fw={700}
                                     c={SECTION_LABEL_COLOR}
                                     tt="uppercase"
-                                    mb="xs"
+                                    mb={8}
                                     pl={4}
-                                    style={{ letterSpacing: '0.08em' }}
+                                    style={{ letterSpacing: '0.1em' }}
                                 >
                                     {section.title}
                                 </Text>
                             )}
                             <Stack gap={6}>{section.items.map(renderNavItem)}</Stack>
-                            {!collapsed && sectionIndex < visibleSections.length - 1 && (
-                                <Box mt="sm" />
-                            )}
                         </Box>
                     ))}
                 </Stack>
 
-                <Box mt="md" style={{ flexShrink: 0 }}>
+                <Divider color="#E5E7EB" mt="md" mb="md" style={{ flexShrink: 0 }} />
+
+                <Box style={{ flexShrink: 0 }}>
                     <Tooltip label="Sign Out" position="right" disabled={!collapsed}>
                         <UnstyledButton
+                            className="sidebar-signout"
                             onClick={() => {
                                 logout();
                                 notifications.show({
@@ -406,41 +440,30 @@ export function Sidebar({ onLinkClick, hideHeader = false }: { onLinkClick?: () 
                                 navigate('/');
                             }}
                             style={{
-                                display: 'block',
-                                width: '100%',
-                                boxSizing: 'border-box',
-                                padding: collapsed ? `${rem(10)} ${rem(8)}` : `${rem(12)} ${rem(12)}`,
-                                borderRadius: rem(12),
-                                transition: 'background-color 0.2s ease, box-shadow 0.2s ease',
-                                backgroundColor: '#F9FAFB',
-                                border: '1px solid #E5E7EB',
-                                boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
-                            }}
-                            onMouseEnter={(e) => {
-                                e.currentTarget.style.backgroundColor = '#FEF2F2';
-                                e.currentTarget.style.borderColor = 'rgba(250, 82, 82, 0.25)';
-                            }}
-                            onMouseLeave={(e) => {
-                                e.currentTarget.style.backgroundColor = '#F9FAFB';
-                                e.currentTarget.style.borderColor = '#E5E7EB';
+                                padding: collapsed ? '12px 8px' : '12px 14px',
                             }}
                         >
-                            <Group justify={collapsed ? 'center' : 'flex-start'} wrap="nowrap" gap={10}>
-                                <ThemeIcon
-                                    variant="light"
-                                    color="red"
-                                    size="lg"
-                                    radius="md"
-                                    style={{ backgroundColor: 'rgba(250, 82, 82, 0.12)' }}
+                            <Group justify={collapsed ? 'center' : 'flex-start'} wrap="nowrap" gap={12}>
+                                <Box
+                                    style={{
+                                        width: 36,
+                                        height: 36,
+                                        borderRadius: 10,
+                                        background: 'rgba(239, 68, 68, 0.12)',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        flexShrink: 0,
+                                    }}
                                 >
-                                    <LogOut size={ICON_SIZE} color="#fa5252" />
-                                </ThemeIcon>
+                                    <LogOut size={18} color="#EF4444" strokeWidth={2.2} />
+                                </Box>
                                 {!collapsed && (
                                     <Box style={{ minWidth: 0 }}>
-                                        <Text fw={700} size="sm" c="red.6" lh={1.2}>
+                                        <Text fw={700} size="sm" c="#EF4444" style={{ lineHeight: 1.2 }}>
                                             Sign Out
                                         </Text>
-                                        <Text size="xs" c="dimmed" mt={2}>
+                                        <Text size="xs" c="#9CA3AF" fw={500} mt={2} style={{ lineHeight: 1.2 }}>
                                             End current session
                                         </Text>
                                     </Box>

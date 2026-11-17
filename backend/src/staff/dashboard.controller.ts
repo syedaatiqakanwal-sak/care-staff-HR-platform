@@ -26,17 +26,17 @@ export class DashboardController {
         return this.hrDashboardService.getHrStatsSafe();
     }
 
+    @Get('scheduled-forms')
+    @Roles(...DASHBOARD_ROLES)
+    getScheduledForms() {
+        return this.staffService.getScheduledFormsSummary();
+    }
+
   @Get('analytics-data')
   @Roles(...DASHBOARD_ROLES)
   getAnalyticsData(@Query('period') period?: string) {
     const normalized =
       period === 'week' || period === 'month' || period === 'year' ? period : 'month';
     return this.hrDashboardService.getAnalyticsData(normalized);
-  }
-
-  @Get('scheduled-forms')
-  @Roles(...DASHBOARD_ROLES)
-  getScheduledForms() {
-    return this.staffService.getScheduledForms();
   }
 }

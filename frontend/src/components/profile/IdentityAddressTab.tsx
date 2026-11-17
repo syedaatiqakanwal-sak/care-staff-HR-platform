@@ -1,5 +1,5 @@
-import { SimpleGrid, TextInput, Group, Text, Box, Divider, Stack, Textarea, Badge, Paper, ThemeIcon, Button, Modal, LoadingOverlay, Alert, FileButton, ActionIcon } from '@mantine/core';
-import { Plus, Trash, MapPin, Upload, Download, AlertTriangle, Pencil, Check, X } from 'lucide-react';
+import { SimpleGrid, TextInput, Group, Text, Box, Divider, Stack, Textarea, Badge, Paper, ThemeIcon, Button, Modal, LoadingOverlay, Alert, FileButton, ActionIcon, Tooltip, Center, Loader } from '@mantine/core';
+import { Plus, Trash, MapPin, Upload, Download, AlertTriangle, Pencil, Check, X, Eye } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { notifications } from '@mantine/notifications';
 import { useDisclosure } from '@mantine/hooks';
@@ -7,6 +7,14 @@ import axios from 'axios';
 import { AppConfirmModal } from '../AppConfirmModal';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
+
+function isImageFileName(fileName: string) {
+    return /\.(png|jpe?g|gif|webp)$/i.test(fileName);
+}
+
+function isPdfFileName(fileName: string) {
+    return /\.pdf$/i.test(fileName);
+}
 
 type AddressRecord = {
     id: string;
@@ -31,8 +39,9 @@ export const IdentityAddressTab = ({ profile, isEditing }: IdentityAddressTabPro
     const [gapSummary, setGapSummary] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [uploadingProofId, setUploadingProofId] = useState<string | null>(null);
-    const [deleteAddressId, setDeleteAddressId] = useState<string | null>(null);
-    const [deleting, setDeleting] = useState(false);
+    const [confirmDeleteAddressId, setConfirmDeleteAddressId] = useState<string | null>(null);
+    const [viewingProof, setViewingProof] = useState<{ fileName: string; url: string } | null>(null);
+    const [viewingProofLoading, setViewingProofLoading] = useState(false);
 
     // Add Address Form State
     const [opened, { open, close }] = useDisclosure(false);
@@ -149,7 +158,8 @@ export const IdentityAddressTab = ({ profile, isEditing }: IdentityAddressTabPro
         if (trim(newAddress.line1)) payload.line1 = trim(newAddress.line1);
         if (trim(newAddress.line2)) payload.line2 = trim(newAddress.line2);
         if (trim(newAddress.town)) payload.town = trim(newAddress.town);
-        if (trim(newAddress.postcode)) payload.postcode = trim(newAddress.postcode);
+        // Always send postcode (empty string for international addresses without one)
+        payload.postcode = trim(newAddress.postcode);
         if (trim(newAddress.dateFrom)) payload.dateFrom = trim(newAddress.dateFrom);
         if (trim(newAddress.dateTo)) payload.dateTo = trim(newAddress.dateTo);
 
@@ -177,22 +187,25 @@ export const IdentityAddressTab = ({ profile, isEditing }: IdentityAddressTabPro
         }
     };
 
-    const handleDeleteAddress = async () => {
-        if (!deleteAddressId) return;
-        setDeleting(true);
+    const handleDeleteAddress = (addressId: string) => {
+        setConfirmDeleteAddressId(addressId);
+    };
+
+    const confirmDeleteAddress = async () => {
+        const addressId = confirmDeleteAddressId;
+        if (!addressId) return;
+        setConfirmDeleteAddressId(null);
+
         const targetId = profile.user?.id || profile.id;
         try {
             const token = localStorage.getItem('token');
-            await axios.delete(`/api/v1/staff/${targetId}/addresses/${deleteAddressId}`, {
+            await axios.delete(`/api/v1/staff/${targetId}/addresses/${addressId}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             notifications.show({ title: 'Removed', message: 'Address history removed', color: 'blue' });
-            setDeleteAddressId(null);
             fetchAddresses();
         } catch (error) {
             notifications.show({ title: 'Error', message: 'Failed to delete address', color: 'red' });
-        } finally {
-            setDeleting(false);
         }
     };
 
@@ -305,6 +318,42 @@ export const IdentityAddressTab = ({ profile, isEditing }: IdentityAddressTabPro
         } catch {
             notifications.show({ title: 'Error', message: 'Download failed', color: 'red' });
         }
+    };
+
+    const handleProofView = async (docId: string, fileName: string) => {
+        const token = localStorage.getItem('token');
+        setViewingProofLoading(true);
+        try {
+            const res = await axios.get(`/api/v1/documents/${docId}/download`, {
+                headers: { Authorization: `Bearer ${token}` },
+                params: { inline: 'true' },
+                responseType: 'blob',
+            });
+            const blob = res.data as Blob;
+            const typedBlob =
+                blob.type && blob.type !== 'application/octet-stream'
+                    ? blob
+                    : new Blob([blob], {
+                          type: isPdfFileName(fileName)
+                              ? 'application/pdf'
+                              : isImageFileName(fileName)
+                                ? 'image/jpeg'
+                                : blob.type || 'application/octet-stream',
+                      });
+            const url = URL.createObjectURL(typedBlob);
+            setViewingProof({ fileName, url });
+        } catch {
+            notifications.show({ title: 'Error', message: 'Could not open proof of address', color: 'red' });
+        } finally {
+            setViewingProofLoading(false);
+        }
+    };
+
+    const closeProofViewer = () => {
+        if (viewingProof?.url?.startsWith('blob:')) {
+            URL.revokeObjectURL(viewingProof.url);
+        }
+        setViewingProof(null);
     };
 
     const currentResidency = addresses.length > 0 ? addresses[0] : null;
@@ -472,7 +521,7 @@ export const IdentityAddressTab = ({ profile, isEditing }: IdentityAddressTabPro
                                                     variant="subtle"
                                                     size="xs"
                                                     style={{ height: 24, padding: '0 8px' }}
-                                                    onClick={() => setDeleteAddressId(addr.id)}
+                                                    onClick={() => handleDeleteAddress(addr.id)}
                                                 >
                                                     <Trash size={14} />
                                                 </Button>
@@ -548,17 +597,30 @@ export const IdentityAddressTab = ({ profile, isEditing }: IdentityAddressTabPro
                                 )}
                                 <Group gap="sm" mt="xs" wrap="wrap">
                                     {addr.proofDocument ? (
-                                        <Group gap="xs">
+                                        <Group gap="xs" wrap="wrap">
                                             <Text size="sm" c="dimmed">Proof of address:</Text>
                                             <Text size="sm" fw={600}>{addr.proofDocument.fileName}</Text>
-                                            <ActionIcon
-                                                variant="light"
-                                                color="brandBlue"
-                                                size="sm"
-                                                onClick={() => handleProofDownload(addr.proofDocument!.id, addr.proofDocument!.fileName)}
-                                            >
-                                                <Download size={14} />
-                                            </ActionIcon>
+                                            <Tooltip label="View proof">
+                                                <ActionIcon
+                                                    variant="light"
+                                                    color="brandGreen"
+                                                    size="sm"
+                                                    loading={viewingProofLoading}
+                                                    onClick={() => handleProofView(addr.proofDocument!.id, addr.proofDocument!.fileName)}
+                                                >
+                                                    <Eye size={14} />
+                                                </ActionIcon>
+                                            </Tooltip>
+                                            <Tooltip label="Download proof">
+                                                <ActionIcon
+                                                    variant="light"
+                                                    color="brandBlue"
+                                                    size="sm"
+                                                    onClick={() => handleProofDownload(addr.proofDocument!.id, addr.proofDocument!.fileName)}
+                                                >
+                                                    <Download size={14} />
+                                                </ActionIcon>
+                                            </Tooltip>
                                         </Group>
                                     ) : (
                                         <Text size="sm" c="dimmed">No proof of address uploaded</Text>
@@ -604,7 +666,7 @@ export const IdentityAddressTab = ({ profile, isEditing }: IdentityAddressTabPro
                         value={newAddress.line2}
                         onChange={(e) => setNewAddress({ ...newAddress, line2: e.target.value })}
                     />
-                    <SimpleGrid cols={2}>
+                    <SimpleGrid cols={{ base: 1, sm: 2 }}>
                         <TextInput
                             label="Town/City"
                             placeholder="London"
@@ -613,12 +675,12 @@ export const IdentityAddressTab = ({ profile, isEditing }: IdentityAddressTabPro
                         />
                         <TextInput
                             label="Postcode"
-                            placeholder="SW1A 1AA"
+                            placeholder="SW1A 1AA (optional for international)"
                             value={newAddress.postcode}
                             onChange={(e) => setNewAddress({ ...newAddress, postcode: e.target.value })}
                         />
                     </SimpleGrid>
-                    <SimpleGrid cols={2}>
+                    <SimpleGrid cols={{ base: 1, sm: 2 }}>
                         <TextInput
                             label="Date From"
                             type="date"
@@ -640,15 +702,69 @@ export const IdentityAddressTab = ({ profile, isEditing }: IdentityAddressTabPro
             </Modal>
 
             <AppConfirmModal
-                opened={!!deleteAddressId}
-                title="Remove address"
-                message="Are you sure you want to remove this address history?"
-                confirmLabel="Remove"
-                confirmColor="red"
-                loading={deleting}
-                onConfirm={handleDeleteAddress}
-                onCancel={() => setDeleteAddressId(null)}
+                opened={!!confirmDeleteAddressId}
+                options={{
+                    title: 'Remove address',
+                    message: 'Are you sure you want to remove this address history?',
+                    confirmLabel: 'Remove',
+                    confirmColor: 'red',
+                }}
+                onCancel={() => setConfirmDeleteAddressId(null)}
+                onConfirm={confirmDeleteAddress}
             />
+
+            <Modal
+                opened={!!viewingProof}
+                onClose={closeProofViewer}
+                title={<Text fw={700}>{viewingProof?.fileName || 'Proof of address'}</Text>}
+                size="90%"
+                centered
+                styles={{
+                    body: { height: '75vh', padding: 0, position: 'relative', backgroundColor: '#F1F3F5' },
+                }}
+            >
+                {viewingProofLoading && (
+                    <Center h="100%">
+                        <Loader color="brandGreen" />
+                    </Center>
+                )}
+                {viewingProof && !viewingProofLoading && (
+                    <>
+                        {isPdfFileName(viewingProof.fileName) ? (
+                            <iframe
+                                src={viewingProof.url}
+                                title={viewingProof.fileName}
+                                style={{ width: '100%', height: '100%', border: 'none' }}
+                            />
+                        ) : isImageFileName(viewingProof.fileName) ? (
+                            <Center h="100%" p="md">
+                                <img
+                                    src={viewingProof.url}
+                                    alt={viewingProof.fileName}
+                                    style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                                />
+                            </Center>
+                        ) : (
+                            <Center h="100%" p="xl">
+                                <Stack align="center" gap="md">
+                                    <Text c="dimmed" ta="center">
+                                        Preview is not available for this file type. You can download it instead.
+                                    </Text>
+                                    <Button
+                                        component="a"
+                                        href={viewingProof.url}
+                                        download={viewingProof.fileName}
+                                        color="brandGreen"
+                                        leftSection={<Download size={16} />}
+                                    >
+                                        Download file
+                                    </Button>
+                                </Stack>
+                            </Center>
+                        )}
+                    </>
+                )}
+            </Modal>
         </Stack>
     );
 };

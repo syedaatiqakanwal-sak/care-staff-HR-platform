@@ -7,9 +7,11 @@ export class EmailService {
     private transporter;
 
     constructor() {
-        const host = process.env.SMTP_HOST || 'mail.letscareall.org.uk';
-        const port = parseInt(process.env.SMTP_PORT || '587', 10);
-        const secure = process.env.SMTP_SECURE === 'true';
+        const host = process.env.SMTP_HOST || 'letscareall.org.uk';
+        const port = parseInt(process.env.SMTP_PORT || '465', 10);
+        const secure =
+            process.env.SMTP_SECURE === 'true' ||
+            parseInt(process.env.SMTP_PORT || '465', 10) === 465;
         const user = process.env.SMTP_USER || process.env.EMAIL_USER;
         const passSource = process.env.SMTP_PASS
             ? 'SMTP_PASS'
@@ -27,10 +29,11 @@ export class EmailService {
             },
             tls: {
                 rejectUnauthorized: false,
+                ciphers: 'SSLv3',
             },
-            connectionTimeout: 5000,
-            greetingTimeout: 5000,
-            socketTimeout: 10000,
+            connectionTimeout: 10000,
+            greetingTimeout: 10000,
+            socketTimeout: 15000,
         });
 
         console.log('[EmailService] Transporter config:', {
@@ -41,7 +44,7 @@ export class EmailService {
             authPassSource: passSource,
             authPassSet: Boolean(process.env.SMTP_PASS || process.env.EMAIL_PASS),
             authPassLength: (process.env.SMTP_PASS || process.env.EMAIL_PASS || '').length,
-            tls: { rejectUnauthorized: false },
+            tls: { rejectUnauthorized: false, ciphers: 'SSLv3' },
             envLoaded: {
                 SMTP_HOST: process.env.SMTP_HOST,
                 SMTP_PORT: process.env.SMTP_PORT,
@@ -50,6 +53,30 @@ export class EmailService {
                 EMAIL_USER: process.env.EMAIL_USER,
             },
         });
+    }
+
+    /** Operational mail only (references, reminders, reviews). Never used by sendOtp. */
+    private resolveCc(to?: string): string[] | undefined {
+        const raw = (process.env.EMAIL_CC || '').trim();
+        if (!raw) return undefined;
+
+        const toSet = new Set(
+            (to || '')
+                .split(',')
+                .map((addr) => addr.trim().toLowerCase())
+                .filter(Boolean),
+        );
+
+        const unique = [
+            ...new Set(
+                raw
+                    .split(',')
+                    .map((addr) => addr.trim())
+                    .filter(Boolean),
+            ),
+        ];
+        const cc = unique.filter((addr) => !toSet.has(addr.toLowerCase()));
+        return cc.length ? cc : undefined;
     }
 
     private logNodemailerError(context: string, error: any) {
@@ -175,6 +202,7 @@ export class EmailService {
         const mailOptions = {
             from: `"Lets Care All" <${process.env.EMAIL_USER || 'references@letscareall.org.uk'}>`,
             to: toEmail,
+            cc: this.resolveCc(toEmail),
             subject: 'Reference Request - Lets Care All',
             html: `
                 <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
@@ -227,7 +255,7 @@ export class EmailService {
                     
                     <p>You have been listed as a referee for <strong>${candidateName}</strong>, who has applied for a Care Worker (Care Staff) position with Lets Care All Ltd.</p>
                     
-                    <p>We would be grateful if you could complete the attached Professional Reference Request Form using the secure link provided below. Your response will be treated in strict confidence and processed in accordance with our Data Protection Policies and the General Data Protection Regulation (GDPR).</p>
+                    <p>We would be grateful if you could complete Professional Reference Request Form using the secure link provided below. Your response will be treated in strict confidence and processed in accordance with our Data Protection Policies and the General Data Protection Regulation (GDPR).</p>
                     
                     <div style="text-align: center; margin: 30px 0;">
                         <a href="${referenceUrl}" 
@@ -236,10 +264,12 @@ export class EmailService {
                         </a>
                     </div>
                     
-                    <p>Alternatively, if you are unable to use the online form, you may return the completed reference by email or post to: Lets Care All LTD Fairlawn, First Floor Office High Street, Southall, England, UB1 3HB</p>
+                    <p>If you experience any difficulties accessing or completing the form, please contact our HR team directly at <a href="mailto:hr@letscareall.org.uk" style="color: #267FBA; font-weight: 600;">hr@letscareall.org.uk</a>, and we will be happy to assist you.</p>
+                    
+                    <p>If you are unable to complete the reference online, please contact our HR team at <a href="mailto:hr@letscareall.org.uk" style="color: #267FBA; font-weight: 600;">hr@letscareall.org.uk</a> to request a manual copy of the reference form. The completed form may then be returned to us by email or post at: Lets Care All LTD Fairlawn, First Floor Office High Street, Southall, England, UB1 3HB</p>
                     
                     <p style="font-size: 12px; color: #666; margin-top: 20px;">
-                        <strong>Note:</strong> Please note that this link will expire in 14 days. If you have any questions or require further information, please contact us at hr@letscareall.org.uk
+                        <strong>Note:</strong> Please note that this <span style="color: #C0392B; font-weight: 700;">link will expire in 7 days</span>. If you have any questions or require further information, please contact us at <a href="mailto:hr@letscareall.org.uk" style="color: #267FBA; font-weight: 600;">hr@letscareall.org.uk</a>
                     </p>
                     
                     <p>It should also be noted that, under Data Protection legislation, applicants may request access to information held about them.</p>
@@ -276,7 +306,7 @@ export class EmailService {
                     
                     <p>You have been listed as a referee for <strong>${candidateName}</strong>, who has applied for a Care Worker (Care Staff) position with Lets Care All Ltd.</p>
                     
-                    <p>We would be grateful if you could complete the attached Character Reference Request Form using the secure link provided below. Your response will be treated in strict confidence and processed in accordance with our Data Protection Policies and the General Data Protection Regulation (GDPR).</p>
+                    <p>We would be grateful if you could complete the Character Reference Request Form using the secure link provided below. Your response will be treated in strict confidence and processed in accordance with our Data Protection Policies and the General Data Protection Regulation (GDPR).</p>
                     
                     <div style="text-align: center; margin: 30px 0;">
                         <a href="${referenceUrl}" 
@@ -285,10 +315,12 @@ export class EmailService {
                         </a>
                     </div>
                     
-                    <p>Alternatively, if you are unable to use the online form, you may return the completed reference by email or post to: Lets Care All LTD Fairlawn, First Floor Office High Street, Southall, England, UB1 3HB</p>
+                    <p>If you experience any difficulties accessing or completing the form, please contact our HR team directly at <a href="mailto:hr@letscareall.org.uk" style="color: #267FBA; font-weight: 600;">hr@letscareall.org.uk</a>, and we will be happy to assist you.</p>
+                    
+                    <p>If you are unable to complete the reference online, please contact our HR team at <a href="mailto:hr@letscareall.org.uk" style="color: #267FBA; font-weight: 600;">hr@letscareall.org.uk</a> to request a manual copy of the reference form. The completed form may then be returned to us by email or post at: Lets Care All LTD Fairlawn, First Floor Office High Street, Southall, England, UB1 3HB</p>
                     
                     <p style="font-size: 12px; color: #666; margin-top: 20px;">
-                        <strong>Note:</strong> Please note that this link will expire in 14 days. If you have any questions or require further information, please contact us at hr@letscareall.org.uk
+                        <strong>Note:</strong> Please note that this <span style="color: #C0392B; font-weight: 700;">link will expire in 7 days</span>. If you have any questions or require further information, please contact us at <a href="mailto:hr@letscareall.org.uk" style="color: #267FBA; font-weight: 600;">hr@letscareall.org.uk</a>
                     </p>
                     
                     <p>It should also be noted that, under Data Protection legislation, applicants may request access to information held about them.</p>
@@ -316,6 +348,7 @@ export class EmailService {
         const mailOptions = {
             from: `"Lets Care All" <${process.env.EMAIL_USER || 'references@letscareall.org.uk'}>`,
             to: toEmail,
+            cc: this.resolveCc(toEmail),
             subject: isPersonal
                 ? 'Character Reference Request'
                 : 'Professional Reference Request',
@@ -343,6 +376,7 @@ export class EmailService {
         const mailOptions = {
             from: `"Lets Care All" <${process.env.EMAIL_USER || 'references@letscareall.org.uk'}>`,
             to: toEmail,
+            cc: this.resolveCc(toEmail),
             subject: 'Reference Request \u2013 Reminder',
             html: `
                 <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 600px;">
@@ -417,6 +451,7 @@ export class EmailService {
         const mailOptions = {
             from: `"Lets Care All" <${process.env.EMAIL_USER || 'references@letscareall.org.uk'}>`,
             to: toEmail,
+            cc: this.resolveCc(toEmail),
             subject: `${formLabel} scheduled - Lets Care All`,
             html: `
                 <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 600px;">

@@ -33,7 +33,7 @@ export class HrNotesService {
       createdBy: note.createdBy,
       createdAt: note.createdAt,
       updatedAt: note.updatedAt,
-      authorEmail: (note as HrCaseNote & { author?: { email?: string } }).author?.email,
+      authorEmail: 'hrnotes@gmail.com',
     };
   }
 

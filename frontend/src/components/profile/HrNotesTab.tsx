@@ -57,8 +57,7 @@ export function HrNotesTab({ profile }: HrNotesTabProps) {
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [confidential, setConfidential] = useState(true);
-  const [deleteTarget, setDeleteTarget] = useState<HrCaseNoteDto | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const [confirmDeleteNote, setConfirmDeleteNote] = useState<HrCaseNoteDto | null>(null);
 
   const fetchNotes = useCallback(async () => {
     if (!targetUserId || !canView) return;
@@ -133,21 +132,23 @@ export function HrNotesTab({ profile }: HrNotesTabProps) {
     }
   };
 
-  const handleDelete = async () => {
-    if (!deleteTarget) return;
-    setDeleting(true);
+  const handleDelete = (note: HrCaseNoteDto) => {
+    setConfirmDeleteNote(note);
+  };
+
+  const confirmDeleteNoteAction = async () => {
+    const note = confirmDeleteNote;
+    if (!note) return;
+    setConfirmDeleteNote(null);
     const token = localStorage.getItem('token');
     try {
-      await axios.delete(`/api/v1/staff/${targetUserId}/hr-notes/${deleteTarget.id}`, {
+      await axios.delete(`/api/v1/staff/${targetUserId}/hr-notes/${note.id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       notifications.show({ title: 'Deleted', message: 'Case note removed', color: 'green' });
-      setDeleteTarget(null);
       fetchNotes();
     } catch {
       notifications.show({ title: 'Error', message: 'Delete failed', color: 'red' });
-    } finally {
-      setDeleting(false);
     }
   };
 
@@ -208,7 +209,7 @@ export function HrNotesTab({ profile }: HrNotesTabProps) {
                     <ActionIcon variant="subtle" color="brandBlue" onClick={() => openEdit(note)}>
                       <Pencil size={16} />
                     </ActionIcon>
-                    <ActionIcon variant="subtle" color="red" onClick={() => setDeleteTarget(note)}>
+                    <ActionIcon variant="subtle" color="red" onClick={() => handleDelete(note)}>
                       <Trash2 size={16} />
                     </ActionIcon>
                   </Group>
@@ -222,8 +223,7 @@ export function HrNotesTab({ profile }: HrNotesTabProps) {
               </Text>
               <Divider my="sm" />
               <Text size="xs" c="dimmed">
-                {note.authorEmail ? `${note.authorEmail} · ` : ''}
-                Updated {new Date(note.updatedAt).toLocaleString('en-GB')}
+                hrnotes@gmail.com · Updated {new Date(note.updatedAt).toLocaleString('en-GB')}
               </Text>
             </Paper>
           ))}
@@ -274,14 +274,19 @@ export function HrNotesTab({ profile }: HrNotesTabProps) {
       </Modal>
 
       <AppConfirmModal
-        opened={!!deleteTarget}
-        title="Delete case note"
-        message={`Delete "${deleteTarget?.title ?? ''}"? This cannot be undone.`}
-        confirmLabel="Delete"
-        confirmColor="red"
-        loading={deleting}
-        onConfirm={handleDelete}
-        onCancel={() => setDeleteTarget(null)}
+        opened={!!confirmDeleteNote}
+        options={
+          confirmDeleteNote
+            ? {
+                title: 'Delete case note',
+                message: `Delete "${confirmDeleteNote.title}"? This cannot be undone.`,
+                confirmLabel: 'Delete',
+                confirmColor: 'red',
+              }
+            : null
+        }
+        onCancel={() => setConfirmDeleteNote(null)}
+        onConfirm={confirmDeleteNoteAction}
       />
     </Paper>
   );

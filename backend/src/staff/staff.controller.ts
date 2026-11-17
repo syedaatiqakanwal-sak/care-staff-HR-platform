@@ -103,6 +103,12 @@ export class StaffController {
         return this.staffService.updateProfileByUserId(req.user.userId, allowed);
     }
 
+    @Get('next-staff-number')
+    @Roles(...MANAGEMENT_ROLES)
+    async nextStaffNumber() {
+        return { lcaNumber: await this.staffService.peekNextLcaNumber() };
+    }
+
     @Get(':id')
     @Roles(...DASHBOARD_ROLES, UserRole.STAFF)
     async getProfileById(@Param('id') id: string, @Request() req) {
@@ -475,18 +481,20 @@ export class StaffController {
 
         await this.staffService.updateProfileByUserId(id, { profilePicture: r2Key });
 
+        // Unique version so clients can bust any intermediary cache after upload.
         const version = path.basename(r2Key);
+
         return {
             success: true,
             message: 'Profile picture uploaded successfully',
             path: `/api/v1/staff/${id}/profile-picture`,
             version,
+            // Cache-busted URL — every upload gets a new R2 key / version.
             url: `/api/v1/staff/${id}/profile-picture?v=${encodeURIComponent(version)}`,
         };
     }
 
     // --- Profile Picture Get Endpoint ---
-    // Query `?v=` is ignored for business logic; clients use it only for cache-busting.
     @Get(':id/profile-picture')
     async getProfilePicture(@Param('id') id: string, @Request() req, @Query('token') token: string, @Res() res: Response) {
         // Allow access for authenticated users (both admin and staff can view any profile picture)
@@ -510,27 +518,36 @@ export class StaffController {
         }
 
         const stored = profile.profilePicture.replace(/\\/g, '/');
-        const etagName = path.basename(stored);
-        const setNoStoreHeaders = () => {
+        // Always serve the current DB key; never allow long-lived browser/proxy caches
+        // so every user sees the same latest upload immediately.
+        const setNoStoreHeaders = (etagValue: string) => {
             res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
             res.setHeader('Pragma', 'no-cache');
             res.setHeader('Expires', '0');
             res.setHeader('Vary', 'Authorization');
-            res.setHeader('ETag', `"${etagName}"`);
+            res.setHeader('ETag', `"${etagValue.replace(/"/g, '')}"`);
         };
 
         if (stored.startsWith('profile-pictures/')) {
-            const { buffer, contentType } = await this.r2.getObjectBuffer(stored);
-            const ext = path.extname(stored).toLowerCase();
-            const fallbackType =
-                ext === '.png' ? 'image/png'
-                : ext === '.gif' ? 'image/gif'
-                : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg'
-                : 'image/jpeg';
-            setNoStoreHeaders();
-            res.setHeader('Content-Type', contentType || fallbackType);
-            res.setHeader('Content-Length', String(buffer.length));
-            return res.send(buffer);
+            // Proxy bytes through this API so authenticated blob fetches (Avatar) work.
+            // A 302 to a presigned R2 URL often fails in the browser due to CORS.
+            try {
+                const { buffer, contentType } = await this.r2.getObjectBuffer(stored);
+                const ext = path.extname(stored).toLowerCase();
+                const mime =
+                    contentType && contentType !== 'application/octet-stream'
+                        ? contentType
+                        : ext === '.png'
+                          ? 'image/png'
+                          : ext === '.gif'
+                            ? 'image/gif'
+                            : 'image/jpeg';
+                res.setHeader('Content-Type', mime);
+                setNoStoreHeaders(path.basename(stored));
+                return res.send(buffer);
+            } catch (err) {
+                return res.status(404).json({ message: 'Profile picture file not found' });
+            }
         }
 
         // Construct full path and validate it's within allowed directory
@@ -556,8 +573,8 @@ export class StaffController {
         // Set proper content type based on file extension
         const fileExt = path.extname(filePath).toLowerCase();
         const contentType = fileExt === '.png' ? 'image/png' : fileExt === '.jpg' || fileExt === '.jpeg' ? 'image/jpeg' : fileExt === '.gif' ? 'image/gif' : 'image/jpeg';
-        setNoStoreHeaders();
         res.setHeader('Content-Type', contentType);
+        setNoStoreHeaders(path.basename(filePath));
 
         return res.sendFile(filePath);
     }

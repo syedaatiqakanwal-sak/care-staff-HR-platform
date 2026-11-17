@@ -10,7 +10,9 @@ import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
+import * as path from 'path';
 import * as fs from 'fs';
+import { R2FilesService } from '../common/r2-files.service';
 
 @Controller('references')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -395,7 +397,10 @@ export class ReferenceSubmissionController {
 @Controller('staff/:staffId/references')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 export class StaffReferencesController {
-    constructor(private readonly referencesService: ReferencesService) { }
+    constructor(
+        private readonly referencesService: ReferencesService,
+        private readonly r2: R2FilesService,
+    ) { }
 
     @Post()
     @Roles(...MANAGEMENT_ROLES)
@@ -488,9 +493,37 @@ export class StaffReferencesController {
             reference.uploadedFilePath,
         );
         if (served.kind === 'r2') {
-            return res.redirect(302, served.url);
+            // Proxy bytes so authenticated blob viewers work (R2 redirect breaks CORS).
+            const { buffer, contentType } = await this.r2.getObjectBuffer(served.r2Key);
+            const fileName = (reference.uploadedFileName || 'reference').replace(
+                /[^a-zA-Z0-9._-]/g,
+                '_',
+            );
+            const ext = path.extname(fileName).toLowerCase();
+            const mimeFromExt =
+                ext === '.pdf'
+                    ? 'application/pdf'
+                    : ext === '.png'
+                      ? 'image/png'
+                      : ext === '.jpg' || ext === '.jpeg'
+                        ? 'image/jpeg'
+                        : 'application/octet-stream';
+            const mime =
+                contentType && contentType !== 'application/octet-stream'
+                    ? contentType
+                    : mimeFromExt;
+            res.setHeader('Content-Type', mime);
+            res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+            res.setHeader('Cache-Control', 'private, max-age=60');
+            return res.send(buffer);
         }
 
+        const localName = (reference.uploadedFileName || 'reference').replace(
+            /[^a-zA-Z0-9._-]/g,
+            '_',
+        );
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${localName}"`);
         return res.sendFile(served.absPath);
     }
 

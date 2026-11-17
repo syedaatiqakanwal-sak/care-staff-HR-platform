@@ -5,6 +5,7 @@ import { notifications } from '@mantine/notifications';
 import { useDisclosure } from '@mantine/hooks';
 import axios from 'axios';
 import { useParams } from 'react-router-dom';
+import { ReferenceSubmissionView } from '../references/ReferenceSubmissionView';
 import { AppConfirmModal } from '../AppConfirmModal';
 
 interface ReferencesTabProps {
@@ -28,8 +29,8 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
     const [loadingReceived, setLoadingReceived] = useState(false);
     const [selectedReceivedRef, setSelectedReceivedRef] = useState<any | null>(null);
     const [receivedModalOpen, setReceivedModalOpen] = useState(false);
-    const [deleteRefId, setDeleteRefId] = useState<string | null>(null);
-    const [deleting, setDeleting] = useState(false);
+    const [officeUse, setOfficeUse] = useState({ verifiedBy: '', verbalTakenBy: '', date: '', reasonStated: '', note: '' });
+    const [savingOfficeUse, setSavingOfficeUse] = useState(false);
 
     // Reference request modals state (for sending reference requests)
     const [typeSelectionModalOpen, setTypeSelectionModalOpen] = useState(false);
@@ -50,6 +51,7 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
     const [uploadRefereeName, setUploadRefereeName] = useState('');
     const [uploadRefereeEmail, setUploadRefereeEmail] = useState('');
     const [uploadFile, setUploadFile] = useState<File | null>(null);
+    const [confirmDeleteRefId, setConfirmDeleteRefId] = useState<string | null>(null);
     const [uploading, setUploading] = useState(false);
     const [uploadedReferences, setUploadedReferences] = useState<any[]>([]);
     const uploadFileRef = useRef<HTMLInputElement>(null);
@@ -92,7 +94,15 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                 const receivedRes = await axios.get(`/api/v1/staff/${targetId}/references/received`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
-                setReceivedReferences(receivedRes.data || []);
+                // Only show referee form responses (never manual uploads or pending sends)
+                setReceivedReferences(
+                    (receivedRes.data || []).filter(
+                        (r: any) =>
+                            !r.uploadedFilePath &&
+                            r.submissionData &&
+                            (r.status === 'submitted' || r.status === 'completed'),
+                    ),
+                );
             } catch (err) {
                 console.error('Failed to fetch received references', err);
             } finally {
@@ -109,21 +119,23 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
         fetchSavedReferences();
     }, [profile, id]);
 
-    const handleDelete = async () => {
-        if (!deleteRefId) return;
-        setDeleting(true);
+    const handleDelete = (refId: string) => {
+        setConfirmDeleteRefId(refId);
+    };
+
+    const confirmDeleteReference = async () => {
+        const refId = confirmDeleteRefId;
+        if (!refId) return;
+        setConfirmDeleteRefId(null);
         try {
             const token = localStorage.getItem('token');
-            await axios.delete(`/api/v1/references/${deleteRefId}`, {
+            await axios.delete(`/api/v1/references/${refId}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             notifications.show({ title: 'Deleted', message: 'Reference removed.', color: 'blue' });
-            setDeleteRefId(null);
             fetchSavedReferences();
         } catch (error) {
             notifications.show({ title: 'Error', message: 'Delete failed.', color: 'red' });
-        } finally {
-            setDeleting(false);
         }
     };
 
@@ -157,13 +169,26 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
             const response = await axios.get(`/api/v1/references/${ref.id}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
+            const apply = (record: any) => {
+                setSelectedReceivedRef(record);
+                const office = record?.submissionData?.officeUse || {};
+                setOfficeUse({
+                    verifiedBy: office.verifiedBy || '',
+                    verbalTakenBy: office.verbalTakenBy || '',
+                    date: office.date || '',
+                    reasonStated: office.reasonStated || '',
+                    note: office.note || '',
+                });
+            };
             if (response.data.success) {
-                setSelectedReceivedRef(response.data.reference);
+                apply(response.data.reference);
             } else {
-                setSelectedReceivedRef(ref);
+                apply(ref);
             }
         } catch {
             setSelectedReceivedRef(ref);
+            const office = ref?.submissionData?.officeUse || {};
+            setOfficeUse({ verifiedBy: office.verifiedBy || '', verbalTakenBy: office.verbalTakenBy || '', date: office.date || '', reasonStated: office.reasonStated || '', note: office.note || '' });
         }
         setReceivedModalOpen(true);
     };
@@ -246,8 +271,20 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
             );
 
             const rawType = response.headers['content-type'];
-            const contentType = typeof rawType === 'string' ? rawType : 'application/pdf';
-            const blob = new Blob([response.data], { type: contentType });
+            const contentType = typeof rawType === 'string' ? rawType.split(';')[0] : '';
+            const fileName = ref.uploadedFileName || 'Document';
+            const ext = String(fileName).split('.').pop()?.toLowerCase() || '';
+            const mime =
+                contentType && contentType !== 'application/octet-stream'
+                    ? contentType
+                    : ext === 'pdf'
+                      ? 'application/pdf'
+                      : ext === 'png'
+                        ? 'image/png'
+                        : ext === 'jpg' || ext === 'jpeg'
+                          ? 'image/jpeg'
+                          : 'application/pdf';
+            const blob = new Blob([response.data], { type: mime });
             const url = window.URL.createObjectURL(blob);
             setViewerUrl(url);
         } catch (err) {
@@ -440,7 +477,7 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                                                     border: '1px solid rgba(255,255,255,0.1)'
                                                 }}
                                             >
-                                                {ref.referenceType === 'personal' ? 'Personal' : 'Professional'}
+                                                {ref.referenceType === 'personal' ? 'Character' : 'Professional'}
                                             </Badge>
                                             <Badge
                                                 size="sm"
@@ -563,7 +600,7 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                                                 variant="subtle"
                                                 color="red"
                                                 size="md"
-                                                onClick={() => setDeleteRefId(ref.id)}
+                                                onClick={() => handleDelete(ref.id)}
                                                 style={{ color: 'white' }}
                                             >
                                                 <Trash size={16} />
@@ -580,101 +617,233 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
 
             {/* Received Reference Responses */}
             <Box mt={32}>
-                <Title order={4} mb={4}>Received Reference Responses</Title>
-                <Text size="sm" c="dimmed" mb={16}>
+                <Group gap="sm" mb={4} align="center">
+                    <Box
+                        style={{
+                            width: 8,
+                            height: 22,
+                            borderRadius: 4,
+                            background: '#139639',
+                        }}
+                    />
+                    <Title order={4} style={{ color: '#1A1D21' }}>
+                        Received Reference Responses
+                    </Title>
+                </Group>
+                <Text size="sm" c="dimmed" mb={16} ml={16}>
                     Reference forms submitted by referees
                 </Text>
 
                 {loadingReceived ? (
                     <Text size="sm" c="dimmed">Loading...</Text>
                 ) : receivedReferences.length === 0 ? (
-                    <Text size="sm" c="dimmed">No reference responses received yet.</Text>
+                    <Paper
+                        p="lg"
+                        radius="md"
+                        withBorder
+                        style={{ borderColor: '#E6EBF0', background: '#FAFBFC' }}
+                    >
+                        <Text size="sm" c="dimmed" ta="center">
+                            No reference responses received yet.
+                        </Text>
+                    </Paper>
                 ) : (
-                    receivedReferences.map((ref) => {
-                        return (
-                            <Paper
-                                key={ref.id}
-                                withBorder
-                                p="md"
-                                mb={12}
-                                radius="md"
-                                style={{ borderLeft: '4px solid #2ecc71' }}
-                            >
-                                <Group justify="space-between" wrap="wrap">
-                                    <Box>
-                                        <Text fw={600}>{ref.refereeName || ref.referee_name || ref.name || 'Referee'}</Text>
-                                        <Text size="sm" c="dimmed">{ref.refereeEmail || ref.referee_email || ref.email}</Text>
-                                        <Text size="xs" c="dimmed" mt={2}>
-                                            Submitted: {ref.submittedAt
-                                                ? new Date(ref.submittedAt).toLocaleDateString('en-GB', {
-                                                    day: '2-digit', month: 'short', year: 'numeric'
-                                                })
-                                                : '—'}
-                                        </Text>
-                                    </Box>
-                                    <Button
-                                        variant="subtle"
-                                        size="xs"
-                                        onClick={() => handleViewReceivedRef(ref)}
-                                    >
-                                        View Details
-                                    </Button>
-                                </Group>
-                            </Paper>
-                        );
-                    })
+                    <Stack gap="sm">
+                        {receivedReferences.map((ref) => {
+                            const isPersonal = ref.referenceType === 'personal';
+                            const accent = isPersonal ? '#139639' : '#267FBA';
+                            const soft = isPersonal ? '#F0FAF4' : '#F0F7FC';
+                            const border = isPersonal ? '#C8E6D0' : '#BFD9EE';
+                            const typeLabel = isPersonal ? 'Character' : 'Professional';
+
+                            return (
+                                <Paper
+                                    key={ref.id}
+                                    p="md"
+                                    radius="md"
+                                    style={{
+                                        background: '#fff',
+                                        border: `1px solid ${border}`,
+                                        borderLeft: `4px solid ${accent}`,
+                                    }}
+                                >
+                                    <Group justify="space-between" align="center" wrap="wrap" gap="md">
+                                        <Group gap="md" align="flex-start" wrap="nowrap" style={{ flex: 1, minWidth: 220 }}>
+                                            <Box
+                                                style={{
+                                                    width: 42,
+                                                    height: 42,
+                                                    borderRadius: 12,
+                                                    background: soft,
+                                                    border: `1px solid ${border}`,
+                                                    display: 'grid',
+                                                    placeItems: 'center',
+                                                    flexShrink: 0,
+                                                }}
+                                            >
+                                                <User size={18} color={accent} />
+                                            </Box>
+                                            <Box style={{ minWidth: 0 }}>
+                                                <Group gap={8} mb={4} wrap="wrap">
+                                                    <Text fw={700} size="sm" style={{ color: '#1A1D21' }}>
+                                                        {ref.refereeName || ref.referee_name || ref.name || 'Referee'}
+                                                    </Text>
+                                                    <Badge
+                                                        size="xs"
+                                                        variant="light"
+                                                        style={{
+                                                            color: accent,
+                                                            backgroundColor: soft,
+                                                            border: `1px solid ${border}`,
+                                                        }}
+                                                    >
+                                                        {typeLabel}
+                                                    </Badge>
+                                                </Group>
+                                                <Text size="sm" c="dimmed" style={{ wordBreak: 'break-word' }}>
+                                                    {ref.refereeEmail || ref.referee_email || ref.email || 'No email provided'}
+                                                </Text>
+                                                <Text size="xs" mt={6} fw={600} style={{ color: isPersonal ? '#2F6B45' : '#1F5A85' }}>
+                                                    Submitted:{' '}
+                                                    {ref.submittedAt
+                                                        ? new Date(ref.submittedAt).toLocaleDateString('en-GB', {
+                                                            day: '2-digit',
+                                                            month: 'short',
+                                                            year: 'numeric',
+                                                        })
+                                                        : 'Not provided'}
+                                                </Text>
+                                            </Box>
+                                        </Group>
+                                        <Button
+                                            size="sm"
+                                            radius="md"
+                                            onClick={() => handleViewReceivedRef(ref)}
+                                            styles={{
+                                                root: {
+                                                    backgroundColor: accent,
+                                                    color: '#fff',
+                                                    border: 'none',
+                                                    '&:hover': {
+                                                        backgroundColor: isPersonal ? '#0f7a2f' : '#1e6a9e',
+                                                    },
+                                                },
+                                            }}
+                                        >
+                                            View Details
+                                        </Button>
+                                    </Group>
+                                </Paper>
+                            );
+                        })}
+                    </Stack>
                 )}
             </Box>
 
             {/* Uploaded References */}
             {uploadedReferences.length > 0 && (
                 <Box mt={32}>
-                    <Title order={4} mb={4}>Uploaded References</Title>
-                    <Text size="sm" c="dimmed" mb={16}>
+                    <Group gap="sm" mb={4} align="center">
+                        <Box
+                            style={{
+                                width: 8,
+                                height: 22,
+                                borderRadius: 4,
+                                background: '#267FBA',
+                            }}
+                        />
+                        <Title order={4} style={{ color: '#1A1D21' }}>
+                            Uploaded References
+                        </Title>
+                    </Group>
+                    <Text size="sm" c="dimmed" mb={16} ml={16}>
                         Manually uploaded reference documents
                     </Text>
-                    {uploadedReferences.map((ref) => (
-                        <Paper
-                            key={ref.id}
-                            withBorder
-                            p="md"
-                            mb={12}
-                            radius="md"
-                            style={{ borderLeft: '4px solid #2196f3' }}
-                        >
-                            <Group justify="space-between">
-                                <Box>
-                                    <Text fw={600}>
-                                        {ref.name || ref.refereeName || 'Reference'}
-                                    </Text>
-                                    <Text size="sm" c="dimmed">
-                                        {ref.email || ref.refereeEmail || ''}
-                                    </Text>
-                                    <Badge
-                                        color={ref.referenceType === 'professional' ? 'green' : 'blue'}
-                                        size="sm"
-                                        mt={4}
-                                    >
-                                        {ref.referenceType === 'professional'
-                                            ? 'PROFESSIONAL' : 'PERSONAL'}
-                                    </Badge>
-                                    {ref.uploadedFileName && (
-                                        <Text size="xs" c="dimmed" mt={4}>
-                                            📄 {ref.uploadedFileName}
-                                        </Text>
-                                    )}
-                                </Box>
-                                <Button
-                                    variant="light"
-                                    size="xs"
-                                    color="blue"
-                                    onClick={() => handleViewUploadedRef(ref)}
+                    <Stack gap="sm">
+                        {uploadedReferences.map((ref) => {
+                            const isPersonal = ref.referenceType === 'personal';
+                            const accent = isPersonal ? '#139639' : '#267FBA';
+                            const soft = isPersonal ? '#F0FAF4' : '#F0F7FC';
+                            const border = isPersonal ? '#C8E6D0' : '#BFD9EE';
+
+                            return (
+                                <Paper
+                                    key={ref.id}
+                                    p="md"
+                                    radius="md"
+                                    style={{
+                                        background: '#fff',
+                                        border: `1px solid ${border}`,
+                                        borderLeft: `4px solid ${accent}`,
+                                    }}
                                 >
-                                    View Document
-                                </Button>
-                            </Group>
-                        </Paper>
-                    ))}
+                                    <Group justify="space-between" align="center" wrap="wrap" gap="md">
+                                        <Group gap="md" align="flex-start" wrap="nowrap" style={{ flex: 1, minWidth: 220 }}>
+                                            <Box
+                                                style={{
+                                                    width: 42,
+                                                    height: 42,
+                                                    borderRadius: 12,
+                                                    background: soft,
+                                                    border: `1px solid ${border}`,
+                                                    display: 'grid',
+                                                    placeItems: 'center',
+                                                    flexShrink: 0,
+                                                }}
+                                            >
+                                                <FileCheck size={18} color={accent} />
+                                            </Box>
+                                            <Box style={{ minWidth: 0 }}>
+                                                <Group gap={8} mb={4} wrap="wrap">
+                                                    <Text fw={700} size="sm" style={{ color: '#1A1D21' }}>
+                                                        {ref.name || ref.refereeName || 'Reference'}
+                                                    </Text>
+                                                    <Badge
+                                                        size="xs"
+                                                        variant="light"
+                                                        style={{
+                                                            color: accent,
+                                                            backgroundColor: soft,
+                                                            border: `1px solid ${border}`,
+                                                        }}
+                                                    >
+                                                        {isPersonal ? 'Character' : 'Professional'}
+                                                    </Badge>
+                                                </Group>
+                                                {(ref.email || ref.refereeEmail) && (
+                                                    <Text size="sm" c="dimmed" style={{ wordBreak: 'break-word' }}>
+                                                        {ref.email || ref.refereeEmail}
+                                                    </Text>
+                                                )}
+                                                {ref.uploadedFileName && (
+                                                    <Text size="xs" mt={6} fw={600} style={{ color: isPersonal ? '#2F6B45' : '#1F5A85' }}>
+                                                        File: {ref.uploadedFileName}
+                                                    </Text>
+                                                )}
+                                            </Box>
+                                        </Group>
+                                        <Button
+                                            size="sm"
+                                            radius="md"
+                                            onClick={() => handleViewUploadedRef(ref)}
+                                            styles={{
+                                                root: {
+                                                    backgroundColor: accent,
+                                                    color: '#fff',
+                                                    border: 'none',
+                                                    '&:hover': {
+                                                        backgroundColor: isPersonal ? '#0f7a2f' : '#1e6a9e',
+                                                    },
+                                                },
+                                            }}
+                                        >
+                                            View Document
+                                        </Button>
+                                    </Group>
+                                </Paper>
+                            );
+                        })}
+                    </Stack>
                 </Box>
             )}
 
@@ -686,7 +855,7 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                 centered
                 size="md"
             >
-                <SimpleGrid cols={2} spacing="md">
+                <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                     <Paper
                         p="xl"
                         radius="md"
@@ -718,7 +887,7 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                             <ThemeIcon size={48} radius="md" variant="light" color="grape">
                                 <User size={24} />
                             </ThemeIcon>
-                            <Text fw={700} size="lg">Personal Reference</Text>
+                            <Text fw={700} size="lg">Character Reference</Text>
                         </Stack>
                     </Paper>
 
@@ -766,7 +935,7 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                     setReferenceFormModalOpen(false);
                     setReferenceType(null);
                 }}
-                title={`${referenceType === 'personal' ? 'Personal' : 'Professional'} Reference Form`}
+                title={`${referenceType === 'personal' ? 'Character' : 'Professional'} Reference Form`}
                 size="lg"
                 centered
             >
@@ -917,128 +1086,68 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                 opened={receivedModalOpen}
                 onClose={() => { setReceivedModalOpen(false); setSelectedReceivedRef(null); }}
                 title={
-                    <Title order={3}>
+                    <Title order={3} style={{ color: '#1A1D21' }}>
                         {selectedReceivedRef?.referenceType === 'personal'
-                            ? 'Character Reference Form'
+                            ? 'Character Reference Request Form'
                             : 'Professional Reference Form'}
                     </Title>
                 }
-                size="xl"
+                size="1000px"
                 centered
+                radius="md"
+                padding="lg"
+                styles={{
+                    header: { borderBottom: '1px solid #EEF2F6', marginBottom: 8, paddingBottom: 12 },
+                    body: { paddingTop: 8 },
+                }}
             >
                 {selectedReceivedRef && (
-                    <ScrollArea h={600}>
-                        <Stack gap="md">
-                            {/* Header Info */}
-                            <Paper p="md" withBorder style={{ background: '#f0faf4' }}>
-                                <SimpleGrid cols={2} spacing="md">
-                                    <Box>
-                                        <Text size="sm" fw={600} c="dimmed" mb={4}>Candidate Name</Text>
-                                        <Text>{profile?.firstName} {profile?.lastName}</Text>
-                                    </Box>
-                                    <Box>
-                                        <Text size="sm" fw={600} c="dimmed" mb={4}>Referee Name</Text>
-                                        <Text>{selectedReceivedRef.name || selectedReceivedRef.refereeName || '—'}</Text>
-                                    </Box>
-                                    <Box>
-                                        <Text size="sm" fw={600} c="dimmed" mb={4}>Referee Email</Text>
-                                        <Text>{selectedReceivedRef.email || selectedReceivedRef.refereeEmail || '—'}</Text>
-                                    </Box>
-                                    <Box>
-                                        <Text size="sm" fw={600} c="dimmed" mb={4}>Submitted Date</Text>
-                                        <Text>{formatReceivedDate(selectedReceivedRef.submittedAt)}</Text>
-                                    </Box>
-                                </SimpleGrid>
+                    <ScrollArea.Autosize mah="70vh" offsetScrollbars>
+                        <ReferenceSubmissionView
+                            referenceType={selectedReceivedRef.referenceType}
+                            candidateName={`${profile?.firstName || ''} ${profile?.lastName || ''}`.trim()}
+                            refereeName={selectedReceivedRef.name || selectedReceivedRef.refereeName}
+                            refereeEmail={selectedReceivedRef.email || selectedReceivedRef.refereeEmail}
+                            submittedAtLabel={formatReceivedDate(selectedReceivedRef.submittedAt)}
+                            submissionData={selectedReceivedRef.submissionData}
+                        />
+                        <Paper mt="lg" p="md" withBorder style={{ background: '#fffacd' }}>
+                                <Title order={5} mb="sm">Office use only</Title>
+                                <Stack gap="sm">
+                                    <TextInput label="Reference verified via email by Name" value={officeUse.verifiedBy} onChange={(e) => setOfficeUse({ ...officeUse, verifiedBy: e.target.value })} />
+                                    {selectedReceivedRef.referenceType !== 'personal' && (
+                                        <>
+                                            <TextInput label="Verbal Reference Taken By" value={officeUse.verbalTakenBy} onChange={(e) => setOfficeUse({ ...officeUse, verbalTakenBy: e.target.value })} />
+                                            <Text size="xs" c="dimmed">Only if it is not possible by email or by post</Text>
+                                        </>
+                                    )}
+                                    <TextInput label="Date" type="date" value={officeUse.date} onChange={(e) => setOfficeUse({ ...officeUse, date: e.target.value })} />
+                                    {selectedReceivedRef.referenceType !== 'personal' && (
+                                        <TextInput label="Reason Stated" value={officeUse.reasonStated} onChange={(e) => setOfficeUse({ ...officeUse, reasonStated: e.target.value })} />
+                                    )}
+                                    <Textarea label="Additional Note" minRows={3} value={officeUse.note} onChange={(e) => setOfficeUse({ ...officeUse, note: e.target.value })} />
+                                    <Group justify="flex-end">
+                                        <Button loading={savingOfficeUse} onClick={async () => {
+                                            setSavingOfficeUse(true);
+                                            try {
+                                                const token = localStorage.getItem('token');
+                                                const submissionData = {
+                                                    ...(selectedReceivedRef.submissionData || {}),
+                                                    officeUse,
+                                                };
+                                                await axios.patch(`/api/v1/references/${selectedReceivedRef.id}`, { submissionData }, { headers: { Authorization: `Bearer ${token}` } });
+                                                setSelectedReceivedRef({ ...selectedReceivedRef, submissionData });
+                                                notifications.show({ title: 'Saved', message: `Office note saved on this ${selectedReceivedRef.referenceType === 'personal' ? 'character' : 'professional'} reference`, color: '#267FBA' });
+                                            } catch (error: any) {
+                                                notifications.show({ title: 'Error', message: error.response?.data?.message || 'Could not save office note', color: 'red' });
+                                            } finally {
+                                                setSavingOfficeUse(false);
+                                            }
+                                        }}>Save office note</Button>
+                                    </Group>
+                                </Stack>
                             </Paper>
-
-                            {/* Submitted Form Data */}
-                            {selectedReceivedRef.submissionData ? (
-                                <Paper p="md" withBorder>
-                                    <Title order={4} mb="md">Submitted Reference Information</Title>
-                                    <Stack gap="md">
-                                        <Box>
-                                            <Text size="sm" fw={600} c="dimmed" mb={4}>Relationship to Candidate</Text>
-                                            <Text>{selectedReceivedRef.submissionData.relationship || '—'}</Text>
-                                        </Box>
-                                        <Box>
-                                            <Text size="sm" fw={600} c="dimmed" mb={4}>How Long Known</Text>
-                                            <Text>{selectedReceivedRef.submissionData.yearsKnown || selectedReceivedRef.submissionData.howLongKnown || '—'}</Text>
-                                        </Box>
-                                        <Box>
-                                            <Text size="sm" fw={600} c="dimmed" mb={4}>Position(s) Held</Text>
-                                            <Text>{selectedReceivedRef.submissionData.positionHeld || '—'}</Text>
-                                        </Box>
-                                        <SimpleGrid cols={2} spacing="md">
-                                            <Box>
-                                                <Text size="sm" fw={600} c="dimmed" mb={4}>Employment Start Date</Text>
-                                                <Text>{selectedReceivedRef.submissionData.employmentStartDate || '—'}</Text>
-                                            </Box>
-                                            <Box>
-                                                <Text size="sm" fw={600} c="dimmed" mb={4}>Employment End Date</Text>
-                                                <Text>{selectedReceivedRef.submissionData.employmentEndDate || '—'}</Text>
-                                            </Box>
-                                        </SimpleGrid>
-                                        {selectedReceivedRef.submissionData.comments && (
-                                            <Box>
-                                                <Text size="sm" fw={600} c="dimmed" mb={4}>Comments</Text>
-                                                <Text>{selectedReceivedRef.submissionData.comments}</Text>
-                                            </Box>
-                                        )}
-                                        {selectedReceivedRef.submissionData.additionalComments && (
-                                            <Box>
-                                                <Text size="sm" fw={600} c="dimmed" mb={4}>Additional Comments</Text>
-                                                <Text>{selectedReceivedRef.submissionData.additionalComments}</Text>
-                                            </Box>
-                                        )}
-                                        {selectedReceivedRef.submissionData.criteriaRatings &&
-                                         Object.keys(selectedReceivedRef.submissionData.criteriaRatings).length > 0 && (
-                                            <Box>
-                                                <Title order={5} mb="sm">Criteria Ratings</Title>
-                                                <Table withTableBorder withColumnBorders>
-                                                    <Table.Thead>
-                                                        <Table.Tr>
-                                                            <Table.Th>Criteria</Table.Th>
-                                                            <Table.Th>Rating</Table.Th>
-                                                        </Table.Tr>
-                                                    </Table.Thead>
-                                                    <Table.Tbody>
-                                                        {Object.entries(selectedReceivedRef.submissionData.criteriaRatings).map(([key, value]) => (
-                                                            <Table.Tr key={key}>
-                                                                <Table.Td>{key}</Table.Td>
-                                                                <Table.Td>
-                                                                    <Badge color={
-                                                                        value === 'Excellent' ? 'green' :
-                                                                        value === 'Good' ? 'blue' :
-                                                                        value === 'Satisfactory' ? 'yellow' : 'red'
-                                                                    }>
-                                                                        {String(value)}
-                                                                    </Badge>
-                                                                </Table.Td>
-                                                            </Table.Tr>
-                                                        ))}
-                                                    </Table.Tbody>
-                                                </Table>
-                                            </Box>
-                                        )}
-                                        {selectedReceivedRef.submissionData.signature && (
-                                            <Box>
-                                                <Text size="sm" fw={600} c="dimmed" mb={4}>Signature</Text>
-                                                <img
-                                                    src={selectedReceivedRef.submissionData.signature}
-                                                    alt="Signature"
-                                                    style={{ maxWidth: '300px', border: '1px solid #ddd', borderRadius: '4px' }}
-                                                />
-                                            </Box>
-                                        )}
-                                    </Stack>
-                                </Paper>
-                            ) : (
-                                <Alert color="yellow">
-                                    No submission data available for this reference.
-                                </Alert>
-                            )}
-                        </Stack>
-                    </ScrollArea>
+                    </ScrollArea.Autosize>
                 )}
             </Modal>
 
@@ -1074,7 +1183,7 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
                                 onClick={() => setUploadRefType('personal')}
                                 size="sm"
                             >
-                                Personal
+                                Character
                             </Button>
                         </Group>
                     </Box>
@@ -1259,14 +1368,15 @@ export const ReferencesTab = ({ isEditing, profile }: ReferencesTabProps) => {
             </Modal>
 
             <AppConfirmModal
-                opened={!!deleteRefId}
-                title="Remove reference"
-                message="Are you sure you want to remove this reference?"
-                confirmLabel="Remove"
-                confirmColor="red"
-                loading={deleting}
-                onConfirm={handleDelete}
-                onCancel={() => setDeleteRefId(null)}
+                opened={!!confirmDeleteRefId}
+                options={{
+                    title: 'Remove reference',
+                    message: 'Are you sure you want to remove this reference?',
+                    confirmLabel: 'Remove',
+                    confirmColor: 'red',
+                }}
+                onCancel={() => setConfirmDeleteRefId(null)}
+                onConfirm={confirmDeleteReference}
             />
         </Stack>
     );

@@ -629,7 +629,7 @@ export const PersonalDetailsTab = ({ profile, isEditing, onProfileChange }: Pers
                     },
                 }}
             >
-                <SimpleGrid cols={2} spacing="md">
+                <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                     <Paper
                         p="xl"
                         radius="md"
@@ -652,7 +652,7 @@ export const PersonalDetailsTab = ({ profile, isEditing, onProfileChange }: Pers
                             <ThemeIcon size={48} radius="md" variant="light" color="grape">
                                 <User size={24} />
                             </ThemeIcon>
-                            <Text fw={700} size="lg">Personal Reference</Text>
+                            <Text fw={700} size="lg">Character Reference</Text>
                         </Stack>
                     </Paper>
 
@@ -691,7 +691,7 @@ export const PersonalDetailsTab = ({ profile, isEditing, onProfileChange }: Pers
                     setReferenceFormModalOpen(false);
                     setReferenceType(null);
                 }}
-                title={`${referenceType === 'personal' ? 'Personal' : 'Professional'} Reference Form`}
+                title={`${referenceType === 'personal' ? 'Character' : 'Professional'} Reference Form`}
                 size="lg"
                 centered
             >

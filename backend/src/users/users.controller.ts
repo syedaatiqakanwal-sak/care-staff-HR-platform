@@ -63,10 +63,12 @@ export class UsersController {
             throw new BadRequestException('Email already registered');
         }
 
+        let lcaNumber: string | undefined;
         if (dto.role === UserRole.STAFF) {
             if (!dto.firstName?.trim() || !dto.lastName?.trim()) {
                 throw new BadRequestException('firstName and lastName are required for STAFF users');
             }
+            lcaNumber = await this.staffService.resolveLcaNumber(dto.lcaNumber);
         }
 
         const hashedPassword = await bcrypt.hash(dto.password, 12);
@@ -86,7 +88,7 @@ export class UsersController {
                 dto.phone,
                 dto.ilccsNumber,
                 undefined,
-                dto.lcaNumber,
+                lcaNumber,
                 dto.middleName?.trim(),
             );
         }

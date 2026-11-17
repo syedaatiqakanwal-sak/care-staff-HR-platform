@@ -8,34 +8,35 @@ import { IdentityDocumentsTab } from './IdentityDocumentsTab';
 import { ReferencesTab } from './ReferencesTab';
 import { notifications } from '@mantine/notifications';
 
-// Update Interface
 interface PersonalInformationTabProps {
     profile: any;
     onProfileChange?: (field: string, value: any) => void;
-    onSave?: (draftProfile?: any) => Promise<boolean | void>;
+    onProfileReplace?: (next: any) => void;
+    onSave?: (profileOverride?: any) => Promise<boolean | void>;
 }
 
-export const PersonalInformationTab = ({ profile, onProfileChange, onSave }: PersonalInformationTabProps) => {
+export const PersonalInformationTab = ({
+    profile,
+    onProfileChange,
+    onProfileReplace,
+    onSave,
+}: PersonalInformationTabProps) => {
     const [searchParams] = useSearchParams();
     const [subTab, setSubTab] = useState<string | null>('details');
     const [isEditing, setIsEditing] = useState(false);
     const [saving, setSaving] = useState(false);
-    // Local draft so keystrokes don't re-render the entire StaffProfilePage
+    // Local draft while editing — keystrokes update this tab only, not the whole StaffProfilePage.
     const [draft, setDraft] = useState(profile);
-
-    useEffect(() => {
-        if (!isEditing) {
-            setDraft(profile);
-        }
-    }, [profile, isEditing]);
 
     const handleDraftChange = (field: string, value: any) => {
         setDraft((prev: any) => ({ ...prev, [field]: value }));
     };
 
     const handleSave = async () => {
+        onProfileReplace?.(draft);
         if (onSave) {
             setSaving(true);
+            // Pass draft so save uses typed values even before parent re-renders.
             const saved = await onSave(draft);
             setSaving(false);
             if (saved === false) return;
@@ -53,6 +54,17 @@ export const PersonalInformationTab = ({ profile, onProfileChange, onSave }: Per
             color: 'gray'
         });
     };
+
+    const startEditing = () => {
+        setDraft(profile);
+        setIsEditing(true);
+    };
+
+    useEffect(() => {
+        if (!isEditing) {
+            setDraft(profile);
+        }
+    }, [profile, isEditing]);
 
     useEffect(() => {
         const section = searchParams.get('section');
@@ -75,9 +87,11 @@ export const PersonalInformationTab = ({ profile, onProfileChange, onSave }: Per
         }
     }, [searchParams]);
 
+    const activeProfile = isEditing ? draft : profile;
+    const activeChangeHandler = isEditing ? handleDraftChange : onProfileChange;
+
     return (
         <Paper p={{ base: 'md', md: 'xl' }} radius="24px" shadow="xs" style={{ position: 'relative' }}>
-            {/* Header with Edit Toggle */}
             <Group justify="space-between" mb={{ base: 'md', md: 'xl' }} align="flex-start" wrap="wrap">
                 <Box>
                     <Title order={4} size={20} fw={800}>Personal Information</Title>
@@ -94,13 +108,12 @@ export const PersonalInformationTab = ({ profile, onProfileChange, onSave }: Per
                         </Button>
                     </Group>
                 ) : (
-                    <Button variant="light" onClick={() => setIsEditing(true)} leftSection={<Edit size={16} />} w={{ base: '100%', xs: 'auto' }}>
+                    <Button variant="light" onClick={startEditing} leftSection={<Edit size={16} />} w={{ base: '100%', xs: 'auto' }}>
                         Edit Personal Info
                     </Button>
                 )}
             </Group>
 
-            {/* Inner Tabs */}
             <style>{`
                 .tab-details[data-active] { background-color: #267FBA !important; color: white !important; border-color: #267FBA !important; box-shadow: 0 4px 12px rgba(38, 127, 186, 0.3) !important; }
                 .tab-identity[data-active] { background-color: #F57C00 !important; color: white !important; border-color: #F57C00 !important; box-shadow: 0 4px 12px rgba(245, 124, 0, 0.3) !important; }
@@ -139,29 +152,29 @@ export const PersonalInformationTab = ({ profile, onProfileChange, onSave }: Per
                 }}
             >
                 <Tabs.List style={{ overflowX: 'auto', whiteSpace: 'nowrap' }}>
-                    <Tabs.Tab 
-                        value="details" 
+                    <Tabs.Tab
+                        value="details"
                         leftSection={<User size={18} />}
                         className="tab-details"
                     >
                         Personal Details
                     </Tabs.Tab>
-                    <Tabs.Tab 
-                        value="identity" 
+                    <Tabs.Tab
+                        value="identity"
                         leftSection={<Globe size={18} />}
                         className="tab-identity"
                     >
                         Identity & Address
                     </Tabs.Tab>
-                    <Tabs.Tab 
-                        value="identity-documents" 
+                    <Tabs.Tab
+                        value="identity-documents"
                         leftSection={<FileCheck size={18} />}
                         className="tab-documents"
                     >
                         Identity & Documents
                     </Tabs.Tab>
-                    <Tabs.Tab 
-                        value="references" 
+                    <Tabs.Tab
+                        value="references"
                         leftSection={<FileCheck size={18} />}
                         className="tab-references"
                     >
@@ -170,30 +183,26 @@ export const PersonalInformationTab = ({ profile, onProfileChange, onSave }: Per
                 </Tabs.List>
 
                 <Tabs.Panel value="details">
-                    <PersonalDetailsTab
-                        profile={isEditing ? draft : profile}
-                        isEditing={isEditing}
-                        onProfileChange={isEditing ? handleDraftChange : onProfileChange}
-                    />
+                    <PersonalDetailsTab profile={activeProfile} isEditing={isEditing} onProfileChange={activeChangeHandler} />
                 </Tabs.Panel>
 
                 <Tabs.Panel value="identity">
                     <IdentityAddressTab
-                        profile={profile}
+                        profile={activeProfile}
                         isEditing={isEditing}
                     />
                 </Tabs.Panel>
 
                 <Tabs.Panel value="identity-documents">
                     <IdentityDocumentsTab
-                        profile={isEditing ? draft : profile}
+                        profile={activeProfile}
                         isEditing={isEditing}
-                        onProfileChange={isEditing ? handleDraftChange : onProfileChange}
+                        onProfileChange={activeChangeHandler}
                     />
                 </Tabs.Panel>
 
                 <Tabs.Panel value="references">
-                    <ReferencesTab isEditing={isEditing} profile={profile} />
+                    <ReferencesTab isEditing={isEditing} profile={activeProfile} />
                 </Tabs.Panel>
             </Tabs>
         </Paper>

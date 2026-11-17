@@ -68,13 +68,12 @@ export class ReferencesService {
         const results = await this.referencesRepository
             .createQueryBuilder('ref')
             .where('ref.staffId = :staffId', { staffId: resolvedStaffId })
-            .andWhere(
-                new Brackets((qb) => {
-                    qb.where('ref.status IN (:...statuses)', {
-                        statuses: ['submitted', 'completed'],
-                    }).orWhere('ref.submissionData IS NOT NULL');
-                }),
-            )
+            // Only referee form responses — exclude manually uploaded documents
+            .andWhere('ref.uploadedFilePath IS NULL')
+            .andWhere('ref.status IN (:...statuses)', {
+                statuses: ['submitted', 'completed'],
+            })
+            .andWhere('ref.submissionData IS NOT NULL')
             .orderBy('ref.submittedAt', 'DESC', 'NULLS LAST')
             .getMany();
 
@@ -119,11 +118,10 @@ export class ReferencesService {
 
     async resolveUploadedFileServe(
         uploadedFilePath: string,
-    ): Promise<{ kind: 'local'; absPath: string } | { kind: 'r2'; url: string }> {
+    ): Promise<{ kind: 'local'; absPath: string } | { kind: 'r2'; r2Key: string }> {
         const stored = (uploadedFilePath || '').replace(/\\/g, '/');
         if (stored.startsWith('references/')) {
-            const url = await this.r2.getPresignedUrl(stored);
-            return { kind: 'r2', url };
+            return { kind: 'r2', r2Key: stored };
         }
         const absolutePath = path.isAbsolute(stored)
             ? stored
@@ -931,13 +929,6 @@ export class ReferencesService {
                     </div>
                 </div>
 
-                <div style="margin-top: 20px; padding: 10px; border: 1px solid #ccc; text-align: center;">
-                    <p><strong>This reference response form must be sent by official email or endorsed with an official stamp/compliment slip, or if this form is not used, a reference must be supplied on official letterheaded paper.</strong></p>
-                    <div style="margin-top: 20px; min-height: 50px; border: 1px solid #ccc;">
-                        <p style="margin: 5px;">Official Stamp</p>
-                    </div>
-                </div>
-
                 <div class="privacy-notice">
                     <div class="section-title">PRIVACY NOTICE:</div>
                     <p><strong>Individuals have a right under the General Data Protection Regulations to see copies of references received about them. Therefore, we cannot guarantee the complete confidentiality of any reference received.</strong></p>
@@ -1408,61 +1399,108 @@ export class ReferencesService {
             <body>
                 <div class="header">
                     <h1>LETS CARE ALL</h1>
-                    <div class="subtitle">REFERENCE REQUEST FORM</div>
+                    <div class="subtitle">PROFESSIONAL REFERENCE REQUEST FORM</div>
                 </div>
 
                 <div class="form-section">
                     <div class="form-row">
                         <div class="form-label">Name of Referee:</div>
-                        <div class="form-value">${reference.name || ''}</div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-label">Company Name:</div>
-                        <div class="form-value">${submissionData.companyName || ''}</div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-label">Position:</div>
-                        <div class="form-value">${submissionData.position || ''}</div>
+                        <div class="form-value">${this.pdfValue(reference.name)}</div>
                     </div>
                     <div class="form-row">
                         <div class="form-label">Candidate Name:</div>
-                        <div class="form-value">${candidateName}</div>
+                        <div class="form-value">${this.pdfValue(candidateName)}</div>
                     </div>
                     <div class="form-row">
-                        <div class="form-label">Position Applied For:</div>
-                        <div class="form-value">${positionApplied}</div>
+                        <div class="form-label">Position Applied for:</div>
+                        <div class="form-value">${this.pdfValue(positionApplied)}</div>
                     </div>
                 </div>
 
                 <div class="form-section">
                     <div class="form-row">
-                        <div class="form-label">Position(s) Held:</div>
-                        <div class="form-value">${submissionData.positionHeld || ''}</div>
+                        <div class="form-label">Position(s) Held at your Organisation:</div>
+                        <div class="form-value">${this.pdfValue(submissionData.positionHeld)}</div>
                     </div>
                     <div class="form-row">
-                        <div class="form-label">Employment Start Date:</div>
-                        <div class="form-value">${submissionData.employmentStartDate || ''}</div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-label">Employment End Date:</div>
-                        <div class="form-value">${submissionData.employmentEndDate || ''}</div>
+                        <div class="form-label">Employment start date:</div>
+                        <div class="form-value">${this.pdfValue(submissionData.employmentStartDate)}</div>
                     </div>
                     <div class="form-row">
                         <div class="form-label">Final Salary:</div>
-                        <div class="form-value">${submissionData.finalSalary || ''}</div>
+                        <div class="form-value">${this.pdfValue(submissionData.finalSalary)}</div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-label">Employment end date:</div>
+                        <div class="form-value">${this.pdfValue(submissionData.employmentEndDate)}</div>
                     </div>
                     <div class="form-row-full">
                         <div class="form-label">Main Duties / Responsibilities:</div>
-                        <div class="form-value">${submissionData.mainDuties || ''}</div>
+                        <div class="form-value">${this.pdfValue(submissionData.mainDuties)}</div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-label">Capacity in which Candidate is known (e.g, Employee, Co-Worker, Colleague):</div>
+                        <div class="form-value">${this.pdfValue(submissionData.relationship)}</div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-label">How long have you known the Candidate?</div>
+                        <div class="form-value">${this.pdfValue(submissionData.yearsKnown || submissionData.howLongKnown)}</div>
                     </div>
                     <div class="form-row">
                         <div class="form-label">Reason for leaving:</div>
-                        <div class="form-value">${submissionData.reasonForLeaving || ''}</div>
+                        <div class="form-value">${this.pdfValue(submissionData.reasonForLeaving)}</div>
                     </div>
                 </div>
 
-                <div class="section-title">Please advise on the following aspects of the Candidate's performance (where applicable) by ticking the relevant box to indicate the level in each category.</div>
+                <div class="form-section">
+                    <div class="form-row">
+                        <div class="form-label">Was the Candidate subject to any formal form of performance management/safeguarding / disciplinary action within the last 12 months?</div>
+                        <div class="form-value">${this.pdfYesNo(submissionData.performanceManagement)}</div>
+                    </div>
+                    ${submissionData.performanceManagement === true ? `
+                    <div class="form-row-full">
+                        <div class="form-label">If yes, please give further details:</div>
+                        <div class="form-value">${this.pdfValue(submissionData.performanceManagementDetails)}</div>
+                    </div>
+                    ` : ''}
+                    <div class="form-row">
+                        <div class="form-label">Would you employ the Candidate again?</div>
+                        <div class="form-value">${this.pdfYesNo(submissionData.wouldEmployAgain)}</div>
+                    </div>
+                    ${submissionData.wouldEmployAgain === false ? `
+                    <div class="form-row-full">
+                        <div class="form-label">If No, please give further details:</div>
+                        <div class="form-value">${this.pdfValue(submissionData.wouldEmployAgainDetails)}</div>
+                    </div>
+                    ` : ''}
+                </div>
 
+                <div class="section-title">Please advise on the following aspects of the Candidate's Employment (where applicable) by ticking the relevant box to indicate the level in each category.</div>
+                <p><strong>Criteria: Assign (✔ or X) to the Candidate's performance</strong></p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Criteria</th>
+                            <th class="checkbox-cell">Excellent</th>
+                            <th class="checkbox-cell">Good</th>
+                            <th class="checkbox-cell">Average</th>
+                            <th class="checkbox-cell">Unable to Comment</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${this.generateCriteriaRows(submissionData.criteriaRatings || {}, [
+                            'Attendance Record',
+                            'Dignity and respect',
+                            'Compassion, empathy, ability to empower others',
+                            'Motivation, commitment and attitude to work',
+                            'Learning and development interest',
+                            'Team working ability',
+                            'Lone working. Ability to work on Own initiative',
+                        ], ['Excellent', 'Good', 'Average', 'Unable to Comment'])}
+                    </tbody>
+                </table>
+
+                <p><strong>Criteria: Assign X to the Candidate's performance</strong></p>
                 <table>
                     <thead>
                         <tr>
@@ -1475,13 +1513,6 @@ export class ReferencesService {
                     </thead>
                     <tbody>
                         ${this.generateCriteriaRows(submissionData.criteriaRatings || {}, [
-                            'Attendance Record',
-                            'Dignity and respect',
-                            'Compassion, empathy, ability to empower others',
-                            'Motivation, commitment and attitude to work',
-                            'Learning and development interest',
-                            'Team working ability',
-                            'Lone working. Ability to work on Own initiative',
                             'Understanding and compliance with quality and safety',
                             'Attitude',
                             'Relationship with Colleagues & Peers',
@@ -1491,38 +1522,62 @@ export class ReferencesService {
                     </tbody>
                 </table>
 
-                ${submissionData.comments ? `
-                <div class="form-row-full">
-                    <div class="form-label">Additional Comments:</div>
-                    <div class="form-value">${submissionData.comments}</div>
+                <div class="form-section">
+                    <div class="form-row">
+                        <div class="form-label">Did you find the applicant honest and trustworthy?</div>
+                        <div class="form-value">${this.pdfYesNo(submissionData.honestTrustworthy)}</div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-label">Did you find the Candidate to be reliable/trustworthy in carrying out their duties?</div>
+                        <div class="form-value">${this.pdfYesNo(submissionData.reliableTrustworthy)}</div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-label">Was the applicant's attendance/timekeeping acceptable?</div>
+                        <div class="form-value">${this.pdfYesNo(submissionData.attendanceTimekeeping)}</div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-label">Do you think the Candidate is a suitable person to undertake this post?</div>
+                        <div class="form-value">${this.pdfYesNo(submissionData.suitableForPost)}</div>
+                    </div>
                 </div>
-                ` : ''}
+
+                <div class="form-row-full">
+                    <div class="form-label">Please provide any additional comments here (continue on an additional sheet if necessary):</div>
+                    <div class="form-value">${this.pdfValue(submissionData.additionalComments)}</div>
+                </div>
 
                 <div class="signature-section">
-                    ${submissionData.signature ? `
                     <div class="signature-row">
                         <div class="signature-label">Referee Signature:</div>
                         <div class="signature-line">
-                            <img src="${submissionData.signature}" class="signature-img" />
+                            ${submissionData.signature
+                                ? `<img src="${submissionData.signature}" class="signature-img" />`
+                                : '<span style="color:#9A6B3A;font-style:italic;">Not provided</span>'}
                         </div>
                     </div>
-                    ` : `
-                    <div class="signature-row">
-                        <div class="signature-label">Referee Signature:</div>
-                        <div class="signature-line">&nbsp;</div>
-                    </div>
-                    `}
                     <div class="signature-row">
                         <div class="signature-label">Date:</div>
-                        <div class="signature-line">${submissionData.signatureDate || ''}</div>
+                        <div class="signature-line">${this.pdfValue(submissionData.signatureDate)}</div>
+                    </div>
+                    <div class="signature-row">
+                        <div class="signature-label">Company Name:</div>
+                        <div class="signature-line">${this.pdfValue(submissionData.companyName)}</div>
                     </div>
                     <div class="signature-row">
                         <div class="signature-label">Company Address:</div>
-                        <div class="signature-line">${submissionData.companyAddress || ''}</div>
+                        <div class="signature-line">${this.pdfValue(submissionData.companyAddress)}</div>
                     </div>
                     <div class="signature-row">
                         <div class="signature-label">Telephone No:</div>
-                        <div class="signature-line">${submissionData.telephone || reference.phone || ''}</div>
+                        <div class="signature-line">${this.pdfValue(submissionData.telephone || reference.phone)}</div>
+                    </div>
+                    <div class="signature-row">
+                        <div class="signature-label">Email:</div>
+                        <div class="signature-line">${this.pdfValue(reference.email)}</div>
+                    </div>
+                    <div class="signature-row">
+                        <div class="signature-label">Your Position:</div>
+                        <div class="signature-line">${this.pdfValue(submissionData.position)}</div>
                     </div>
                 </div>
             </body>
@@ -1549,16 +1604,41 @@ export class ReferencesService {
         return Buffer.from(pdfBuffer);
     }
 
-    private generateCriteriaRows(criteriaRatings: Record<string, string>, criteriaList: string[]): string {
-        const ratings = ['Excellent', 'Good', 'Average', 'Unable to comment'];
+    private escapeHtml(value: unknown): string {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    private pdfValue(value: unknown): string {
+        if (value === null || value === undefined || String(value).trim() === '') {
+            return '<span style="color:#9A6B3A;font-style:italic;">Not provided</span>';
+        }
+        return this.escapeHtml(value).replace(/\n/g, '<br/>');
+    }
+
+    private pdfYesNo(value: unknown): string {
+        if (value === true) return 'Yes';
+        if (value === false) return 'No';
+        return '<span style="color:#9A6B3A;font-style:italic;">Not provided</span>';
+    }
+
+    private generateCriteriaRows(
+        criteriaRatings: Record<string, string>,
+        criteriaList: string[],
+        ratingOptions: string[] = ['Excellent', 'Good', 'Average', 'Unable to comment'],
+    ): string {
         return criteriaList.map(criteria => {
             const rating = criteriaRatings[criteria] || '';
+            const answered = rating.trim().length > 0;
             return `
-                <tr>
-                    <td>${criteria}</td>
-                    ${ratings.map(r => `
+                <tr${answered ? '' : ' style="background:#FFF9F2;"'}>
+                    <td>${this.escapeHtml(criteria)}${answered ? '' : '<br/><span style="color:#9A6B3A;font-style:italic;font-size:9pt;">Not answered</span>'}</td>
+                    ${ratingOptions.map(r => `
                         <td class="checkbox-cell">
-                            <span class="checkbox ${rating === r ? 'checked' : ''}"></span>
+                            <span class="checkbox ${rating.trim().toLowerCase() === r.trim().toLowerCase() ? 'checked' : ''}"></span>
                         </td>
                     `).join('')}
                 </tr>
@@ -1682,11 +1762,11 @@ export class ReferencesService {
         return `${baseUrl}/reference/submit/${token}`;
     }
 
-    private isTokenExpired(createdAt: Date, lastReminderSentAt?: Date | null): boolean {
+    private isTokenExpired(createdAt: Date, lastReminderSentAt?: Date | null, referenceType?: string | null): boolean {
         // Validity is anchored to the most recent contact (last reminder if any, else creation),
         // so sending a reminder extends the link's lifetime by another expiration window.
         const referenceDate = lastReminderSentAt || createdAt;
-        const expirationDays = 14;
+        const expirationDays = 7;
         const expirationDate = new Date(referenceDate);
         expirationDate.setDate(expirationDate.getDate() + expirationDays);
         return new Date() > expirationDate;
@@ -1704,7 +1784,7 @@ export class ReferencesService {
         const reference = await this.findByToken(token);
 
         // Check if token is expired
-        if (this.isTokenExpired(reference.createdAt, reference.lastReminderSentAt)) {
+        if (this.isTokenExpired(reference.createdAt, reference.lastReminderSentAt, reference.referenceType)) {
             throw new BadRequestException('This reference link has expired. Please contact the administrator.');
         }
 
@@ -1727,7 +1807,7 @@ export class ReferencesService {
         const reference = await this.findByToken(token);
 
         // Check if token is expired
-        if (this.isTokenExpired(reference.createdAt, reference.lastReminderSentAt)) {
+        if (this.isTokenExpired(reference.createdAt, reference.lastReminderSentAt, reference.referenceType)) {
             throw new BadRequestException('This reference link has expired.');
         }
 

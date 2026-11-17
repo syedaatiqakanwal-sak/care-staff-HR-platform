@@ -59,10 +59,12 @@ export class DbsRecord {
   @Column({ type: 'varchar', nullable: true })
   enrolledDate: string | null;
 
-  @Column({ type: 'varchar', nullable: true })
+  /** Update Service: date for next checking */
+  @Column({ name: 'dateForNextChecking', type: 'date', nullable: true })
   dateForNextChecking: string | null;
 
-  @Column({ type: 'varchar', nullable: true })
+  /** Update Service: next check due date */
+  @Column({ name: 'nextCheckDueDate', type: 'date', nullable: true })
   nextCheckDueDate: string | null;
 
   @CreateDateColumn({ name: 'createdAt' })

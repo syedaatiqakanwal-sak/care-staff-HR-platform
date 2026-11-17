@@ -45,10 +45,22 @@ const DOCUMENT_MIME_ALLOWLIST = new Set([
   'image/jpeg',
   'image/jpg',
   'image/png',
+  'image/gif',
+  'image/webp',
+  'image/bmp',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/plain',
+  'application/rtf',
+  'text/rtf',
+  'application/vnd.oasis.opendocument.text',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'application/vnd.oasis.opendocument.presentation',
+  'application/octet-stream',
 ]);
 
 const DOCUMENT_EXT_ALLOWLIST = new Set([
@@ -56,10 +68,20 @@ const DOCUMENT_EXT_ALLOWLIST = new Set([
   '.jpg',
   '.jpeg',
   '.png',
+  '.gif',
+  '.webp',
+  '.bmp',
   '.doc',
   '.docx',
+  '.ppt',
+  '.pptx',
   '.xls',
   '.xlsx',
+  '.txt',
+  '.rtf',
+  '.odt',
+  '.ods',
+  '.odp',
 ]);
 
 function documentFileFilter(
@@ -76,7 +98,7 @@ function documentFileFilter(
   }
   cb(
     new BadRequestException(
-      'Only PDF, JPG, PNG, DOC, DOCX, XLS, and XLSX files are allowed',
+      'Only document files are allowed (PDF, Word, Excel, PowerPoint, images, text)',
     ),
     false,
   );
@@ -217,17 +239,52 @@ export class DocumentsController {
 
   @Get(':id/download')
   @Roles(...DASHBOARD_ROLES, UserRole.STAFF)
-  async download(@Param('id') id: string, @Request() req, @Res() res: Response) {
+  async download(
+    @Param('id') id: string,
+    @Query('inline') inline: string,
+    @Request() req,
+    @Res() res: Response,
+  ) {
     const result = await this.documentsService.getDocumentForDownload(
       id,
       req.user,
     );
-    if (result.kind === 'r2') {
-      return res.redirect(302, result.url);
-    }
+    const isInline = inline === 'true' || inline === '1';
     const safeName = result.doc.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-    res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
-    res.setHeader('Content-Type', 'application/octet-stream');
+    const ext = path.extname(result.doc.fileName).toLowerCase();
+    const mimeFromExt =
+      ext === '.pdf'
+        ? 'application/pdf'
+        : ext === '.png'
+          ? 'image/png'
+          : ext === '.jpg' || ext === '.jpeg'
+            ? 'image/jpeg'
+            : ext === '.gif'
+              ? 'image/gif'
+              : 'application/octet-stream';
+
+    if (result.kind === 'r2') {
+      const { buffer, contentType } = await this.documentsService.getR2DocumentBuffer(
+        result.r2Key,
+      );
+      const mime =
+        contentType && contentType !== 'application/octet-stream'
+          ? contentType
+          : mimeFromExt;
+      res.setHeader('Content-Type', mime);
+      res.setHeader(
+        'Content-Disposition',
+        `${isInline ? 'inline' : 'attachment'}; filename="${safeName}"`,
+      );
+      res.setHeader('Cache-Control', 'private, max-age=60');
+      return res.send(buffer);
+    }
+
+    res.setHeader('Content-Type', isInline ? mimeFromExt : 'application/octet-stream');
+    res.setHeader(
+      'Content-Disposition',
+      `${isInline ? 'inline' : 'attachment'}; filename="${safeName}"`,
+    );
     fs.createReadStream(result.absPath).pipe(res);
   }
 }

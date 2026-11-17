@@ -141,7 +141,7 @@ const RtwAnalyticsPage = () => {
             )}
 
             {analytics && (
-                <SimpleGrid cols={4} spacing="md" mb="lg">
+                <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="md" mb="lg">
                     <Card withBorder p="md" radius="md">
                         <Group>
                             <Globe size={24} color="#2e7d32" />
@@ -251,10 +251,11 @@ const RtwAnalyticsPage = () => {
                             { value: 'expired', label: 'Share Code Expired' },
                             { value: 'expiring30', label: 'Expiring in 30 days' },
                         ]}
-                        w={220}
+                        w={{ base: '100%', sm: 220 }}
                     />
                 </Group>
 
+                <Table.ScrollContainer minWidth={900}>
                 <Table striped highlightOnHover>
                     <Table.Thead>
                         <Table.Tr>
@@ -334,6 +335,7 @@ const RtwAnalyticsPage = () => {
                         )}
                     </Table.Tbody>
                 </Table>
+                </Table.ScrollContainer>
             </Paper>
         </Container>
     );

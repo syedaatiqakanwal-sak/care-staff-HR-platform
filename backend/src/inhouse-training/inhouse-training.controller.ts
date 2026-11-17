@@ -46,22 +46,6 @@ const ALLOWED_MIME = [
     'image/gif',
 ];
 
-function guessContentType(filename: string): string {
-    const ext = path.extname(filename || '').toLowerCase();
-    const map: Record<string, string> = {
-        '.pdf': 'application/pdf',
-        '.doc': 'application/msword',
-        '.docx':
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        '.jpg': 'image/jpeg',
-        '.jpeg': 'image/jpeg',
-        '.png': 'image/png',
-        '.webp': 'image/webp',
-        '.gif': 'image/gif',
-    };
-    return map[ext] || 'application/octet-stream';
-}
-
 @Controller('staff')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 export class InHouseTrainingController {
@@ -126,7 +110,7 @@ export class InHouseTrainingController {
             mimetype?: string;
         },
         @Body()
-        body?: {
+        body: {
             enrollmentDate?: string;
             completionDate?: string;
             status?: string;
@@ -146,28 +130,29 @@ export class InHouseTrainingController {
         } catch (err) {
             throw err;
         }
-
+        const emptyToNull = (v?: string) =>
+            v === undefined || v === null || v === '' || v === 'null' ? null : v;
         const extras: {
             enrollmentDate?: string | null;
             completionDate?: string | null;
             status?: string | null;
         } = {};
-        if (body?.enrollmentDate !== undefined) {
-            extras.enrollmentDate = body.enrollmentDate;
+        // Only update fields that were actually sent with the upload (do not wipe existing dates)
+        if (body && Object.prototype.hasOwnProperty.call(body, 'enrollmentDate')) {
+            extras.enrollmentDate = emptyToNull(body.enrollmentDate);
         }
-        if (body?.completionDate !== undefined) {
-            extras.completionDate = body.completionDate;
+        if (body && Object.prototype.hasOwnProperty.call(body, 'completionDate')) {
+            extras.completionDate = emptyToNull(body.completionDate);
         }
-        if (body?.status !== undefined) {
-            extras.status = body.status;
+        if (body && Object.prototype.hasOwnProperty.call(body, 'status')) {
+            extras.status = emptyToNull(body.status);
         }
-
         const record = await this.service.setDocument(
             staffId,
             recordId,
             file.originalname,
             r2Key,
-            Object.keys(extras).length > 0 ? extras : undefined,
+            extras,
         );
         return { success: true, record };
     }
@@ -184,18 +169,38 @@ export class InHouseTrainingController {
             throw new NotFoundException('No document attached to this record');
         }
         const stored = record.documentPath.replace(/\\/g, '/');
-        const safeName = (record.documentName || path.basename(stored)).replace(
+        const safeName = (record.documentName || 'document').replace(
             /[^a-zA-Z0-9._-]/g,
             '_',
         );
+        const ext = path.extname(safeName).toLowerCase();
+        const mimeFromExt =
+            ext === '.pdf'
+                ? 'application/pdf'
+                : ext === '.png'
+                  ? 'image/png'
+                  : ext === '.jpg' || ext === '.jpeg'
+                    ? 'image/jpeg'
+                    : ext === '.webp'
+                      ? 'image/webp'
+                      : ext === '.gif'
+                        ? 'image/gif'
+                        : ext === '.doc'
+                          ? 'application/msword'
+                          : ext === '.docx'
+                            ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                            : 'application/octet-stream';
+
         if (stored.startsWith('inhouse-documents/')) {
+            // Proxy R2 bytes so authenticated blob viewers work (redirect breaks CORS).
             const { buffer, contentType } = await this.r2.getObjectBuffer(stored);
             const mime =
-                contentType ||
-                guessContentType(record.documentName || stored);
-            res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+                contentType && contentType !== 'application/octet-stream'
+                    ? contentType
+                    : mimeFromExt;
             res.setHeader('Content-Type', mime);
-            res.setHeader('Content-Length', String(buffer.length));
+            res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+            res.setHeader('Cache-Control', 'private, max-age=60');
             return res.send(buffer);
         }
         if (isLegacyInhouseDocumentPath(stored)) {
@@ -208,10 +213,7 @@ export class InHouseTrainingController {
                 throw new NotFoundException('Document file is missing on the server');
             }
             res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
-            res.setHeader(
-                'Content-Type',
-                guessContentType(record.documentName || stored),
-            );
+            res.setHeader('Content-Type', mimeFromExt);
             fs.createReadStream(absPath).pipe(res);
             return;
         }

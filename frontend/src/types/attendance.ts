@@ -5,7 +5,9 @@ export type AttendanceStatus = 'PRESENT' | 'LATE' | 'NO_SHOW' | 'ABSENT';
 export interface LeaveBalanceDto {
   allowanceDays: number;
   usedDays: number;
+  pendingDays?: number;
   remainingDays: number;
+  availableToBook?: number;
   year: number;
 }
 

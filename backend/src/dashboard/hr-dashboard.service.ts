@@ -400,7 +400,17 @@ export class HrDashboardService {
       }
       if (row.is_active) filters.push('active');
       else filters.push('inactive');
-      if (row.startDate && new Date(String(row.startDate)) >= new Date(Date.now() - 90 * 86400000)) {
+      // Match newStarters count: COALESCE(start_date, createdAt) within last 90 days
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setHours(0, 0, 0, 0);
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      if (
+        this.isWithinPeriod(
+          row.startDate ? String(row.startDate) : null,
+          row.createdAt ? String(row.createdAt) : null,
+          ninetyDaysAgo,
+        )
+      ) {
         filters.push('new_starters');
       }
 

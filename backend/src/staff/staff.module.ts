@@ -8,6 +8,7 @@ import { DashboardController } from './dashboard.controller';
 import { StaffProfile } from './staff-profile.entity';
 import { AddressHistory } from './address-history.entity';
 import { ReviewForm } from './review-form.entity';
+import { ReviewScheduleScheduler } from './review-schedule.scheduler';
 import { TrainingRecord } from '../training/training-record.entity';
 import { TrainingModule } from '../training/training.module';
 import { Course } from '../courses/course.entity';
@@ -21,7 +22,6 @@ import { EmailModule } from '../email/email.module';
 import { StaffDocument } from '../documents/staff-document.entity';
 import { User } from '../users/user.entity';
 import { Notification } from '../notifications/notification.entity';
-import { ReviewScheduleScheduler } from './review-schedule.scheduler';
 
 @Module({
     imports: [

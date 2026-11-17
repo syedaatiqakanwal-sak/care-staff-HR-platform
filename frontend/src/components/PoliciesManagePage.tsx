@@ -39,8 +39,6 @@ export const PoliciesManagePage = () => {
   const role = (localStorage.getItem('role') || '').toLowerCase();
   const isAdmin = ['admin', 'manager', 'hr'].includes(role);
   const canEdit = isAdmin && localStorage.getItem('readOnly') !== 'true';
-  const [deleteTarget, setDeleteTarget] = useState<PolicyRow | null>(null);
-  const [deleting, setDeleting] = useState(false);
   const token = localStorage.getItem('token');
 
   const [loading, setLoading] = useState(true);
@@ -51,7 +49,10 @@ export const PoliciesManagePage = () => {
   const [saving, setSaving] = useState(false);
   const [incrementVersion, setIncrementVersion] = useState(true);
   const [file, setFile] = useState<File | null>(null);
+  const [confirmDeletePolicy, setConfirmDeletePolicy] = useState<PolicyRow | null>(null);
   const [form, setForm] = useState({ title: '', description: '', isActive: true });
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   const sorted = useMemo(() => policies, [policies]);
 
@@ -149,7 +150,8 @@ export const PoliciesManagePage = () => {
   };
 
   const toggleActive = async (p: PolicyRow) => {
-    if (!token) return;
+    if (!token || togglingId) return;
+    setTogglingId(p.id);
     try {
       const fd = new FormData();
       fd.append('isActive', String(!p.isActive));
@@ -158,21 +160,29 @@ export const PoliciesManagePage = () => {
       await fetchPolicies();
     } catch (err: any) {
       notifications.show({ title: 'Error', message: err?.response?.data?.message || 'Failed to update policy.', color: 'red' });
+    } finally {
+      setTogglingId(null);
     }
   };
 
-  const remove = async () => {
-    if (!token || !deleteTarget) return;
-    setDeleting(true);
+  const remove = (p: PolicyRow) => {
+    if (!token || removingId) return;
+    setConfirmDeletePolicy(p);
+  };
+
+  const confirmRemovePolicy = async () => {
+    const p = confirmDeletePolicy;
+    if (!token || !p || removingId) return;
+    setConfirmDeletePolicy(null);
+    setRemovingId(p.id);
     try {
-      await axios.delete(`/api/v1/policies/${deleteTarget.id}`, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.delete(`/api/v1/policies/${p.id}`, { headers: { Authorization: `Bearer ${token}` } });
       notifications.show({ title: 'Deleted', message: 'Policy deleted', color: '#267FBA' });
-      setDeleteTarget(null);
       await fetchPolicies();
     } catch (err: any) {
       notifications.show({ title: 'Error', message: err?.response?.data?.message || 'Failed to delete policy.', color: 'red' });
     } finally {
-      setDeleting(false);
+      setRemovingId(null);
     }
   };
 
@@ -235,7 +245,11 @@ export const PoliciesManagePage = () => {
                     <Badge variant="light" color="brandBlue">v{p.version}</Badge>
                   </Table.Td>
                   <Table.Td>
-                    <Switch checked={p.isActive} onChange={() => toggleActive(p)} />
+                    <Switch
+                      checked={p.isActive}
+                      disabled={togglingId !== null && togglingId !== p.id}
+                      onChange={() => toggleActive(p)}
+                    />
                   </Table.Td>
                   <Table.Td>
                     <Text size="sm">{new Date(p.updatedAt).toLocaleDateString('en-GB')}</Text>
@@ -251,7 +265,14 @@ export const PoliciesManagePage = () => {
                       <ActionIcon variant="light" color="gray" onClick={() => downloadPdf(p)} title="Open PDF">
                         <Download size={16} />
                       </ActionIcon>
-                      <ActionIcon variant="light" color="red" onClick={() => setDeleteTarget(p)} title="Delete">
+                      <ActionIcon
+                        variant="light"
+                        color="red"
+                        loading={removingId === p.id}
+                        disabled={removingId !== null && removingId !== p.id}
+                        onClick={() => remove(p)}
+                        title="Delete"
+                      >
                         <Trash2 size={16} />
                       </ActionIcon>
                     </Group>
@@ -330,14 +351,19 @@ export const PoliciesManagePage = () => {
       </Modal>
 
       <AppConfirmModal
-        opened={!!deleteTarget}
-        title="Delete policy"
-        message={`Delete policy "${deleteTarget?.title ?? ''}"? This cannot be undone.`}
-        confirmLabel="Delete"
-        confirmColor="red"
-        loading={deleting}
-        onConfirm={remove}
-        onCancel={() => setDeleteTarget(null)}
+        opened={!!confirmDeletePolicy}
+        options={
+          confirmDeletePolicy
+            ? {
+                title: 'Delete policy',
+                message: `Delete policy "${confirmDeletePolicy.title}"? This cannot be undone.`,
+                confirmLabel: 'Delete',
+                confirmColor: 'red',
+              }
+            : null
+        }
+        onCancel={() => setConfirmDeletePolicy(null)}
+        onConfirm={confirmRemovePolicy}
       />
     </Box>
   );

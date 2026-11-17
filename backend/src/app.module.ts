@@ -42,6 +42,8 @@ import { JwtOrApiTokenGuard } from './staff/jwt-or-api-token.guard';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
+        // In-memory store is per-process; for multi-instance set lower per-instance limits
+        // or front with a shared gateway rate limiter / Redis-backed store.
         const ttl = parseInt(config.get<string>('THROTTLE_TTL_MS') || '60000', 10);
         const limit = parseInt(config.get<string>('THROTTLE_LIMIT') || '100', 10);
         return [{ ttl, limit }];

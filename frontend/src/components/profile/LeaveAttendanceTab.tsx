@@ -15,11 +15,12 @@ import {
   Table,
   NumberInput,
   Checkbox,
-  Tabs,
   Box,
+  ThemeIcon,
+  Tabs,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { Calendar, Check, X, ClipboardList } from 'lucide-react';
+import { Calendar, Check, X, ClipboardList, Clock3, Plane } from 'lucide-react';
 import axios from 'axios';
 import { useCallback, useEffect, useState } from 'react';
 import { isManagementRole, canMutate, isStaffPortalRole } from '../../utils/roles';
@@ -35,31 +36,18 @@ import {
   LEAVE_TYPE_OPTIONS,
 } from '../../types/attendance';
 
+const BRAND_GREEN = '#139639';
+const BRAND_BLUE = '#267FBA';
+
 interface LeaveAttendanceTabProps {
   profile: { user?: { id: string }; id?: string };
 }
-
-const BRAND_GREEN = '#139639';
-const BRAND_BLUE = '#267FBA';
 
 const leaveStatusColor: Record<string, string> = {
   REQUESTED: 'yellow',
   APPROVED: 'green',
   REJECTED: 'red',
 };
-
-const attendanceStatusColor: Record<string, string> = {
-  PRESENT: 'green',
-  LATE: 'yellow',
-  NO_SHOW: 'red',
-  ABSENT: 'orange',
-};
-
-const leaveTypeLabel = (type: string) =>
-  LEAVE_TYPE_OPTIONS.find((o) => o.value === type)?.label || type;
-
-const attendanceStatusLabel = (status: string) =>
-  ATTENDANCE_STATUS_OPTIONS.find((o) => o.value === status)?.label || status;
 
 export function LeaveAttendanceTab({ profile }: LeaveAttendanceTabProps) {
   const targetUserId = profile.user?.id || profile.id;
@@ -78,6 +66,8 @@ export function LeaveAttendanceTab({ profile }: LeaveAttendanceTabProps) {
   const [savingAttendance, setSavingAttendance] = useState(false);
 
   const [leaveType, setLeaveType] = useState<LeaveType>('ANNUAL');
+  const [typeFilter, setTypeFilter] = useState<string>('ALL');
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [reason, setReason] = useState('');
@@ -206,140 +196,148 @@ export function LeaveAttendanceTab({ profile }: LeaveAttendanceTabProps) {
     );
   }
 
-  const showFormsRow = canRequestLeave || canRecordAttendance;
-  const formCols =
-    canRequestLeave && canRecordAttendance ? { base: 1, md: 2 } : { base: 1 };
+  const year = balance?.year ?? new Date().getFullYear();
+  const showForms = canRequestLeave || canRecordAttendance;
+  const availableToBook = balance?.availableToBook ?? balance?.remainingDays ?? 0;
+  const pendingDays = balance?.pendingDays ?? 0;
+  const filteredLeave = leaveRecords.filter((row) => {
+    if (typeFilter !== 'ALL' && row.leaveType !== typeFilter) return false;
+    if (statusFilter !== 'ALL' && row.status !== statusFilter) return false;
+    return true;
+  });
 
   return (
     <Stack gap="lg">
-      {/* 1) Balance overview — clean metrics */}
+      {/* 1) Balance overview — data only */}
       <Paper
-        p="lg"
-        radius="md"
-        style={{
-          border: `1px solid ${BRAND_GREEN}22`,
-          background: `linear-gradient(135deg, ${BRAND_GREEN}08 0%, ${BRAND_BLUE}08 100%)`,
-        }}
+        p={{ base: 'md', sm: 'lg' }}
+        radius="lg"
+        withBorder
+        style={{ borderColor: 'rgba(19, 150, 57, 0.15)' }}
       >
         <Group justify="space-between" align="flex-start" mb="md" wrap="wrap">
-          <Box>
-            <Title order={4} c={BRAND_GREEN}>
-              Annual leave balance
-            </Title>
-            <Text size="sm" c="dimmed">
-              Calendar year {balance?.year ?? new Date().getFullYear()}
-            </Text>
-          </Box>
+          <Group gap="sm">
+            <ThemeIcon size={36} radius="md" variant="light" color="green">
+              <Plane size={18} />
+            </ThemeIcon>
+            <Box>
+              <Title order={4} fw={800}>
+                Annual leave balance
+              </Title>
+              <Text size="sm" c="dimmed">
+                Calendar year {year}
+              </Text>
+            </Box>
+          </Group>
+          <Badge size="lg" color="green" variant="light" radius="sm">
+            {availableToBook} days available to book
+          </Badge>
         </Group>
 
         <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
           <Box
             p="md"
             style={{
-              background: 'white',
+              background: 'rgba(38, 127, 186, 0.06)',
               borderRadius: 12,
-              borderLeft: `4px solid ${BRAND_BLUE}`,
+              border: '1px solid rgba(38, 127, 186, 0.12)',
             }}
           >
-            <Text size="xs" c="dimmed" tt="uppercase" fw={700} style={{ letterSpacing: '0.04em' }}>
+            <Text size="xs" c="dimmed" tt="uppercase" fw={700} mb={4}>
               Allowance
             </Text>
-            <Text size="xl" fw={800} c={BRAND_BLUE} mt={4}>
+            <Text size="28px" fw={900} lh={1} c={BRAND_BLUE}>
               {balance?.allowanceDays ?? 0}
             </Text>
-            <Text size="xs" c="dimmed">
+            <Text size="xs" c="dimmed" mt={6}>
               days entitled
             </Text>
           </Box>
           <Box
             p="md"
             style={{
-              background: 'white',
+              background: 'rgba(100, 116, 139, 0.06)',
               borderRadius: 12,
-              borderLeft: `4px solid #d97706`,
+              border: '1px solid rgba(100, 116, 139, 0.12)',
             }}
           >
-            <Text size="xs" c="dimmed" tt="uppercase" fw={700} style={{ letterSpacing: '0.04em' }}>
+            <Text size="xs" c="dimmed" tt="uppercase" fw={700} mb={4}>
               Used
             </Text>
-            <Text size="xl" fw={800} mt={4}>
+            <Text size="28px" fw={900} lh={1}>
               {balance?.usedDays ?? 0}
             </Text>
-            <Text size="xs" c="dimmed">
-              approved annual
+            <Text size="xs" c="dimmed" mt={6}>
+              approved leave
             </Text>
           </Box>
           <Box
             p="md"
             style={{
-              background: 'white',
+              background: 'rgba(19, 150, 57, 0.06)',
               borderRadius: 12,
-              borderLeft: `4px solid ${BRAND_GREEN}`,
+              border: '1px solid rgba(19, 150, 57, 0.14)',
             }}
           >
-            <Text size="xs" c="dimmed" tt="uppercase" fw={700} style={{ letterSpacing: '0.04em' }}>
+            <Text size="xs" c="dimmed" tt="uppercase" fw={700} mb={4}>
               Remaining
             </Text>
-            <Text size="xl" fw={800} c={BRAND_GREEN} mt={4}>
-              {balance?.remainingDays ?? 0}
+            <Text size="28px" fw={900} lh={1} c={BRAND_GREEN}>
+              {availableToBook}
             </Text>
-            <Text size="xs" c="dimmed">
-              days left
+            <Text size="xs" c="dimmed" mt={6}>
+              available to book
+              {pendingDays > 0 ? ` · ${pendingDays} pending` : ''}
             </Text>
           </Box>
         </SimpleGrid>
 
-        <Text size="xs" c="dimmed" mt="sm">
-          Entitlement is set per employee; used days are calculated from approved annual leave in
-          this calendar year.
-        </Text>
-
-        {/* Compact secondary row — HR allowance edit */}
         {canApprove && (
           <Group
             mt="md"
+            pt="md"
             gap="sm"
             align="flex-end"
             wrap="wrap"
-            p="sm"
-            style={{
-              background: 'rgba(255,255,255,0.7)',
-              borderRadius: 8,
-              border: `1px solid ${BRAND_BLUE}22`,
-            }}
+            style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}
           >
             <NumberInput
               label="Annual allowance"
-              description="HR only"
+              description="HR only — days entitled this year"
               value={allowanceEdit}
               onChange={setAllowanceEdit}
               min={0}
               max={365}
-              size="xs"
-              maw={140}
+              w={180}
+              size="sm"
             />
-            <Button size="xs" variant="light" color="blue" onClick={saveAllowance}>
-              Save allowance
+            <Button size="sm" variant="light" color="green" onClick={saveAllowance}>
+              Update allowance
             </Button>
           </Group>
         )}
       </Paper>
 
-      {/* 2) Approval queue — own section for managers */}
+      {/* 2) Approval queue — managers */}
       {canApprove && pendingQueue.length > 0 && (
-        <Paper p="lg" radius="md" withBorder style={{ borderColor: `${BRAND_BLUE}33` }}>
-          <Group justify="space-between" mb="md">
-            <Title order={4} c={BRAND_BLUE}>
-              Approval queue
-            </Title>
-            <Badge color="blue" variant="filled" size="lg">
-              {pendingQueue.length} pending
-            </Badge>
+        <Paper p={{ base: 'md', sm: 'lg' }} radius="lg" withBorder>
+          <Group gap="sm" mb="md">
+            <ThemeIcon size={32} radius="md" variant="light" color="orange">
+              <ClipboardList size={16} />
+            </ThemeIcon>
+            <Box>
+              <Title order={4} fw={800}>
+                Approval queue
+              </Title>
+              <Text size="sm" c="dimmed">
+                {pendingQueue.length} request{pendingQueue.length === 1 ? '' : 's'} waiting
+              </Text>
+            </Box>
           </Group>
-          <Table.ScrollContainer minWidth={720}>
-            <Table striped highlightOnHover verticalSpacing="sm">
+          <Table.ScrollContainer minWidth={800}>
+            <Table striped highlightOnHover verticalSpacing="sm" horizontalSpacing="md">
               <Table.Thead>
-                <Table.Tr style={{ background: `${BRAND_BLUE}10` }}>
+                <Table.Tr>
                   <Table.Th>Staff</Table.Th>
                   <Table.Th>Type</Table.Th>
                   <Table.Th>Dates</Table.Th>
@@ -357,8 +355,8 @@ export function LeaveAttendanceTab({ profile }: LeaveAttendanceTabProps) {
                       </Text>
                     </Table.Td>
                     <Table.Td>
-                      <Badge variant="light" color="blue">
-                        {leaveTypeLabel(row.leaveType)}
+                      <Badge variant="light" color="blue" size="sm">
+                        {row.leaveType}
                       </Badge>
                     </Table.Td>
                     <Table.Td>
@@ -367,8 +365,12 @@ export function LeaveAttendanceTab({ profile }: LeaveAttendanceTabProps) {
                         {new Date(row.endDate).toLocaleDateString('en-GB')}
                       </Text>
                     </Table.Td>
-                    <Table.Td>{row.days}</Table.Td>
                     <Table.Td>
+                      <Text size="sm" fw={700}>
+                        {row.days}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td maw={220}>
                       <Text size="sm" lineClamp={2}>
                         {row.reason || '—'}
                       </Text>
@@ -402,14 +404,24 @@ export function LeaveAttendanceTab({ profile }: LeaveAttendanceTabProps) {
         </Paper>
       )}
 
-      {/* 3) Request leave + Record attendance — side by side */}
-      {showFormsRow && (
-        <SimpleGrid cols={formCols} spacing="md">
+      {/* 3) Action forms — side by side, separate from records */}
+      {showForms && (
+        <SimpleGrid cols={{ base: 1, md: canRequestLeave && canRecordAttendance ? 2 : 1 }} spacing="md">
           {canRequestLeave && (
-            <Paper p="lg" radius="md" withBorder style={{ borderColor: `${BRAND_BLUE}33` }}>
-              <Title order={5} mb="md" c={BRAND_BLUE}>
-                {isSelf ? 'Request leave' : 'Submit leave on behalf of staff'}
-              </Title>
+            <Paper p={{ base: 'md', sm: 'lg' }} radius="lg" withBorder h="100%">
+              <Group gap="sm" mb="md">
+                <ThemeIcon size={32} radius="md" variant="light" color="blue">
+                  <Calendar size={16} />
+                </ThemeIcon>
+                <Box>
+                  <Title order={5} fw={800}>
+                    {isSelf ? 'Request leave' : 'Submit leave'}
+                  </Title>
+                  <Text size="xs" c="dimmed">
+                    {isSelf ? 'Sent to HR for approval' : 'On behalf of this staff member'}
+                  </Text>
+                </Box>
+              </Group>
               <Stack gap="sm">
                 <Select
                   label="Leave type"
@@ -417,7 +429,7 @@ export function LeaveAttendanceTab({ profile }: LeaveAttendanceTabProps) {
                   value={leaveType}
                   onChange={(v) => setLeaveType((v as LeaveType) || 'ANNUAL')}
                 />
-                <Group grow>
+                <Group grow align="flex-start">
                   <TextInput
                     label="Start date"
                     type="date"
@@ -433,13 +445,16 @@ export function LeaveAttendanceTab({ profile }: LeaveAttendanceTabProps) {
                 </Group>
                 <Textarea
                   label="Reason"
+                  placeholder="Optional notes for HR"
                   value={reason}
                   onChange={(e) => setReason(e.currentTarget.value)}
                   minRows={2}
+                  autosize
                 />
                 <Button
+                  mt="xs"
                   leftSection={<Calendar size={16} />}
-                  style={{ background: BRAND_BLUE }}
+                  color="blue"
                   loading={savingLeave}
                   onClick={submitLeaveRequest}
                 >
@@ -450,12 +465,22 @@ export function LeaveAttendanceTab({ profile }: LeaveAttendanceTabProps) {
           )}
 
           {canRecordAttendance && (
-            <Paper p="lg" radius="md" withBorder style={{ borderColor: `${BRAND_GREEN}33` }}>
-              <Title order={5} mb="md" c={BRAND_GREEN}>
-                Record attendance
-              </Title>
+            <Paper p={{ base: 'md', sm: 'lg' }} radius="lg" withBorder h="100%">
+              <Group gap="sm" mb="md">
+                <ThemeIcon size={32} radius="md" variant="light" color="green">
+                  <Clock3 size={16} />
+                </ThemeIcon>
+                <Box>
+                  <Title order={5} fw={800}>
+                    Record attendance
+                  </Title>
+                  <Text size="xs" c="dimmed">
+                    HR daily attendance entry
+                  </Text>
+                </Box>
+              </Group>
               <Stack gap="sm">
-                <Group grow>
+                <Group grow align="flex-start">
                   <TextInput
                     label="Date"
                     type="date"
@@ -471,21 +496,17 @@ export function LeaveAttendanceTab({ profile }: LeaveAttendanceTabProps) {
                 </Group>
                 <TextInput
                   label="Notes"
+                  placeholder="Optional"
                   value={attNotes}
                   onChange={(e) => setAttNotes(e.currentTarget.value)}
                 />
                 <Checkbox
+                  mt={4}
                   label="Return-to-work interview completed"
                   checked={returnToWork}
                   onChange={(e) => setReturnToWork(e.currentTarget.checked)}
-                  color="green"
                 />
-                <Button
-                  leftSection={<ClipboardList size={16} />}
-                  style={{ background: BRAND_GREEN }}
-                  loading={savingAttendance}
-                  onClick={saveAttendance}
-                >
+                <Button mt="xs" loading={savingAttendance} color="green" onClick={saveAttendance}>
                   Save attendance
                 </Button>
               </Stack>
@@ -494,34 +515,81 @@ export function LeaveAttendanceTab({ profile }: LeaveAttendanceTabProps) {
         </SimpleGrid>
       )}
 
-      {/* 4) Leave history + Attendance — tabbed records below forms */}
-      <Paper p="lg" radius="md" withBorder>
-        <Tabs defaultValue="leave" color="green">
+      {/* 4) Records — tabbed data view, not stacked under forms */}
+      <Paper p={{ base: 'md', sm: 'lg' }} radius="lg" withBorder>
+        <Tabs defaultValue="leave" variant="pills" radius="md">
           <Tabs.List mb="md">
-            <Tabs.Tab value="leave" style={{ fontWeight: 600 }}>
+            <Tabs.Tab value="leave" leftSection={<Plane size={14} />}>
               Leave history
-              <Badge ml={8} size="sm" variant="light" color="blue">
-                {leaveRecords.length}
+              <Badge ml={8} size="sm" variant="light" color="gray">
+                {filteredLeave.length}
               </Badge>
             </Tabs.Tab>
-            <Tabs.Tab value="attendance" style={{ fontWeight: 600 }}>
-              Attendance records
-              <Badge ml={8} size="sm" variant="light" color="green">
+            <Tabs.Tab value="attendance" leftSection={<Clock3 size={14} />}>
+              Attendance
+              <Badge ml={8} size="sm" variant="light" color="gray">
                 {attendance.length}
               </Badge>
             </Tabs.Tab>
           </Tabs.List>
 
           <Tabs.Panel value="leave">
+            <Group align="flex-end" mb="md" wrap="wrap">
+              <Select
+                label="Type"
+                data={[
+                  { value: 'ALL', label: 'All types' },
+                  ...LEAVE_TYPE_OPTIONS,
+                ]}
+                value={typeFilter}
+                onChange={(value) => setTypeFilter(value || 'ALL')}
+                w={180}
+                size="sm"
+              />
+              <Select
+                label="Status"
+                data={[
+                  { value: 'ALL', label: 'All statuses' },
+                  { value: 'REQUESTED', label: 'Requested' },
+                  { value: 'APPROVED', label: 'Approved' },
+                  { value: 'REJECTED', label: 'Rejected' },
+                ]}
+                value={statusFilter}
+                onChange={(value) => setStatusFilter(value || 'ALL')}
+                w={180}
+                size="sm"
+              />
+              {(typeFilter !== 'ALL' || statusFilter !== 'ALL') && (
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  color="gray"
+                  onClick={() => {
+                    setTypeFilter('ALL');
+                    setStatusFilter('ALL');
+                  }}
+                >
+                  Clear filters
+                </Button>
+              )}
+            </Group>
             {leaveRecords.length === 0 ? (
-              <Text c="dimmed" fs="italic" py="md">
-                No leave records.
-              </Text>
+              <Center py="xl">
+                <Text c="dimmed" size="sm">
+                  No leave records yet.
+                </Text>
+              </Center>
+            ) : filteredLeave.length === 0 ? (
+              <Center py="xl">
+                <Text c="dimmed" size="sm">
+                  No leave records match these filters.
+                </Text>
+              </Center>
             ) : (
-              <Table.ScrollContainer minWidth={640}>
-                <Table striped highlightOnHover verticalSpacing="sm">
+              <Table.ScrollContainer minWidth={700}>
+                <Table striped highlightOnHover verticalSpacing="sm" horizontalSpacing="md">
                   <Table.Thead>
-                    <Table.Tr style={{ background: `${BRAND_BLUE}10` }}>
+                    <Table.Tr>
                       <Table.Th>Type</Table.Th>
                       <Table.Th>Dates</Table.Th>
                       <Table.Th>Days</Table.Th>
@@ -530,11 +598,11 @@ export function LeaveAttendanceTab({ profile }: LeaveAttendanceTabProps) {
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
-                    {leaveRecords.map((row) => (
+                    {filteredLeave.map((row) => (
                       <Table.Tr key={row.id}>
                         <Table.Td>
-                          <Badge variant="light" color="blue">
-                            {leaveTypeLabel(row.leaveType)}
+                          <Badge variant="outline" color="blue" size="sm">
+                            {row.leaveType}
                           </Badge>
                         </Table.Td>
                         <Table.Td>
@@ -543,13 +611,17 @@ export function LeaveAttendanceTab({ profile }: LeaveAttendanceTabProps) {
                             {new Date(row.endDate).toLocaleDateString('en-GB')}
                           </Text>
                         </Table.Td>
-                        <Table.Td>{row.days}</Table.Td>
+                        <Table.Td>
+                          <Text size="sm" fw={700}>
+                            {row.days}
+                          </Text>
+                        </Table.Td>
                         <Table.Td>
                           <Badge color={leaveStatusColor[row.status] || 'gray'} variant="light">
                             {row.status}
                           </Badge>
                         </Table.Td>
-                        <Table.Td>
+                        <Table.Td maw={260}>
                           <Text size="sm" lineClamp={2}>
                             {row.reason || '—'}
                           </Text>
@@ -564,14 +636,23 @@ export function LeaveAttendanceTab({ profile }: LeaveAttendanceTabProps) {
 
           <Tabs.Panel value="attendance">
             {attendance.length === 0 ? (
-              <Text c="dimmed" fs="italic" py="md">
-                No attendance records in the last 90 days.
-              </Text>
+              <Center py="xl">
+                <Stack gap={6} align="center">
+                  <Text c="dimmed" size="sm">
+                    No attendance records in the last 90 days.
+                  </Text>
+                  {isStaffPortalRole() && isSelf && !canRecordAttendance && (
+                    <Text size="xs" c="dimmed">
+                      Contact HR to update attendance records.
+                    </Text>
+                  )}
+                </Stack>
+              </Center>
             ) : (
-              <Table.ScrollContainer minWidth={560}>
-                <Table striped highlightOnHover verticalSpacing="sm">
+              <Table.ScrollContainer minWidth={700}>
+                <Table striped highlightOnHover verticalSpacing="sm" horizontalSpacing="md">
                   <Table.Thead>
-                    <Table.Tr style={{ background: `${BRAND_GREEN}10` }}>
+                    <Table.Tr>
                       <Table.Th>Date</Table.Th>
                       <Table.Th>Status</Table.Th>
                       <Table.Th>RTW done</Table.Th>
@@ -582,27 +663,29 @@ export function LeaveAttendanceTab({ profile }: LeaveAttendanceTabProps) {
                     {attendance.map((row) => (
                       <Table.Tr key={row.id}>
                         <Table.Td>
-                          <Text size="sm">
+                          <Text size="sm" fw={600}>
                             {new Date(row.date).toLocaleDateString('en-GB')}
                           </Text>
                         </Table.Td>
                         <Table.Td>
                           <Badge
-                            color={attendanceStatusColor[row.status] || 'gray'}
                             variant="light"
+                            color={
+                              row.status === 'PRESENT'
+                                ? 'green'
+                                : row.status === 'ABSENT'
+                                  ? 'red'
+                                  : 'orange'
+                            }
+                            size="sm"
                           >
-                            {attendanceStatusLabel(row.status)}
+                            {row.status}
                           </Badge>
                         </Table.Td>
                         <Table.Td>
-                          <Badge
-                            color={row.returnToWorkCompleted ? 'green' : 'gray'}
-                            variant="light"
-                          >
-                            {row.returnToWorkCompleted ? 'Yes' : 'No'}
-                          </Badge>
+                          <Text size="sm">{row.returnToWorkCompleted ? 'Yes' : 'No'}</Text>
                         </Table.Td>
-                        <Table.Td>
+                        <Table.Td maw={280}>
                           <Text size="sm" lineClamp={2}>
                             {row.notes || '—'}
                           </Text>
@@ -612,11 +695,6 @@ export function LeaveAttendanceTab({ profile }: LeaveAttendanceTabProps) {
                   </Table.Tbody>
                 </Table>
               </Table.ScrollContainer>
-            )}
-            {isStaffPortalRole() && isSelf && !canRecordAttendance && (
-              <Text size="xs" c="dimmed" mt="sm">
-                Contact HR to update attendance records.
-              </Text>
             )}
           </Tabs.Panel>
         </Tabs>

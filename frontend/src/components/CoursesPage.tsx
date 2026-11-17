@@ -270,8 +270,8 @@ export const CoursesPage = () => {
     };
 
     return (
-        <Stack gap="xl">
-            <Group justify="space-between" align="center">
+        <Stack gap="xl" p="md" pb={24}>
+            <Group justify="space-between" align="flex-start" wrap="wrap">
                 <Box>
                     <Title order={2} size={32} fw={900} c="brandBlue.9">Learning & Development</Title>
                     <Text size="md" c="dimmed" fw={600}>Explore our curriculum of professional training courses.</Text>

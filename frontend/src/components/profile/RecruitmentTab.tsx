@@ -40,7 +40,6 @@ const CHECKLIST: ChecklistItem[] = [
   { key: 'interviewRecorded', dateKey: 'interviewRecordedDate', label: 'Interview recorded' },
   { key: 'offerLetterIssued', dateKey: 'offerLetterIssuedDate', label: 'Offer letter issued' },
   { key: 'contractIssued', dateKey: 'contractIssuedDate', label: 'Contract issued' },
-  { key: 'contractSigned', dateKey: 'contractSignedDate', label: 'Contract signed' },
   { key: 'inductionCompleted', dateKey: 'inductionCompletedDate', label: 'Induction completed' },
   { key: 'shadowStarted', dateKey: 'shadowStartDate', label: 'Shadow period started' },
 ];
@@ -107,7 +106,38 @@ export function RecruitmentTab({ profile, onEmploymentStatusChange }: Recruitmen
     const token = localStorage.getItem('token');
     setSaving(true);
     try {
-      const res = await axios.put(`/api/v1/staff/${targetUserId}/recruitment`, record, {
+      // Allow-list only UpdateRecruitmentDto fields (exclude id, staffId, shadowEndDate, timestamps)
+      const {
+        interviewRecorded,
+        interviewRecordedDate,
+        offerLetterIssued,
+        offerLetterIssuedDate,
+        contractIssued,
+        contractIssuedDate,
+        contractSigned,
+        contractSignedDate,
+        inductionCompleted,
+        inductionCompletedDate,
+        shadowStarted,
+        shadowStartDate,
+        notes,
+      } = record;
+      const payload = {
+        interviewRecorded,
+        interviewRecordedDate,
+        offerLetterIssued,
+        offerLetterIssuedDate,
+        contractIssued,
+        contractIssuedDate,
+        contractSigned,
+        contractSignedDate,
+        inductionCompleted,
+        inductionCompletedDate,
+        shadowStarted,
+        shadowStartDate,
+        notes,
+      };
+      const res = await axios.put(`/api/v1/staff/${targetUserId}/recruitment`, payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setRecord(res.data.recruitment);
@@ -132,10 +162,22 @@ export function RecruitmentTab({ profile, onEmploymentStatusChange }: Recruitmen
     const file = e.target.files?.[0];
     if (!file || !targetUserId) return;
 
+    const maxBytes = 50 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      notifications.show({
+        title: 'File too large',
+        message: `Maximum allowed size is 50 MB.`,
+        color: 'red',
+      });
+      if (itemFileRefs.current[itemKey]) itemFileRefs.current[itemKey]!.value = '';
+      return;
+    }
+
     const formData = new FormData();
     formData.append('file', file);
     formData.append('documentType', 'OTHER');
-    formData.append('documentName', `${itemKey}_${file.name}`);
+    // notes is allowed by CreateStaffDocumentDto; documentName is not (forbidNonWhitelisted)
+    formData.append('notes', `recruitment:${itemKey}`);
 
     try {
       const token = localStorage.getItem('token');
@@ -144,6 +186,8 @@ export function RecruitmentTab({ profile, onEmploymentStatusChange }: Recruitmen
           Authorization: `Bearer ${token}`,
           'Content-Type': 'multipart/form-data',
         },
+        maxBodyLength: maxBytes,
+        maxContentLength: maxBytes,
       });
       setItemDocuments((prev) => ({ ...prev, [itemKey]: file.name }));
       notifications.show({
@@ -151,10 +195,16 @@ export function RecruitmentTab({ profile, onEmploymentStatusChange }: Recruitmen
         message: 'Document uploaded successfully',
         color: 'green',
       });
-    } catch {
+    } catch (err: unknown) {
+      let msg = 'Failed to upload document';
+      if (axios.isAxiosError(err)) {
+        const m = err.response?.data?.message;
+        if (Array.isArray(m)) msg = m.join(', ');
+        else if (typeof m === 'string') msg = m;
+      }
       notifications.show({
         title: 'Error',
-        message: 'Failed to upload document',
+        message: msg,
         color: 'red',
       });
     }
@@ -250,12 +300,11 @@ export function RecruitmentTab({ profile, onEmploymentStatusChange }: Recruitmen
                   days from start)
                 </Text>
               )}
-              {!isShadow && (
               <Box mt={8} pt={8} style={{ borderTop: '1px solid #f0f0f0' }}>
                 {itemDocuments[item.key] ? (
                   <Group gap={8} align="center">
                     <Text size="xs" c="dimmed">
-                      📄 {itemDocuments[item.key]}
+                      {itemDocuments[item.key]}
                     </Text>
                     <Button
                       variant="subtle"
@@ -283,11 +332,9 @@ export function RecruitmentTab({ profile, onEmploymentStatusChange }: Recruitmen
                     itemFileRefs.current[item.key] = el;
                   }}
                   style={{ display: 'none' }}
-                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
                   onChange={(e) => handleItemDocumentUpload(item.key, e)}
                 />
               </Box>
-              )}
             </Paper>
           );
         })}

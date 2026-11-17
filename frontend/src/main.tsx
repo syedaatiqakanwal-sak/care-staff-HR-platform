@@ -1,36 +1,21 @@
-import { StrictMode } from 'react'
+import { StrictMode, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
-import { MantineProvider, AppShell, Text, Group, Drawer, Burger, Box } from '@mantine/core'
+import { MantineProvider, AppShell, Group, Drawer, Burger, Box, Center, Loader } from '@mantine/core'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { theme } from './theme'
 import { LandingPage } from './components/LandingPage'
 import { LoginPage } from './components/LoginPage'
 import { SignupPage } from './components/SignupPage'
 import { DashboardView } from './components/DashboardView'
-import { StaffDirectoryPage } from './components/StaffDirectoryPage'
-import { StaffProfilePage } from './components/StaffProfilePage'
 import { TopHeader } from './components/Header'
 import { Sidebar } from './components/Sidebar'
-import { CoursesPage } from './components/CoursesPage'
-import { SettingsPage } from './components/SettingsPage'
-import { ApiTokensPage } from './components/ApiTokensPage'
 import { ForgotPasswordPage } from './components/ForgotPasswordPage'
 import { PageWrapper } from './components/PageWrapper'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { AdminRoute, StrictAdminRoute, AuditViewRoute } from './components/RoleRoute'
 import { PoliciesPage } from './components/PoliciesPage'
 import { PolicyReportsPage } from './components/PolicyReportsPage'
-import { PoliciesManagePage } from './components/PoliciesManagePage'
-import { PolicyAnalytics } from './components/PolicyAnalytics'
-import { HrReportsPage } from './components/HrReportsPage'
-import { AuditLogPage } from './components/AuditLogPage'
-import { ReferenceSubmissionPage } from './components/ReferenceSubmissionPage'
-import { ReferenceAnalyticsPage } from './components/ReferenceAnalyticsPage'
-import { HrAnalyticsPage } from './components/HrAnalyticsPage'
-import DbsAnalyticsPage from './components/DbsAnalyticsPage'
-import RtwAnalyticsPage from './components/RtwAnalyticsPage'
-import { BackupPage } from './components/BackupPage'
-import { ScheduledFormsPage } from './components/ScheduledFormsPage'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { useState, useEffect } from 'react'
 import { Linkedin } from 'lucide-react'
 import { Notifications } from '@mantine/notifications'
@@ -39,6 +24,30 @@ import { limitDateYearInput } from './utils/dateInputLimit'
 import '@mantine/core/styles.css'
 import '@mantine/notifications/styles.css'
 import './index.css'
+
+// Heavy pages are lazy-loaded so the initial bundle stays small.
+const StaffDirectoryPage = lazy(() => import('./components/StaffDirectoryPage').then((m) => ({ default: m.StaffDirectoryPage })))
+const StaffProfilePage = lazy(() => import('./components/StaffProfilePage').then((m) => ({ default: m.StaffProfilePage })))
+const CoursesPage = lazy(() => import('./components/CoursesPage').then((m) => ({ default: m.CoursesPage })))
+const SettingsPage = lazy(() => import('./components/SettingsPage').then((m) => ({ default: m.SettingsPage })))
+const ApiTokensPage = lazy(() => import('./components/ApiTokensPage').then((m) => ({ default: m.ApiTokensPage })))
+const BackupPage = lazy(() => import('./components/BackupPage').then((m) => ({ default: m.BackupPage })))
+const PoliciesManagePage = lazy(() => import('./components/PoliciesManagePage').then((m) => ({ default: m.PoliciesManagePage })))
+const PolicyAnalytics = lazy(() => import('./components/PolicyAnalytics').then((m) => ({ default: m.PolicyAnalytics })))
+const HrReportsPage = lazy(() => import('./components/HrReportsPage').then((m) => ({ default: m.HrReportsPage })))
+const AuditLogPage = lazy(() => import('./components/AuditLogPage').then((m) => ({ default: m.AuditLogPage })))
+const ReferenceSubmissionPage = lazy(() => import('./components/ReferenceSubmissionPage').then((m) => ({ default: m.ReferenceSubmissionPage })))
+const ReferenceAnalyticsPage = lazy(() => import('./components/ReferenceAnalyticsPage').then((m) => ({ default: m.ReferenceAnalyticsPage })))
+const HrAnalyticsPage = lazy(() => import('./components/HrAnalyticsPage').then((m) => ({ default: m.HrAnalyticsPage })))
+const DbsAnalyticsPage = lazy(() => import('./components/DbsAnalyticsPage'))
+const RtwAnalyticsPage = lazy(() => import('./components/RtwAnalyticsPage'))
+const ScheduledFormsPage = lazy(() => import('./components/ScheduledFormsPage'))
+
+const PageLoadingFallback = () => (
+    <Center h="60vh">
+        <Loader color="brandGreen.6" />
+    </Center>
+)
 
 // Global Safeguard CSS to force interactivity
 const GlobalStyles = () => (
@@ -55,7 +64,7 @@ const GlobalStyles = () => (
 
       #root {
         height: 100%;
-        overflow: visible;
+        min-height: 100%;
         pointer-events: auto !important;
         background-color: #F5F5F5 !important;
       }
@@ -109,6 +118,7 @@ const GlobalStyles = () => (
         color: rgba(19, 150, 57, 0.7);
       }
 
+      /* Lock chrome to viewport; main scrolls with reserved header/footer space */
       .mantine-AppShell-root {
         height: 100dvh !important;
         max-height: 100dvh !important;
@@ -117,39 +127,167 @@ const GlobalStyles = () => (
 
       .mantine-AppShell-main {
         background-color: #F5F5F5 !important;
-        display: flex !important;
-        flex-direction: column !important;
-        min-height: 0 !important;
+        box-sizing: border-box !important;
+        height: 100dvh !important;
+        max-height: 100dvh !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        overscroll-behavior: contain;
+        display: block !important;
+        padding-top: calc(80px + 1rem) !important;
+        padding-bottom: calc(64px + 2rem) !important;
       }
 
-      .mantine-AppShell-footer {
-        background-color: #ffffff !important;
-        border-top: 2px solid #139639 !important;
-        box-shadow: none !important;
+      .mantine-AppShell-header {
+        position: fixed !important;
+        top: 0 !important;
+        z-index: 120 !important;
+      }
+
+      .mantine-AppShell-navbar {
+        position: fixed !important;
+        z-index: 110 !important;
+      }
+
+      .mantine-AppShell-footer,
+      .app-footer {
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        top: auto !important;
         height: 64px !important;
         max-height: 64px !important;
-        top: auto !important;
-        bottom: 0 !important;
+        min-height: 64px !important;
+        z-index: 120 !important;
+        background: #ffffff !important;
+        border-top: 1px solid #139639 !important;
+        box-shadow: none !important;
+        overflow: hidden !important;
       }
 
-      .app-footer .linkedin-chip {
-        padding: 6px 10px;
+      .app-footer .footer-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        height: 100%;
+        width: 100%;
+        padding: 0 20px;
+        box-sizing: border-box;
+      }
+
+      .app-footer .footer-brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+      }
+
+      .app-footer .footer-badge {
+        flex-shrink: 0;
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        background: linear-gradient(145deg, #139639 0%, #0e7a2d 100%);
+        color: #ffffff;
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 6px rgba(19, 150, 57, 0.28);
+      }
+
+      .app-footer .footer-brand-text {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        min-width: 0;
+      }
+
+      .app-footer .footer-company {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1.2;
+        color: #1f2937;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .app-footer .footer-copy {
+        margin: 0;
+        font-size: 12px;
+        font-weight: 400;
+        line-height: 1.2;
+        color: #9ca3af;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      @media (max-width: 48em) {
+        .app-footer .footer-inner {
+          padding: 0 12px;
+          gap: 8px;
+        }
+        .app-footer .footer-dev-label {
+          display: none;
+        }
+      }
+
+      .app-footer .footer-dev {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px 6px 12px;
         border-radius: 999px;
-        background: rgba(38, 127, 186, 0.08);
-        border: 1px solid rgba(38, 127, 186, 0.18);
+        background: rgba(38, 127, 186, 0.06);
+        border: 1px solid rgba(38, 127, 186, 0.12);
+        text-decoration: none;
+        transition: background 0.2s ease, border-color 0.2s ease;
+        flex-shrink: 0;
+      }
+
+      .app-footer .footer-dev:hover {
+        background: rgba(38, 127, 186, 0.1);
+        border-color: rgba(38, 127, 186, 0.22);
+      }
+
+      .app-footer .footer-dev-label {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #64748b;
       }
 
       .app-footer .linkedin-link {
         color: #0A66C2 !important;
         display: inline-flex;
         align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        background: #ffffff;
+        border: 1px solid rgba(10, 102, 194, 0.18);
         line-height: 1;
-        transition: opacity 0.15s ease;
+        transition: background 0.15s ease, border-color 0.15s ease;
       }
 
-      .app-footer .linkedin-link:hover {
-        color: #0A66C2 !important;
-        opacity: 0.75;
+      .app-footer .footer-dev:hover .linkedin-link {
+        color: #ffffff !important;
+        background: #0A66C2;
+        border-color: #0A66C2;
+      }
+
+      .app-footer .footer-dev:hover .linkedin-link svg {
+        color: #ffffff !important;
+        stroke: #ffffff !important;
       }
 
       .mantine-Card-root,
@@ -164,16 +302,18 @@ const GlobalStyles = () => (
 
       .mantine-Button-root[data-variant="filled"] {
         background: #139639 !important;
-        color: #fff !important;
-      }
-
-      .mantine-Button-root[data-variant="filled"] .mantine-Button-label,
-      .mantine-Button-root[data-variant="filled"] .mantine-Button-section {
+        background-color: #139639 !important;
         color: #fff !important;
       }
 
       .mantine-Button-root[data-variant="filled"]:hover {
-        background: rgba(19, 150, 57, 0.7) !important;
+        background: #0e7a2d !important;
+        background-color: #0e7a2d !important;
+      }
+
+      /* Ensure primary action labels stay readable even if a theme color is missing */
+      .mantine-Button-root[data-variant="filled"] .mantine-Button-label {
+        color: #fff !important;
       }
 
       .mantine-Button-root[data-variant="outline"] {
@@ -239,9 +379,8 @@ const GlobalStyles = () => (
 );
 
 function AppLayoutInner({ children, searchQuery, onSearch }: { children: React.ReactNode, searchQuery?: string, onSearch?: (val: string) => void }) {
-  const { collapsed } = useSidebar();
+  const { collapsed, toggle } = useSidebar();
   const [mobileOpened, setMobileOpened] = useState(false);
-  const currentYear = new Date().getFullYear();
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -250,7 +389,7 @@ function AppLayoutInner({ children, searchQuery, onSearch }: { children: React.R
       document.body.style.overflow = previousOverflow;
     };
   }, []);
-
+  
   return (
     <>
       <AppShell
@@ -262,55 +401,38 @@ function AppLayoutInner({ children, searchQuery, onSearch }: { children: React.R
           collapsed: { mobile: true },
         }}
         padding="md"
-        style={{
-          height: '100dvh',
-          maxHeight: '100dvh',
-          overflow: 'hidden',
-        }}
         styles={{
-          root: {
-            height: '100dvh',
-            maxHeight: '100dvh',
-            overflow: 'hidden',
-          },
           header: {
             background: 'rgba(19, 150, 57, 0.2)',
             borderBottom: '1px solid rgba(19, 150, 57, 0.35)',
             boxShadow: '0 4px 15px rgba(19, 150, 57, 0.2)',
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            zIndex: 100,
           },
           navbar: {
             backgroundColor: '#ffffff',
-            borderRight: '1px solid #dee2e6',
+            borderRight: '1px solid #E5E7EB',
+            boxShadow: '4px 0 18px rgba(15, 23, 42, 0.04)',
             overflowX: 'hidden',
             overflowY: 'auto',
-            position: 'fixed',
-            boxShadow: '4px 0 18px rgba(15, 23, 42, 0.06)',
           },
           main: {
             backgroundColor: '#F5F5F5',
-            height: '100%',
-            minHeight: 0,
-            overflow: 'auto',
-            display: 'flex',
-            flexDirection: 'column',
+            overflowX: 'hidden',
+            overflowY: 'auto',
+            paddingTop: 'calc(80px + 1rem)',
+            paddingBottom: 'calc(64px + 2rem)',
           },
           footer: {
             backgroundColor: '#ffffff',
-            borderTop: '2px solid #139639',
+            borderTop: '1px solid #139639',
             boxShadow: 'none',
-            height: 64,
-            maxHeight: 64,
             position: 'fixed',
-            top: 'auto',
             bottom: 0,
             left: 0,
             right: 0,
-            zIndex: 100,
+            top: 'auto',
+            height: 64,
+            maxHeight: 64,
+            zIndex: 120,
           },
         }}
       >
@@ -348,67 +470,28 @@ function AppLayoutInner({ children, searchQuery, onSearch }: { children: React.R
       <AppShell.Footer
         className="app-footer"
         p={0}
-        style={{
-          backgroundColor: '#ffffff',
-          borderTop: '2px solid #139639',
-          boxShadow: 'none',
-          height: 64,
-          maxHeight: 64,
-          top: 'auto',
-          bottom: 0,
-        }}
       >
-        <Group
-          justify="space-between"
-          align="center"
-          h={64}
-          px={24}
-          wrap="nowrap"
-          gap="sm"
-          style={{ maxWidth: '100%', height: 64, maxHeight: 64 }}
-        >
-          <Group gap={12} wrap="nowrap" align="center">
-            <Box
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 8,
-                background: 'linear-gradient(145deg, #139639 0%, #0e7a2d 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                boxShadow: '0 2px 8px rgba(19, 150, 57, 0.25)',
-              }}
-            >
-              <Text fw={800} size="sm" c="white" style={{ letterSpacing: '0.02em', lineHeight: 1 }}>
-                LC
-              </Text>
-            </Box>
-            <Box style={{ lineHeight: 1.2 }}>
-              <Text size="sm" fw={700} style={{ color: '#1f2937' }}>
-                Lets Care All Ltd
-              </Text>
-              <Text size="xs" style={{ color: '#9CA3AF' }}>
-                © {currentYear} All rights reserved
-              </Text>
-            </Box>
-          </Group>
-          <Group gap="xs" wrap="nowrap" className="linkedin-chip">
-            <Text size="sm" fw={500} style={{ color: '#6B7280' }}>
-              Developer
-            </Text>
-            <a
-              className="linkedin-link"
-              href="https://pk.linkedin.com/in/syeda-atiqa-kanwal-838490390?trk=people-guest_people_search-card"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Developer LinkedIn profile"
-            >
-              <Linkedin size={18} strokeWidth={2} color="#0A66C2" />
-            </a>
-          </Group>
-        </Group>
+        <div className="footer-inner">
+          <div className="footer-brand">
+            <span className="footer-badge" aria-hidden="true">LC</span>
+            <div className="footer-brand-text">
+              <p className="footer-company">Lets Care All Ltd</p>
+              <p className="footer-copy">© {new Date().getFullYear()} All rights reserved</p>
+            </div>
+          </div>
+          <a
+            className="footer-dev"
+            href="https://pk.linkedin.com/in/syeda-atiqa-kanwal-838490390?trk=people-guest_people_search-card"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Developer LinkedIn profile"
+          >
+            <span className="footer-dev-label">Developer</span>
+            <span className="linkedin-link" aria-hidden="true">
+              <Linkedin size={14} strokeWidth={2.25} color="#0A66C2" />
+            </span>
+          </a>
+        </div>
       </AppShell.Footer>
       </AppShell>
 
@@ -466,10 +549,13 @@ function getPageTitle(pathname: string): string {
   if (pathname === '/dashboard/policies/manage') return `Manage Policies | ${SITE_NAME}`;
   if (pathname === '/dashboard/policies/analytics') return `Policy Analytics | ${SITE_NAME}`;
   if (pathname === '/dashboard/references/analytics') return `Reference Analytics | ${SITE_NAME}`;
-  if (pathname === '/dashboard/reports/analytics') return `HR Analytics | ${SITE_NAME}`;
+  if (pathname === '/dashboard/dbs/analytics') return `DBS Analytics | ${SITE_NAME}`;
+  if (pathname === '/dashboard/rtw/analytics') return `Right to Work | ${SITE_NAME}`;
   if (pathname === '/dashboard/schedules') return `Schedules | ${SITE_NAME}`;
+  if (pathname === '/dashboard/reports/analytics') return `HR Analytics | ${SITE_NAME}`;
   if (pathname === '/settings') return `Settings | ${SITE_NAME}`;
   if (pathname === '/settings/api-tokens') return `API Tokens | ${SITE_NAME}`;
+  if (pathname === '/dashboard/backup') return `Database Backup | ${SITE_NAME}`;
   return SITE_NAME;
 }
 
@@ -497,6 +583,8 @@ function App() {
       <Notifications position="top-right" zIndex={2000} />
       <BrowserRouter>
         <PageTitleUpdater />
+        <ErrorBoundary>
+        <Suspense fallback={<PageLoadingFallback />}>
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
@@ -654,6 +742,8 @@ function App() {
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </Suspense>
+        </ErrorBoundary>
       </BrowserRouter>
     </MantineProvider>
   )

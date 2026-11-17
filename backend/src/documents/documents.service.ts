@@ -74,20 +74,64 @@ export class DocumentsService {
     }
   }
 
-  private enrichDocument(doc: StaffDocument): DocumentWithExpiry {
+  private profileDateStr(value: Date | string | null | undefined): string | null {
+    if (!value) return null;
+    if (typeof value === 'string') {
+      const s = value.slice(0, 10);
+      return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+    }
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      const y = value.getUTCFullYear();
+      const m = String(value.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(value.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+    return null;
+  }
+
+  private expiryFromStaffProfile(
+    docType: StaffDocumentType | string,
+    profile: StaffProfile | null | undefined,
+  ): string | null {
+    if (!profile) return null;
+    if (docType === StaffDocumentType.RIGHT_TO_WORK) {
+      return this.profileDateStr(profile.rightToWorkCheckExpiryDate);
+    }
+    if (docType === StaffDocumentType.SHARE_CODE) {
+      return this.profileDateStr(profile.visaExpiryDate);
+    }
+    if (docType === StaffDocumentType.FURTHER_RIGHT_TO_WORK) {
+      return this.profileDateStr(profile.furtherRightToWorkCheckExpiryDate);
+    }
+    if (docType === StaffDocumentType.FURTHER_SHARE_CODE) {
+      return this.profileDateStr(profile.furtherVisaExpiryDate);
+    }
+    return null;
+  }
+
+  private enrichDocument(
+    doc: StaffDocument,
+    profile?: StaffProfile | null,
+  ): DocumentWithExpiry {
+    const expiryDate =
+      this.expiryFromStaffProfile(doc.documentType, profile) ?? doc.expiryDate;
     return {
       ...doc,
-      expiryStatus: computeDocumentExpiryStatus(doc.expiryDate, this.warnTiers),
-      daysUntilExpiry: daysUntil(doc.expiryDate),
+      expiryDate,
+      expiryStatus: computeDocumentExpiryStatus(expiryDate, this.warnTiers),
+      daysUntilExpiry: daysUntil(expiryDate),
     };
   }
 
   async listForStaffProfile(staffProfileId: string): Promise<DocumentWithExpiry[]> {
-    const docs = await this.documentsRepo.find({
-      where: { staffId: staffProfileId },
-      order: { createdAt: 'DESC' },
-    });
-    return docs.map((d) => this.enrichDocument(d));
+    const [docs, profile] = await Promise.all([
+      this.documentsRepo.find({
+        where: { staffId: staffProfileId },
+        order: { createdAt: 'DESC' },
+      }),
+      this.staffRepo.findOne({ where: { id: staffProfileId } }),
+    ]);
+    return docs.map((d) => this.enrichDocument(d, profile));
   }
 
   async uploadDocument(
@@ -135,13 +179,19 @@ export class DocumentsService {
       file.mimetype || 'application/octet-stream',
     );
 
+    const profile = await this.staffRepo.findOne({ where: { id: staffProfileId } });
+    const expiryDate =
+      this.expiryFromStaffProfile(dto.documentType, profile) ??
+      dto.expiryDate ??
+      null;
+
     const doc = this.documentsRepo.create({
       staffId: staffProfileId,
       documentType: dto.documentType,
       fileName: file.originalname,
       filePath: r2Key,
       issueDate: dto.issueDate || null,
-      expiryDate: dto.expiryDate || null,
+      expiryDate,
       notes: dto.notes || null,
       uploadedBy: uploadedByUserId,
     });
@@ -158,7 +208,7 @@ export class DocumentsService {
         ipAddress,
       });
     }
-    return this.enrichDocument(saved);
+    return this.enrichDocument(saved, profile);
   }
 
   async deleteDocument(
@@ -195,7 +245,7 @@ export class DocumentsService {
     requestUser: { userId: string; role: string },
   ): Promise<
     | { doc: StaffDocument; kind: 'local'; absPath: string }
-    | { doc: StaffDocument; kind: 'r2'; url: string }
+    | { doc: StaffDocument; kind: 'r2'; r2Key: string }
   > {
     const doc = await this.documentsRepo.findOne({
       where: { id: documentId },
@@ -228,8 +278,7 @@ export class DocumentsService {
 
     const stored = (doc.filePath || '').replace(/\\/g, '/');
     if (stored.startsWith('documents/')) {
-      const url = await this.r2.getPresignedUrl(stored);
-      return { doc, kind: 'r2', url };
+      return { doc, kind: 'r2', r2Key: stored };
     }
     if (isLegacyLocalFilePath(stored)) {
       const absPath = path.isAbsolute(doc.filePath)
@@ -241,6 +290,10 @@ export class DocumentsService {
       return { doc, kind: 'local', absPath };
     }
     throw new NotFoundException('File not found');
+  }
+
+  async getR2DocumentBuffer(r2Key: string): Promise<{ buffer: Buffer; contentType: string }> {
+    return this.r2.getObjectBuffer(r2Key);
   }
 
   async findExpiring(withinDays: number): Promise<
@@ -283,18 +336,20 @@ export class DocumentsService {
       .getMany();
 
     for (const d of docs) {
-      const status = computeDocumentExpiryStatus(d.expiryDate, this.warnTiers);
-      if (status === 'VALID' || status === 'NO_EXPIRY') continue;
       const staff = d.staff as StaffProfile & { user?: { id: string } };
+      const expiryDate =
+        this.expiryFromStaffProfile(d.documentType, staff) ?? d.expiryDate;
+      const status = computeDocumentExpiryStatus(expiryDate, this.warnTiers);
+      if (status === 'VALID' || status === 'NO_EXPIRY') continue;
       results.push({
         source: 'document',
         staffProfileId: d.staffId,
         staffName: `${staff.firstName} ${staff.lastName}`,
         userId: (staff as any).user?.id || '',
         documentType: d.documentType,
-        expiryDate: d.expiryDate!,
+        expiryDate: expiryDate!,
         expiryStatus: status,
-        daysUntilExpiry: daysUntil(d.expiryDate),
+        daysUntilExpiry: daysUntil(expiryDate),
         documentId: d.id,
       });
     }
@@ -722,9 +777,7 @@ export class DocumentsService {
         issueDate: d.issueDate,
         renewalDate: d.renewalDate,
         lastDeclarationDate: d.lastDeclarationDate,
-        nextDeclarationDate: d.nextDeclarationDate,
         updateServiceStatus: d.updateServiceStatus,
-        enrolledDate: d.enrolledDate,
       })),
       meta: {
         page: Math.max(1, page),

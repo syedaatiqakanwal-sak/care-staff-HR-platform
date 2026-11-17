@@ -5,14 +5,6 @@ import { InHouseTrainingTemplate } from './inhouse-training-template.entity';
 import { InHouseTrainingRecord } from './inhouse-training-record.entity';
 import { UpdateInHouseTrainingDto } from './dto/update-inhouse-training.dto';
 
-export type SerializedInHouseTrainingRecord = Omit<
-    InHouseTrainingRecord,
-    'enrollmentDate' | 'completionDate'
-> & {
-    enrollmentDate: string | null;
-    completionDate: string | null;
-};
-
 @Injectable()
 export class InHouseTrainingService {
     constructor(
@@ -22,29 +14,28 @@ export class InHouseTrainingService {
         private readonly recordRepo: Repository<InHouseTrainingRecord>,
     ) {}
 
-    /** Normalize any date / ISO value to YYYY-MM-DD (date-only) or null. */
-    formatDateOnly(value: string | Date | null | undefined): string | null {
-        if (value == null || value === '') return null;
-        if (value instanceof Date) {
-            if (Number.isNaN(value.getTime())) return null;
-            const y = value.getUTCFullYear();
-            const m = String(value.getUTCMonth() + 1).padStart(2, '0');
-            const day = String(value.getUTCDate()).padStart(2, '0');
-            return `${y}-${m}-${day}`;
-        }
-        const trimmed = String(value).trim();
-        if (!trimmed) return null;
-        const datePart = trimmed.slice(0, 10);
-        if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return datePart;
-        const parsed = new Date(trimmed);
-        if (Number.isNaN(parsed.getTime())) return null;
-        const y = parsed.getUTCFullYear();
-        const m = String(parsed.getUTCMonth() + 1).padStart(2, '0');
-        const day = String(parsed.getUTCDate()).padStart(2, '0');
-        return `${y}-${m}-${day}`;
+    async findForStaff(staffId: string): Promise<InHouseTrainingRecord[]> {
+        const rows = await this.recordRepo.find({
+            where: { staffId },
+            order: { sortOrder: 'ASC' },
+        });
+        return rows.map((r) => this.serializeRecord(r));
     }
 
-    serializeRecord(record: InHouseTrainingRecord): SerializedInHouseTrainingRecord {
+    /** Ensure date-only fields are always YYYY-MM-DD for HTML date inputs. */
+    private formatDateOnly(value: string | Date | null | undefined): string | null {
+        if (value == null || value === '') return null;
+        if (typeof value === 'string') {
+            const match = value.trim().match(/^(\d{4}-\d{2}-\d{2})/);
+            return match ? match[1] : null;
+        }
+        if (value instanceof Date && !Number.isNaN(value.getTime())) {
+            return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, '0')}-${String(value.getUTCDate()).padStart(2, '0')}`;
+        }
+        return null;
+    }
+
+    private serializeRecord(record: InHouseTrainingRecord): InHouseTrainingRecord {
         return {
             ...record,
             enrollmentDate: this.formatDateOnly(record.enrollmentDate),
@@ -52,16 +43,8 @@ export class InHouseTrainingService {
         };
     }
 
-    async findForStaff(staffId: string): Promise<SerializedInHouseTrainingRecord[]> {
-        const records = await this.recordRepo.find({
-            where: { staffId },
-            order: { sortOrder: 'ASC' },
-        });
-        return records.map((r) => this.serializeRecord(r));
-    }
-
     /** Copies all template rows into staff-specific records. No-op (returns existing) if already initialized. */
-    async initForStaff(staffId: string): Promise<SerializedInHouseTrainingRecord[]> {
+    async initForStaff(staffId: string): Promise<InHouseTrainingRecord[]> {
         const existing = await this.recordRepo.find({ where: { staffId } });
         if (existing.length > 0) {
             return this.findForStaff(staffId);
@@ -92,7 +75,7 @@ export class InHouseTrainingService {
         staffId: string,
         recordId: string,
         dto: UpdateInHouseTrainingDto,
-    ): Promise<SerializedInHouseTrainingRecord> {
+    ): Promise<InHouseTrainingRecord> {
         const record = await this.getRecord(staffId, recordId);
 
         if (dto.enrollmentDate !== undefined) {
@@ -119,24 +102,24 @@ export class InHouseTrainingService {
             completionDate?: string | null;
             status?: string | null;
         },
-    ): Promise<SerializedInHouseTrainingRecord> {
+    ): Promise<InHouseTrainingRecord> {
         const record = await this.getRecord(staffId, recordId);
         record.documentName = documentName;
         record.documentPath = documentPath;
-
-        // Only update when present — do not wipe existing dates/status if omitted
-        if (extras) {
-            if (extras.enrollmentDate !== undefined) {
-                record.enrollmentDate = this.formatDateOnly(extras.enrollmentDate);
-            }
-            if (extras.completionDate !== undefined) {
-                record.completionDate = this.formatDateOnly(extras.completionDate);
-            }
-            if (extras.status !== undefined) {
-                record.status = extras.status || null;
-            }
+        // Persist dates/status sent with the upload so they are not lost if Save was not clicked
+        if (extras && Object.prototype.hasOwnProperty.call(extras, 'enrollmentDate')) {
+            record.enrollmentDate = this.formatDateOnly(extras.enrollmentDate);
         }
-
+        if (extras && Object.prototype.hasOwnProperty.call(extras, 'completionDate')) {
+            record.completionDate = this.formatDateOnly(extras.completionDate);
+        }
+        if (extras && Object.prototype.hasOwnProperty.call(extras, 'status')) {
+            const status = extras.status || null;
+            record.status =
+                status && ['enrolled', 'progressing', 'completed'].includes(status)
+                    ? status
+                    : null;
+        }
         const saved = await this.recordRepo.save(record);
         return this.serializeRecord(saved);
     }

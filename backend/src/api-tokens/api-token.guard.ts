@@ -4,6 +4,9 @@ import { Repository } from 'typeorm';
 import { ApiToken } from './api-token.entity';
 import * as crypto from 'crypto';
 
+/** Debounce lastUsedAt writes to reduce hot-row contention (M8). */
+const LAST_USED_MIN_INTERVAL_MS = 60_000;
+
 @Injectable()
 export class ApiTokenGuard implements CanActivate {
     constructor(
@@ -13,6 +16,11 @@ export class ApiTokenGuard implements CanActivate {
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
         const request = context.switchToHttp().getRequest();
+
+        // Skip re-validation if global JwtOrApiTokenGuard already attached this token
+        if (request.apiToken && request.tokenUserId) {
+            return true;
+        }
         
         // Extract Bearer token from Authorization header
         const authHeader = request.headers.authorization;
@@ -41,9 +49,16 @@ export class ApiTokenGuard implements CanActivate {
             throw new ForbiddenException('API token has expired');
         }
 
-        // Update last_used_at
-        apiToken.lastUsedAt = new Date();
-        await this.apiTokenRepository.save(apiToken);
+        // Debounced last_used_at update (avoid 2x write per request under dual guards)
+        const now = Date.now();
+        const last = apiToken.lastUsedAt ? apiToken.lastUsedAt.getTime() : 0;
+        if (now - last >= LAST_USED_MIN_INTERVAL_MS) {
+            await this.apiTokenRepository.update(
+                { id: apiToken.id },
+                { lastUsedAt: new Date(now) },
+            );
+            apiToken.lastUsedAt = new Date(now);
+        }
 
         // Attach token info to request (for use in controllers)
         request.tokenUserId = apiToken.userId;
